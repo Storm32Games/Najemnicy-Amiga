@@ -13,7 +13,6 @@ import {
   abilityRows,
   backpackRows,
   degreeName,
-  rollLine,
   classLabel,
   conditionChips,
   equipmentRows,
