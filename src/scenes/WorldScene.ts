@@ -34,7 +34,7 @@ import { WorldFx, tracerStyleFor } from './fx/WorldFx';
 import { paintScorch } from './iso/FxArt';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, SX0, SY0, ZOOM, label } from './ui/Kit';
-import { LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
+import { FRAME_CORPSE, FRAME_DOWN, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
 
 // Pełna walka PF2e z src/core/tactical (Mission + Combat + AI): drużyna 3 najemników, grupy wrogów,
 // wykrywanie w eksploracji, inicjatywa, 3 akcje na turę, PWA, flankowanie, osłona, dołączanie grup.
@@ -1012,7 +1012,7 @@ export class WorldScene extends Phaser.Scene {
       .setDepth(objDepth(pos.gx, pos.gy, L_UNIT));
     const unit: Unit = { sprite, shadow, pos, facing: 'f', name, actor };
     // drobne przesunięcie fazy, żeby drużyna nie oddychała równo
-    sprite.play({ key: `${name}_f_idle`, startFrame: Math.floor(hash2(pos.gx, pos.gy, 5) * 2) });
+    sprite.play({ key: `${name}_f_idle`, startFrame: Math.floor(hash2(pos.gx, pos.gy, 5) * 4) });
     return unit;
   }
 
@@ -1024,7 +1024,15 @@ export class WorldScene extends Phaser.Scene {
   /** Spoczynek po akcji: stojący wracają do oddychania, powaleni zostają na ziemi. */
   private rest(u: Unit): void {
     if (u.actor.state === 'up') this.idle(u);
-    else this.pose(u, 'hurt');
+    else this.lie(u);
+  }
+
+  /** Powalony / martwy leży: trwająca animacja upadku gra do końca, inaczej od razu klatka leżącego ciała / zwłok. */
+  private lie(u: Unit): void {
+    const key = u.sprite.anims.currentAnim?.key ?? '';
+    if (u.sprite.anims.isPlaying && (key.endsWith('_die') || key.endsWith('_down'))) return;
+    u.sprite.stop();
+    u.sprite.setFrame(`${u.facing}_${u.actor.state === 'dead' ? FRAME_CORPSE : FRAME_DOWN}`);
   }
 
   /** Kierunek ruchu siatki -> kierunek sprite'a (przód/tył + odbicie). */
@@ -1046,9 +1054,9 @@ export class WorldScene extends Phaser.Scene {
     u.sprite.play(`${u.name}_${u.facing}_idle`, true);
   }
 
-  private pose(u: Unit, frame: 'attack' | 'hurt'): void {
-    u.sprite.stop();
-    u.sprite.setFrame(`${u.facing}_${frame}`);
+  /** Jednorazowa animacja postaci (iso/UnitArt ANIMS): cios, strzał, trafienie, użycie, upadek; zostaje na ostatniej klatce. */
+  private pose(u: Unit, anim: 'attack' | 'shoot' | 'hurt' | 'cast' | 'die' | 'down'): void {
+    u.sprite.play(`${u.name}_${u.facing}_${anim}`);
   }
 
   /** Krok o jedno pole z animacją chodu; głębia = większa z sum pól, by nie wejść "pod" ściany. */
@@ -2030,6 +2038,11 @@ export class WorldScene extends Phaser.Scene {
       const r = useConsumable(sel.ch, inst, [sel.ch]);
       this.hud.pushLines(r.log, 'amber');
       SoundManager.sfx('heal');
+      const su = this.units.get(sel);
+      if (su && sel.state === 'up') {
+        this.pose(su, 'cast');
+        this.time.delayedCall(520, () => this.rest(su));
+      }
       this.showEvents(r);
       this.hud.notify('inventory');
       return;
@@ -2275,7 +2288,8 @@ export class WorldScene extends Phaser.Scene {
     if (kind === 'melee') this.growl(att, 0.45);
     const show = (): void => this.showEvents(r);
     if (kind === 'shot') {
-      this.pose(a, 'attack');
+      this.pose(a, 'shoot');
+      await this.wait(90); // klatka błysku wylotowego
       const w = normWeapon(getWeapon(att.ch));
       const fire = r.events.some((e) => e.type === 'damage' && e.dmgType === 'fire') || (sfx === w.sfx && w.type === 'fire');
       const style = tracerStyleFor(sfx, fire ? 'fire' : sfx === w.sfx ? w.type : undefined, w.id);
@@ -2371,9 +2385,10 @@ export class WorldScene extends Phaser.Scene {
     } else if (fx === 'heal') {
       SoundManager.sfx('heal');
     }
-    if (u) this.pose(u, 'attack');
+    if (u) this.pose(u, 'cast');
+    await this.wait(190); // uniesienie przedmiotu / gest
     this.showEvents(r);
-    await this.wait(300);
+    await this.wait(330);
     if (u) this.rest(u);
   }
 
@@ -2387,10 +2402,10 @@ export class WorldScene extends Phaser.Scene {
       const a = u.actor;
       if (ev.type === 'damage' && ev.amount > 0) {
         const crit = ev.degree === 3;
-        this.pose(u, 'hurt');
+        if (a.state === 'up') this.pose(u, 'hurt');
         u.sprite.setTint(0xff6a5a);
         this.time.delayedCall(110, () => this.tintFor(u));
-        this.time.delayedCall(280, () => this.rest(u));
+        this.time.delayedCall(300, () => this.rest(u));
         if (u.sprite.visible) this.bloodBurst(a, x, y - 12);
         this.floatAbove(a, crit ? `-${ev.amount}!` : `-${ev.amount}`, a.side === 'pc' ? COLOR_HOSTILE : crit ? C_CRIT : COLOR_OK);
         if (a.side === 'pc') this.cameras.main.shake(110, 0.005);
@@ -2419,7 +2434,7 @@ export class WorldScene extends Phaser.Scene {
 
   /** Kolor sprite'a zależny od stanu (powalony / martwy). */
   private tintFor(u: Unit): void {
-    if (u.actor.state === 'dead') u.sprite.setTint(0x6a4a4a);
+    if (u.actor.state === 'dead') u.sprite.setTint(0xa09090);
     else if (u.actor.state === 'down') u.sprite.setTint(0x9a7a7a);
     else u.sprite.clearTint();
   }
@@ -2431,9 +2446,11 @@ export class WorldScene extends Phaser.Scene {
     // upadek wzbija pył
     if ((to === 'dead' || to === 'down') && u.sprite.visible) this.fx.dust(u.sprite.x, u.sprite.y, 0xb09a78, 6, 11);
     if (to === 'dead') {
-      this.pose(u, 'hurt');
-      this.tintFor(u);
-      this.tweens.add({ targets: [u.sprite, u.shadow], alpha: a.side === 'enemy' ? 0.35 : 0.5, duration: 500 });
+      // upadek i zwłoki zostające na polu (maszyny: zwarcie i wrak - klatki die w iso/UnitArt, CreatureArt)
+      if (from === 'down') this.lie(u);
+      else this.pose(u, 'die');
+      this.tweens.add({ targets: u.shadow, alpha: 0.3, duration: 500 });
+      this.time.delayedCall(560, () => this.tintFor(u));
       if (a.side === 'enemy') {
         const fac = a.ch.faction ?? enemyDef(a.ch.templateId)?.faction;
         if (fac === 'machine') {
@@ -2446,8 +2463,8 @@ export class WorldScene extends Phaser.Scene {
         SoundManager.sfx('death');
       }
     } else if (to === 'down') {
-      this.pose(u, 'hurt');
-      this.tintFor(u);
+      this.pose(u, 'down');
+      this.time.delayedCall(420, () => this.tintFor(u));
       this.floatAbove(a, 'POWALONY!', COLOR_HOSTILE);
       SoundManager.sfx('scream');
     } else if (from !== 'up') {
@@ -2896,9 +2913,10 @@ export class WorldScene extends Phaser.Scene {
         targets: a.sprite,
         x: pa.x + (pb.x - pa.x) * 0.35,
         y: pa.y + (pb.y - pa.y) * 0.35,
+        delay: 120, // zamach (klatki attack0-1), uderzenie w klatce attack2
         duration: 80,
         yoyo: true,
-        hold: 40,
+        hold: 60,
         ease: 'Quad.easeOut',
         onYoyo: once,
         onComplete: () => resolve(),
