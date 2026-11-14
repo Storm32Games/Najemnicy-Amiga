@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { type PixelText, pixelText } from './ui/BitmapFont';
+import { D20_SETTLE, D20_SIZE, D20_TUMBLE, paintD20Sheet } from './ui/D20Art';
 import { SoundManager } from '../audio/SoundManager';
 import {
   type ActionButton,
@@ -23,8 +24,8 @@ import {
 } from '../core/HudState';
 import type { Character } from '../core/rules/types';
 import { TurnPhase } from '../core/TurnManager';
-import { BASE_H, BASE_W, PAL, button as kitButton, fitCamera, label } from './ui/Kit';
-import { type Window as UiWindow, abilityIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
+import { BASE_H, BASE_W, PAL, ZOOM, button as kitButton, fitCamera, label } from './ui/Kit';
+import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
 
 // HUD misji - port Oldgame/src/mission/hud.js (DOM) do Phasera, w stylu terminala CRT.
 //   lewy górny:   karta drużyny (portret-skrót, PW, AP, stany)       <- H.party_
@@ -403,7 +404,7 @@ export class UIScene extends Phaser.Scene {
       const tone = HP_TONE[hpTone(ch)];
       g.lineStyle(1, tone, 1).strokeRect(3, y + 3, 16, 16);
       g.fillStyle(tone, 0.18).fillRect(4, y + 4, 14, 14);
-      const mono = this.add.image(4, y + 4, portraitKey(this, ch)).setOrigin(0).setDisplaySize(14, 14);
+      const mono = this.add.image(4, y + 4, portraitKey(this, ch, 14 * ZOOM)).setOrigin(0).setDisplaySize(14, 14);
 
       const name = this.text(23, y + 2, cut(ch.name, 18), C.white);
       const sub = this.text(23, y + 10, cut(classLabel(ch), 22), C.grey);
@@ -634,48 +635,110 @@ export class UIScene extends Phaser.Scene {
 
   // ================================================================== rzut k20 (port G.showD20Roll)
 
+  /**
+   * Pikselowa kość k20 (ui/D20Art): toczy się z odbiciami, osiada ścianką do gracza i pokazuje wynik,
+   * potem linia "14 + 7 = 21 vs KP 18 — Sukces" w kolorze stopnia. Naturalne 20 / 1 dostają rozbłysk.
+   * Kontrakt bez zmian: hud.roll + r.duration (tempo x2 / x4 skraca lub pomija pokaz w HudState.showRoll).
+   */
   private showRoll(): void {
     const r = this.hud.roll;
     if (!r) return;
     this.rollBox?.destroy();
-    const W = 150, H = 40;
-    const box = this.add.container(BASE_W / 2 - W / 2, Math.round(BASE_H * 0.2)).setDepth(900);
+    if (!this.textures.exists('d20')) {
+      const sh = paintD20Sheet();
+      const tex = this.textures.addCanvas('d20', sh.pc.toCanvas());
+      if (tex) for (const f of sh.frames) tex.add(f.name, 0, f.x, f.y, f.w, f.h);
+      this.registry.set('d20face', sh.face);
+    }
+    const face = (this.registry.get('d20face') as { x: number; y: number } | undefined) ?? { x: D20_SIZE / 2, y: D20_SIZE / 2 };
+    const S = D20_SIZE;
+    const cx = Math.round(BASE_W / 2), top = Math.round(BASE_H * 0.17);
+    const box = this.add.container(cx, top).setDepth(900);
     this.rollBox = box;
-    const good = r.mine ? r.degree >= 2 : r.degree < 2;
-    const col = r.degree === 3 ? C.amber : r.degree === 0 ? C.red : good ? C.green : C.red;
-    const bg = this.add.rectangle(0, 0, W, H, C.bg, 0.94).setOrigin(0).setStrokeStyle(1, C.amber);
-    const lab = this.text(W / 2, 2, cut(r.label, 30), C.amber, 7).setOrigin(0.5, 0);
-    const die = this.add.graphics();
-    die.lineStyle(1, C.white, 1).strokeRect(6, 12, 22, 22);
-    const num = this.text(17, 16, '?', C.white, 10).setOrigin(0.5, 0);
-    const line = this.text(34, 13, '', C.grey, 7);
-    const deg = this.text(34, 23, '', col, 8);
-    box.add([bg, lab, die, num, line, deg, this.scanlines(W, H)]);
+    // kolory stopni jak w Oldgame/src/gfx/dice.js (DEG_COL); dla rzutów wroga sukces = zagrożenie
+    const DEG_COL = [0xff5a45, 0xb0a49a, 0x8fe06a, 0xffd24a];
+    const col = r.mine ? DEG_COL[r.degree] ?? C.white : r.degree >= 2 ? (r.degree === 3 ? 0xff5a45 : 0xffa040) : 0x9ab8a0;
+    const nat = r.d20 === 20 ? 1 : r.d20 === 1 ? -1 : 0;
+    const dieY = 12 + S / 2;
+
+    const lab = this.text(0, 0, cut(r.label, 34), C.amber, 7).setOrigin(0.5, 0);
+    const shadow = this.add.ellipse(0, dieY + S / 2 - 1, 30, 8, 0x000000, 0.55);
+    const burst = this.add.graphics().setPosition(0, dieY).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+    const die = this.add.image(0, dieY, 'd20', 't0');
+    const num = this.text(0, 0, String(r.d20), nat > 0 ? 0xfff0a0 : nat < 0 ? 0xffb0a0 : 0xfff6e0, 11).setOrigin(0.5, 0.5).setVisible(false);
+    // tabliczka z wynikiem
+    const sign = r.mod >= 0 ? '+' : '-';
+    const lineStr = `${r.d20} ${sign} ${Math.abs(r.mod)} = ${r.total} vs KP ${r.dc} — ${degreeName(r.degree)}`;
+    const line = this.text(0, 0, lineStr, col, 8).setOrigin(0.5, 0);
+    const pw = Math.ceil(Math.max(line.width, lab.width)) + 14, ph = 13;
+    const py = dieY + S / 2 + 5;
+    const plate = this.add.container(0, py).setAlpha(0);
+    const pbg = this.add.rectangle(0, 0, pw, ph, 0x0d0a09, 0.94).setOrigin(0.5, 0).setStrokeStyle(1, col);
+    line.setPosition(0, 3);
+    plate.add([pbg, line]);
+    box.add([shadow, burst, die, num, lab, plate]);
     box.setAlpha(0);
-    this.tweens.add({ targets: box, alpha: 1, duration: 80 });
-    const spin = Math.round(r.duration * 0.4);
-    const ticks = Math.max(1, Math.floor(spin / 45));
-    let n = 0;
+    this.tweens.add({ targets: box, alpha: 1, duration: 70 });
     SoundManager.sfx('dice', { vol: 0.6 });
-    const ev = this.time.addEvent({
-      delay: 45,
-      repeat: ticks - 1,
-      callback: () => {
-        n++;
-        if (n < ticks) {
-          num.setText(String(1 + Math.floor(Math.random() * 20)));
-          return;
-        }
-        num.setText(String(r.d20));
-        this.recolor(num, r.d20 === 20 ? C.amber : r.d20 === 1 ? C.red : C.white);
-        line.setText(rollLine(r));
-        deg.setText(degreeName(r.degree).toUpperCase());
+
+    // toczenie: 62% czasu pokazu przypada na lot kości przy x1 (~0.55 s), reszta na odczyt
+    const roll = Math.max(160, Math.round(Math.min(620, r.duration * 0.52)));
+    const settle = Math.round(roll * 0.22);
+    const dirX = Math.random() < 0.5 ? -1 : 1;
+    const st = { k: 0 };
+    const tumble = this.tweens.add({
+      targets: st, k: 1, duration: roll, ease: 'Linear',
+      onUpdate: () => {
+        const k = st.k;
+        // klatki zwalniają pod koniec (ease-out), kość skacze coraz niżej i dojeżdża do środka
+        const spin = 1 - Math.pow(1 - k, 1.7);
+        die.setFrame(`t${Math.floor(spin * D20_TUMBLE * 1.6) % D20_TUMBLE}`);
+        const hop = Math.abs(Math.sin(k * Math.PI * 2.5)) * (1 - k) * 16;
+        die.setPosition(Math.round(dirX * (1 - k) * (1 - k) * 46), Math.round(dieY - hop));
+        shadow.setPosition(die.x, dieY + S / 2 - 1).setScale(1 - hop / 40);
+      },
+      onComplete: () => {
+        die.setPosition(0, dieY);
+        shadow.setPosition(0, dieY + S / 2 - 1).setScale(1);
+        let f = 0;
+        const step = (): void => {
+          if (!die.active) return;
+          if (f < D20_SETTLE) {
+            die.setFrame(`s${f++}`);
+            this.time.delayedCall(Math.max(16, settle / D20_SETTLE), step);
+            return;
+          }
+          die.setFrame('end');
+          // liczba na ściance frontowej: wyskok 2x -> 1x
+          num.setPosition(Math.round(-S / 2 + face.x), Math.round(dieY - S / 2 + face.y) + 1).setVisible(true).setScale(2);
+          this.time.delayedCall(90, () => num.active && num.setScale(1));
+          this.tweens.add({ targets: die, scale: { from: 1.12, to: 1 }, duration: 110, ease: 'Quad.easeOut' });
+          this.tweens.add({ targets: plate, alpha: 1, y: { from: py + 3, to: py }, duration: 90 });
+          if (nat !== 0) {
+            // naturalne 20: złote promienie; naturalne 1: czerwony błysk i drżenie
+            const c = nat > 0 ? 0xffd24a : 0xff4030;
+            burst.clear();
+            for (let i = 0; i < 12; i++) {
+              const a = (i / 12) * Math.PI * 2, r0 = S / 2 - 4, r1 = S / 2 + (i % 2 ? 9 : 16);
+              burst.fillStyle(c, i % 2 ? 0.5 : 0.85);
+              burst.fillTriangle(Math.cos(a - 0.09) * r0, Math.sin(a - 0.09) * r0, Math.cos(a + 0.09) * r0, Math.sin(a + 0.09) * r0, Math.cos(a) * r1, Math.sin(a) * r1);
+            }
+            burst.setAlpha(1).setScale(0.7);
+            this.tweens.add({ targets: burst, scale: 1.15, angle: nat > 0 ? 25 : 0, alpha: { from: 1, to: nat > 0 ? 0.45 : 0 }, duration: 320, ease: 'Quad.easeOut' });
+            if (nat > 0) die.setTint(0xfff0c0);
+            else {
+              die.setTint(0xc08080);
+              this.tweens.add({ targets: [die, num], x: { from: -2, to: 2 }, duration: 40, yoyo: true, repeat: 2, onComplete: () => { die.x = 0; num.x = Math.round(-S / 2 + face.x); } });
+            }
+          }
+        };
+        step();
       },
     });
     this.tweens.add({
       targets: box, alpha: 0, delay: r.duration - 150, duration: 150,
       onComplete: () => {
-        ev.remove();
+        tumble.remove();
         box.destroy();
         if (this.rollBox === box) this.rollBox = null;
       },
@@ -976,7 +1039,7 @@ export class UIScene extends Phaser.Scene {
       const label = ab.name + (ab.uses !== null ? ` (${ab.uses})` : '');
       const col = ab.off ? C.grey : C.green;
       const cost = ab.cost === null ? 'reakcja' : ab.cost === 0 ? 'darmowa' : '◆'.repeat(Math.min(3, ab.cost));
-      items.push(hit, this.text(6, y, cut(label, 28), col), this.text(SHEET_W - 4, y, cost, ab.off ? C.greyDim : C.amber).setOrigin(1, 0));
+      items.push(hit, abilityIconImage(this, 4, y - 1, ab.id, 9).setAlpha(ab.off ? 0.45 : 1), this.text(16, y, cut(label, 26), col), this.text(SHEET_W - 4, y, cost, ab.off ? C.greyDim : C.amber).setOrigin(1, 0));
       hit.on('pointerover', () => {
         hit.setFillStyle(C.amber, 0.15);
         this.sheetFooter?.setText(`${ab.name}${ab.cost !== null ? ` [${ab.cost} akc.]` : ''}: ${ab.desc}`);
@@ -1003,9 +1066,13 @@ export class UIScene extends Phaser.Scene {
     const hit = this.add.rectangle(2, y - 1, SHEET_W - 4, LH + 1, C.amber, 0).setOrigin(0).setInteractive({ useHandCursor: row.usable });
     out.push(hit);
     const color = row.inst ? (row.usable ? C.green : C.white) : C.grey;
-    const label = (key ? `${key} ` : '  ') + row.name + (row.qty > 1 ? ` x${row.qty}` : '');
+    const label = row.name + (row.qty > 1 ? ` x${row.qty}` : '');
     if (row.slot) out.push(this.text(5, y, cut(row.slot, 8), C.grey));
-    out.push(this.text(row.slot ? 50 : 5, y, cut(label, row.slot ? 18 : 24), color));
+    else if (key) out.push(this.text(5, y, String(key), C.amber));
+    // ikona przedmiotu (malowana natywnie w pikselach ekranu - Widgets.itemIconImage)
+    const ix = row.slot ? 49 : 12;
+    if (row.inst) out.push(itemIconImage(this, ix, y - 1, row.inst.id, 9));
+    out.push(this.text(ix + 11, y, cut(label, row.slot ? 16 : 22), color));
     if (row.statShort) out.push(this.text(SHEET_W - 4, y, cut(row.statShort, 11), C.grey).setOrigin(1, 0));
 
     hit.on('pointerover', () => {

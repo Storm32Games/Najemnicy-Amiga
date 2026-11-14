@@ -29,6 +29,9 @@ import {
   paintVignette, paintWall,
 } from './iso/IsoArt';
 import { PixelCanvas, hash2, rng } from './iso/Pixel';
+import { Atmosphere, type MoodName, type WorldLight, asMood } from './fx/Atmosphere';
+import { WorldFx, tracerStyleFor } from './fx/WorldFx';
+import { paintScorch } from './iso/FxArt';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, SX0, SY0, ZOOM, label } from './ui/Kit';
 import { LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
@@ -244,7 +247,18 @@ export class WorldScene extends Phaser.Scene {
   private cursor!: Phaser.GameObjects.Image;
   private pathDots: Phaser.GameObjects.Image[] = [];
   private costLabel: Phaser.GameObjects.Image | null = null;
-  private dust: { img: Phaser.GameObjects.Image; vx: number; vy: number; ph: number }[] = [];
+  /** Efekty walki (src/scenes/fx/WorldFx) i nastrój misji (src/scenes/fx/Atmosphere). */
+  private fx!: WorldFx;
+  private atmo: Atmosphere | null = null;
+  private mood: MoodName = 'dusk';
+  /** Przypalenia po wybuchach (odtwarzane po obrocie widoku). */
+  private scorches: { gx: number; gy: number; seed: number }[] = [];
+  private burning = new Map<Actor, { setPosition(x: number, y: number): void; destroy(): void }>();
+  /** Skażone pola i beczki (licznik Geigera). */
+  private toxicCells: GridPos[] = [];
+  private geigerAt = 0;
+  private geigerIdle = 4;
+  private objDone = false;
   private panKeys: Record<string, Phaser.Input.Keyboard.Key> = {};
 
   /** Sygnały z logiki czekające na animację (odtwarzane po kolei w flush()). */
@@ -281,8 +295,6 @@ export class WorldScene extends Phaser.Scene {
   private extract: { caps: Phaser.GameObjects.Image[]; posts: Phaser.GameObjects.Image[]; beacon: Phaser.GameObjects.Container } | null = null;
   private floatStack = new Map<Actor, { t: number; n: number }>();
   private drag: { x: number; y: number; moved: boolean; btn: number } | null = null;
-  /** Mnożnik prędkości pyłu (burza). */
-  private stormy = 1;
 
   private get combat(): Combat {
     return this.mission.combat;
@@ -310,7 +322,11 @@ export class WorldScene extends Phaser.Scene {
     this.glows = [];
     this.pathDots = [];
     this.costLabel = null;
-    this.dust = [];
+    this.scorches = [];
+    this.burning = new Map();
+    this.geigerAt = 0;
+    this.objDone = false;
+    this.atmo = null;
     this.revealing = new Set();
     this.sparkles = new Map();
     this.units = new Map();
@@ -343,12 +359,17 @@ export class WorldScene extends Phaser.Scene {
       party = campaign.state.party;
       contract = this.job;
       this.biome = this.job.biome;
+      // bez nastroju w zleceniu: zmierzch (Oldgame/src/scenes/mission.js:79)
+      this.mood = asMood(this.job.mood);
     } else {
       this.job = null;
       const params = new URLSearchParams(window.location.search);
       const biomeParam = params.get('biome');
       this.biome = biomeParam === 'wastes' || biomeParam === 'industrial' || biomeParam === 'bunker' ? biomeParam : 'ruins';
       const seed = params.get('seed') ?? `demo-${Math.floor(Math.random() * 1e6)}`;
+      // demo: ?mood=day|dusk|night|storm|toxic  &enemies=drone,raider_burner,...
+      this.mood = asMood(params.get('mood'));
+      const foes = (params.get('enemies') ?? '').split(',').filter((id) => !!enemyDef(id as EnemyId)) as EnemyId[];
       party = PARTY.map((p) => {
         const ch = createCharacter({ name: p.name, classId: p.classId, ancestry: 'human' });
         ch.nameAcc = p.acc;
@@ -358,7 +379,7 @@ export class WorldScene extends Phaser.Scene {
       const tp = params.get('type');
       const type = tp === 'retrieve' || tp === 'rescue' || tp === 'hunt' ? tp : 'eliminate';
       const titles = { eliminate: 'Oczyść teren', retrieve: 'Odzyskaj ładunek', rescue: 'Uwolnij jeńca', hunt: 'Polowanie' } as const;
-      contract = { id: seed, title: titles[type], type, level: 1, biome: this.biome, enemies: ENEMIES, objective: { type, itemId: type === 'retrieve' ? 'radio_part' : null } };
+      contract = { id: seed, title: titles[type], type, level: 1, biome: this.biome, enemies: foes.length ? foes : ENEMIES, objective: { type, itemId: type === 'retrieve' ? 'radio_part' : null } };
     }
     this.mission = new Mission(contract, party);
     this.map = this.mission.map;
@@ -385,6 +406,10 @@ export class WorldScene extends Phaser.Scene {
     VIEW.h = this.map.height;
     this.cameras.main.setBackgroundColor(BIOME_STYLE[this.biome].bg);
     this.createSharedTextures();
+    this.fx = new WorldFx(this, { ground: D_UNIT_SHADOW + 0.6, air: D_TEXT - 2, smoke: D_TEXT - 4 });
+    this.toxicCells = [];
+    this.map.floor.forEach((f, i) => { if (f === 'toxic') this.toxicCells.push({ gx: i % this.map.width, gy: Math.floor(i / this.map.width) }); });
+    for (const p of [...this.map.props, ...this.map.deco, ...this.map.decor]) if (p.type === 'barrel_toxic') this.toxicCells.push({ gx: p.gx, gy: p.gy });
     this.buildWorld();
     for (const cell of this.cells) for (const img of cell.imgs) img.setVisible(false); // wszystko zaczyna w mgle
     this.createUnits();
@@ -464,7 +489,8 @@ export class WorldScene extends Phaser.Scene {
     this.refreshOverlay();
     try {
       SoundManager.music(BIOME_MUSIC[this.biome] ?? 'ruins');
-      SoundManager.ambience(this.biome === 'bunker' ? 'ruins' : 'wind');
+      // tło: burza zawsze wyje wiatrem; ruiny / przemysł / bunkier - 'ruins', pustkowia - 'wind'
+      SoundManager.ambience(this.mood === 'storm' || this.biome === 'wastes' ? 'wind' : 'ruins');
     } catch {
       // dźwięk opcjonalny
     }
@@ -606,6 +632,7 @@ export class WorldScene extends Phaser.Scene {
     plain('fx_px', px);
     const flames = paintFlames();
     this.art.sheet('fx_flames', flames.pc, flames.frames);
+    WorldFx.textures(this.art);
     const sparkle = paintSparkle();
     this.art.sheet('fx_sparkle', sparkle.pc, sparkle.frames);
     if (!this.anims.exists('flames')) {
@@ -1032,6 +1059,11 @@ export class WorldScene extends Phaser.Scene {
     u.sprite.setDepth(Math.max(objDepth(from.gx, from.gy, L_UNIT), objDepth(to.gx, to.gy, L_UNIT)));
     u.pos = { ...to };
     if (u.sprite.visible && (u === this.focus || u.actor.side !== 'pc')) SoundManager.sfx('step', { vol: 0.35 });
+    if (u.sprite.visible) {
+      // pył spod butów (co drugi krok; w biegu walki każdy)
+      if ((to.gx + to.gy) % 2 === 0 || this.hud.inCombat) this.fx.dust(u.sprite.x, u.sprite.y, this.biome === 'bunker' ? 0x8a9098 : 0xb09a78, 2, 5);
+      if (u.actor.side === 'pc') this.geiger(to);
+    }
     const { x, y } = tileCenter(to);
     return new Promise((resolve) =>
       this.tweens.add({
@@ -1070,24 +1102,13 @@ export class WorldScene extends Phaser.Scene {
     this.art.get(`fx_vignette_${width}x${height}`, () => ({ pc: paintVignette(width, height), ax: 0, ay: 0 }));
     const vignette = this.add.image(0, 0, `fx_vignette_${width}x${height}`).setOrigin(0);
 
-    // pora dnia / pogoda ze zlecenia: barwna zasłona na cały ekran (Oldgame/src/gfx/atmosphere.js w uproszczeniu)
-    const MOODS: Record<string, [number, number]> = { dusk: [0xffb878, 0.3], night: [0x5868a8, 0.55], toxic: [0x9ad060, 0.4], storm: [0xd0a060, 0.4] };
-    const mood = MOODS[this.job?.mood ?? 'day'];
-    if (mood) this.overlay.add(this.add.rectangle(0, 0, width, height, mood[0], mood[1]).setOrigin(0).setBlendMode(Phaser.BlendModes.MULTIPLY));
-    this.stormy = this.job?.mood === 'storm' ? 6 : this.job?.mood === 'toxic' ? 0.5 : 1;
-
-    // unoszący się pył (przestrzeń ekranu)
-    const R = rng(this.map.seed);
-    const dustColor = this.job?.mood === 'toxic' ? 0xa8e060 : this.biome === 'bunker' ? 0x9aa4b0 : this.biome === 'wastes' ? 0xd8b880 : 0xc8b89a;
-    for (let i = 0; i < (this.stormy > 1 ? 110 : 46); i++) {
-      const img = this.add
-        .image(R() * width, R() * height, 'fx_px')
-        .setTint(dustColor)
-        .setAlpha(0.12 + R() * 0.3)
-        .setScale(R() < 0.8 ? 0.5 : 1);
-      this.overlay.add(img);
-      this.dust.push({ img, vx: 3 + R() * 6, vy: 1 + R() * 3, ph: R() * 10 });
-    }
+    // pora dnia / pogoda ze zlecenia (port Oldgame/src/gfx/atmosphere.js): mapa światła, mgły, deszcz, zarodniki
+    const dustColor = this.biome === 'bunker' ? 0x9aa4b0 : this.biome === 'wastes' ? 0xd8b880 : 0xc8b89a;
+    this.atmo = new Atmosphere(this, this.overlay, this.mood, {
+      art: this.art, seed: this.map.seed, width, height, dustColor, lamps: () => this.lampLights(), fx: this.fx.lights,
+    });
+    // zmierzch: długie cienie postaci (niskie słońce)
+    if (this.mood === 'dusk') for (const u of this.units.values()) u.shadow.setOrigin(0.24, 0.5).setScale(1.9, 1);
     this.overlay.add(vignette);
   }
 
@@ -1169,6 +1190,7 @@ export class WorldScene extends Phaser.Scene {
 
     VIEW.r = (VIEW.r + dir + 4) % 4;
     this.buildWorld();
+    for (const sc of this.scorches) this.placeScorch(sc);
 
     // skrzynie (otwarte / bez błysku), znaleziska, zabrany cel
     for (const [i, c] of this.crates) {
@@ -1280,14 +1302,52 @@ export class WorldScene extends Phaser.Scene {
     if (!this.following) this.focusOn(this.focus);
   }
 
+  /** Efekty, nastrój, płonące postacie, tło licznika Geigera. */
   private updateDust(dt: number): void {
-    for (const d of this.dust) {
-      d.ph += dt;
-      d.img.x += (d.vx * this.stormy + Math.sin(d.ph * 0.7) * 4) * dt;
-      d.img.y += (d.vy + Math.cos(d.ph * 0.9) * 2) * dt;
-      if (d.img.x > BASE_W + 2) d.img.x = -2;
-      if (d.img.y > BASE_H + 2) d.img.y = -2;
+    this.fx.update(dt);
+    this.atmo?.update(dt);
+    for (const u of this.units.values()) {
+      const a = u.actor;
+      const on = a.state !== 'dead' && u.sprite.visible && hasCondition(a.ch, 'burning');
+      const h = this.burning.get(a);
+      if (on) {
+        if (h) h.setPosition(u.sprite.x, u.sprite.y - 3);
+        else this.burning.set(a, this.fx.fire(u.sprite.x, u.sprite.y - 3, Infinity, 0.8));
+      } else if (h) {
+        h.destroy();
+        this.burning.delete(a);
+      }
     }
+    if (this.mood === 'toxic' && !this.over) {
+      this.geigerIdle -= dt;
+      if (this.geigerIdle <= 0) {
+        this.geigerIdle = 5 + Math.random() * 7;
+        SoundManager.sfx('geiger', { vol: 0.25 });
+      }
+    }
+  }
+
+  /** Światła mapy oświetlenia: lampy / ogniska / terminale (widoczne poświaty) + latarki drużyny. */
+  private lampLights(): WorldLight[] {
+    const out: WorldLight[] = [];
+    for (const l of this.glows) {
+      if (!l.img.visible) continue;
+      const big = l.img.texture.key === 'fx_glow';
+      out.push({ x: l.img.x, y: l.img.y, color: l.img.tintTopLeft, r: big ? 78 * l.img.scaleX : 18, a: Math.min(1, l.img.alpha * 1.4) });
+    }
+    for (const u of this.units.values())
+      if (u.actor.side === 'pc' && u.actor.state !== 'dead') out.push({ x: u.sprite.x, y: u.sprite.y - 4, color: 0xfff0d8, r: 52, a: 0.62 });
+    return out;
+  }
+
+  /** Licznik Geigera: trzeszczy, gdy najemnik idzie przy skażeniu (albo w toksycznej mgle). */
+  private geiger(at: GridPos): void {
+    if (this.time.now - this.geigerAt < 450) return;
+    let best = 99;
+    for (const c of this.toxicCells) best = Math.min(best, cheb(at, c));
+    if (best > 3 && !(this.mood === 'toxic' && Math.random() < 0.3)) return;
+    this.geigerAt = this.time.now;
+    SoundManager.sfx('geiger', { vol: best <= 1 ? 0.7 : best <= 3 ? 0.45 : 0.25 });
   }
 
   private updateLights(): void {
@@ -1503,6 +1563,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.extractAsked || this.over) return;
     this.extractAsked = true;
     this.hud.setBusy(true);
+    SoundManager.sfx('radio', { vol: 0.6 });
     const v = await this.hud.ask({
       title: 'Strefa ewakuacji',
       body: 'Cel zlecenia wykonany, drużyna jest w strefie ewakuacji. Opuścić teren?',
@@ -2043,10 +2104,11 @@ export class WorldScene extends Phaser.Scene {
         const c = def?.type === 'consumable' ? def.consumable : null;
         const foe = s.targets.find((x) => x.side !== s.actor.side);
         if (s.result.d20) await this.dice(s.result.d20, def?.name ?? 'Przedmiot', s.actor);
-        if (c?.target === 'area' && s.cell) await this.animateBlast(s.actor, s.cell, s.result);
+        if (c?.target === 'area' && s.cell)
+          await this.animateBlast(s.actor, s.cell, s.result, c.effect === 'smoke' ? 'smoke' : c.dmgType === 'fire' ? 'fire' : c.dmgType === 'elec' ? 'elec' : 'frag', c.radius ?? 1.5);
         else if (c?.target === 'enemy' && foe) await this.animateAttack(s.actor, foe, 'shot', 'explosion', s.result);
         else {
-          if (c?.effect === 'buff' || c?.effect === 'smoke') for (const x of s.targets) this.sparks(x, 0x7fb8ff);
+          if (c?.effect === 'buff' || c?.effect === 'smoke') for (const x of s.targets) this.sparks(x, 0xffd060);
           SoundManager.sfx('heal');
           this.showEvents(s.result);
           await this.wait(240);
@@ -2069,6 +2131,7 @@ export class WorldScene extends Phaser.Scene {
         if (u) {
           this.setUnitVisible(u, true);
           this.floatAbove(s.by, '!', COLOR_HOSTILE);
+          this.growl(s.by, 0.6);
         }
         break;
       }
@@ -2095,6 +2158,10 @@ export class WorldScene extends Phaser.Scene {
         this.onInteract(s.thing, s.by);
         break;
       case 'objective':
+        if (this.mission.objectiveDone() && !this.objDone) {
+          this.objDone = true;
+          SoundManager.sfx('radio', { vol: 0.7 });
+        }
         this.hud.setObjectives(this.mission.contract.title ?? 'Zlecenie', s.lines.map((l) => ({ text: l.text, done: l.done, go: l.go, dim: l.tone === 'dim' })));
         break;
       case 'finish':
@@ -2130,8 +2197,8 @@ export class WorldScene extends Phaser.Scene {
       SoundManager.sfx('explosion');
       this.cameras.main.shake(140, 0.007);
       const c = tileCenter(th);
-      const flash = this.add.image(c.x, c.y, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffa040).setDepth(D_TEXT - 3).setScale(0.4);
-      this.tweens.add({ targets: flash, alpha: 0, scale: 1, duration: 320, onComplete: () => flash.destroy() });
+      this.fx.explosion(c.x, c.y, 0.7);
+      this.addScorch(th);
       this.floatAbove(by, `-${trap}`, COLOR_HOSTILE);
       const u = this.units.get(by);
       if (u) {
@@ -2205,29 +2272,76 @@ export class WorldScene extends Phaser.Scene {
     if (!a || !d) return;
     this.face(a, { gx: d.pos.gx - a.pos.gx, gy: d.pos.gy - a.pos.gy });
     if (isAttackSfx(sfx)) SoundManager.sfx(sfx);
+    if (kind === 'melee') this.growl(att, 0.45);
     const show = (): void => this.showEvents(r);
     if (kind === 'shot') {
       this.pose(a, 'attack');
-      await this.tracer(a.sprite.x, a.sprite.y - 14, d.sprite.x, d.sprite.y - 12, sfx === 'explosion' ? 0xffd060 : 0xfff0a0);
+      const w = normWeapon(getWeapon(att.ch));
+      const fire = r.events.some((e) => e.type === 'damage' && e.dmgType === 'fire') || (sfx === w.sfx && w.type === 'fire');
+      const style = tracerStyleFor(sfx, fire ? 'fire' : sfx === w.sfx ? w.type : undefined, w.id);
+      // wylot lufy: przed postacią w stronę celu
+      const dx = d.sprite.x - a.sprite.x, dy = d.sprite.y - a.sprite.y;
+      const mx = a.sprite.x + Math.sign(dx || 1) * 7, my = a.sprite.y - 13;
+      const tx = d.sprite.x, ty = d.sprite.y - 12;
+      const seen = a.sprite.visible || d.sprite.visible;
+      if (seen) {
+        if (style !== 'lob' && style !== 'flame') this.fx.muzzle(mx, my, dx, dy, style === 'laser' ? 0xff4040 : style === 'plasma' ? 0x46f2ff : 0xffc060);
+        await this.fx.tracer(mx, my, tx, ty, style);
+        if (style === 'lob') {
+          this.fx.explosion(d.sprite.x, d.sprite.y, 0.8, fire ? 'fire' : 'frag');
+          this.cameras.main.shake(120, 0.006);
+        } else if (r.events.some((e) => e.type === 'miss')) this.fx.ricochet(d.sprite.x + (Math.random() - 0.5) * 16, d.sprite.y + 2 + Math.random() * 5);
+      } else await this.wait(120);
       show();
     } else await this.lunge(a, d, show);
     this.rest(a);
     await this.wait(300);
   }
 
+  /** Warczenie bestii / mutantów (dostrzeżenie drużyny, atak). */
+  private growl(a: Actor, vol: number): void {
+    if (a.side !== 'enemy') return;
+    const fac = a.ch.faction ?? enemyDef(a.ch.templateId)?.faction;
+    if (fac === 'beast') SoundManager.sfx('growl', { vol, pitch: 1.1 });
+    else if (fac === 'mutant') SoundManager.sfx('growl', { vol, pitch: 0.75 });
+  }
+
+  /** Trwałe przypalenie podłogi po wybuchu. */
+  private addScorch(cell: GridPos): void {
+    if (!this.inMap(cell.gx, cell.gy) || this.scorches.some((s) => s.gx === cell.gx && s.gy === cell.gy)) return;
+    const sc = { gx: cell.gx, gy: cell.gy, seed: this.scorches.length % 4 };
+    this.scorches.push(sc);
+    this.placeScorch(sc);
+  }
+
+  private placeScorch(sc: { gx: number; gy: number; seed: number }): void {
+    const k = `fxa_scorch_${sc.seed}`;
+    this.art.get(k, () => ({ pc: paintScorch(sc.seed * 53 + 11), ax: 22, ay: 3 }));
+    const img = this.place(sc.gx, sc.gy, k, 22, 3, D_DECAL + 0.5);
+    const cell = this.cells[this.idx(sc.gx, sc.gy)];
+    img.setVisible(cell.state !== 0).setAlpha(cell.reveal || 1);
+    if (cell.state === 1) img.setTint(BIOME_STYLE[this.biome].memory);
+  }
+
   /** Granat / wybuch w polu `cell`. */
-  private async animateBlast(att: Actor, cell: GridPos, r: ActionResult): Promise<void> {
+  private async animateBlast(att: Actor, cell: GridPos, r: ActionResult, kind: 'frag' | 'fire' | 'elec' | 'smoke' = 'frag', radius = 1.5): Promise<void> {
     const a = this.units.get(att);
     const c = tileCenter(cell);
     if (a) {
       this.face(a, { gx: cell.gx - a.pos.gx, gy: cell.gy - a.pos.gy });
       this.pose(a, 'attack');
-      await this.tracer(a.sprite.x, a.sprite.y - 14, c.x, c.y - 4, 0xffd060);
+      await this.fx.tracer(a.sprite.x, a.sprite.y - 14, c.x, c.y - 2, 'lob');
     }
-    SoundManager.sfx('explosion');
-    this.cameras.main.shake(160, 0.009);
-    const flash = this.add.image(c.x, c.y, 'fx_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffa040).setDepth(D_TEXT - 3).setScale(0.6);
-    this.tweens.add({ targets: flash, alpha: 0, scale: 1.4, duration: 380, onComplete: () => flash.destroy() });
+    if (kind === 'smoke') {
+      // granat dymny: syk i chmura zalegająca nad obszarem
+      SoundManager.sfx('explosion', { vol: 0.22, pitch: 1.9 });
+      this.fx.smokeCloud(c.x, c.y, (radius + 0.5) * 22, 7000);
+    } else {
+      SoundManager.sfx('explosion');
+      this.cameras.main.shake(kind === 'elec' ? 90 : 180, kind === 'elec' ? 0.004 : 0.01);
+      this.fx.explosion(c.x, c.y, radius, kind);
+      if (kind !== 'elec') this.addScorch(cell);
+    }
     this.showEvents(r);
     if (a) this.rest(a);
     await this.wait(340);
@@ -2252,7 +2366,7 @@ export class WorldScene extends Phaser.Scene {
       this.floatAbove(a, 'W OSŁONIE', C_COVER);
       SoundManager.sfx('step');
     } else if (fx === 'buff' || fx === 'shout') {
-      for (const x of targets.length ? targets : [a]) this.sparks(x, fx === 'shout' ? 0xffb050 : 0x7fb8ff);
+      for (const x of targets.length ? targets : [a]) this.sparks(x, fx === 'shout' ? 0xff9a40 : 0xffd060);
       SoundManager.sfx(fx === 'shout' ? 'alarm' : 'heal', { vol: 0.6 });
     } else if (fx === 'heal') {
       SoundManager.sfx('heal');
@@ -2277,7 +2391,7 @@ export class WorldScene extends Phaser.Scene {
         u.sprite.setTint(0xff6a5a);
         this.time.delayedCall(110, () => this.tintFor(u));
         this.time.delayedCall(280, () => this.rest(u));
-        if (u.sprite.visible) this.bloodBurst(x, y - 12);
+        if (u.sprite.visible) this.bloodBurst(a, x, y - 12);
         this.floatAbove(a, crit ? `-${ev.amount}!` : `-${ev.amount}`, a.side === 'pc' ? COLOR_HOSTILE : crit ? C_CRIT : COLOR_OK);
         if (a.side === 'pc') this.cameras.main.shake(110, 0.005);
         SoundManager.sfx(crit ? 'crit' : 'hit', { vol: 0.7 });
@@ -2295,15 +2409,12 @@ export class WorldScene extends Phaser.Scene {
     this.hud.notify('stats');
   }
 
-  /** Iskry unoszące się z postaci (leczenie / wzmocnienie). */
+  /** Efekt nad postacią: leczenie (zielone krzyżyki) albo wzmocnienie (złoty krąg i szewrony). */
   private sparks(a: Actor, color: number): void {
     const u = this.units.get(a);
     if (!u || !u.sprite.visible) return;
-    const R = rng(Math.floor(this.elapsed * 997) + a.gx * 31);
-    for (let i = 0; i < 8; i++) {
-      const px = this.add.image(u.sprite.x + (R() - 0.5) * 12, u.sprite.y - 4 - R() * 10, 'fx_px').setTint(color).setDepth(D_TEXT - 1).setBlendMode(Phaser.BlendModes.ADD).setScale(0.5);
-      this.tweens.add({ targets: px, y: px.y - 10 - R() * 8, alpha: 0, delay: R() * 200, duration: 600, onComplete: () => px.destroy() });
-    }
+    if (color === 0x7fe05a) this.fx.heal(u.sprite.x, u.sprite.y);
+    else this.fx.buff(u.sprite.x, u.sprite.y, color);
   }
 
   /** Kolor sprite'a zależny od stanu (powalony / martwy). */
@@ -2317,13 +2428,19 @@ export class WorldScene extends Phaser.Scene {
     const u = this.units.get(a);
     if (!u) return;
     this.tweens.killTweensOf(u.shadow);
+    // upadek wzbija pył
+    if ((to === 'dead' || to === 'down') && u.sprite.visible) this.fx.dust(u.sprite.x, u.sprite.y, 0xb09a78, 6, 11);
     if (to === 'dead') {
       this.pose(u, 'hurt');
       this.tintFor(u);
       this.tweens.add({ targets: [u.sprite, u.shadow], alpha: a.side === 'enemy' ? 0.35 : 0.5, duration: 500 });
       if (a.side === 'enemy') {
         const fac = a.ch.faction ?? enemyDef(a.ch.templateId)?.faction;
-        SoundManager.sfx(fac === 'beast' || fac === 'mutant' ? 'scream' : 'death', { vol: 0.7 });
+        if (fac === 'machine') {
+          // maszyna: zwarcie i iskry zamiast krzyku
+          if (u.sprite.visible) this.fx.sparks(u.sprite.x, u.sprite.y - 10, 18);
+          SoundManager.sfx('explosion', { vol: 0.35, pitch: 1.6 });
+        } else SoundManager.sfx(fac === 'beast' || fac === 'mutant' ? 'scream' : 'death', { vol: 0.7, pitch: fac === 'beast' ? 1.25 : 1 });
       } else {
         this.floatAbove(a, 'ZGINĄŁ', COLOR_HOSTILE);
         SoundManager.sfx('death');
@@ -2398,15 +2515,6 @@ export class WorldScene extends Phaser.Scene {
     const hold = this.job ? 3600 : 100;
     this.time.delayedCall(hold, () => this.cameras.main.fadeOut(1700, 0, 0, 0));
     this.time.delayedCall(hold + 1800, () => this.leave(result));
-  }
-
-  /** Smuga pocisku między dwoma punktami świata. */
-  private tracer(x0: number, y0: number, x1: number, y1: number, color = 0xfff0a0): Promise<void> {
-    const g = this.add.graphics().setDepth(D_TEXT - 2);
-    g.lineStyle(1, color, 1).lineBetween(x0, y0, x1, y1);
-    return new Promise<void>((resolve) =>
-      this.tweens.add({ targets: g, alpha: 0, duration: 140, onComplete: () => (g.destroy(), resolve()) }),
-    );
   }
 
   private addFindSparkle(f: MissionFind): void {
@@ -2815,29 +2923,31 @@ export class WorldScene extends Phaser.Scene {
     this.floatingText(u.sprite.x, top - 2 - Math.min(f.n, 4) * 9, text, color);
   }
 
-  /** Pikselowy napis (czcionka bitmapowa 6x8 z obrysem) unoszący się i zanikający. */
+  /**
+   * Pikselowy napis (czcionka bitmapowa 6x8 z czarnym obrysem) nad postacią: wyskakuje w podwójnej skali
+   * (całkowita krotność = ostre piksele), opada do 1:1, unosi się i gaśnie. Liczby obrażeń zostają większe dłużej.
+   */
   private floatingText(x: number, y: number, text: string, color: number): void {
     const key = `txt_${text}`;
     if (!this.textures.exists(key)) this.art.get(key, () => ({ pc: paintText(text), ax: 0, ay: 0 }));
-    const label = this.add.image(x, y, key).setTint(color).setDepth(D_TEXT);
-    this.tweens.add({ targets: label, y: y - 12, duration: 500, ease: 'Quad.easeOut' });
-    this.tweens.add({ targets: label, alpha: 0, delay: 450, duration: 350, onComplete: () => label.destroy() });
+    x = Math.round(x);
+    y = Math.round(y);
+    const num = /^[-+]\d/.test(text);
+    const crit = num && text.endsWith('!');
+    const label = this.add.image(x, y, key).setTint(color).setDepth(D_TEXT + (num ? 1 : 0)).setScale(num ? 2 : 1);
+    if (num) this.time.delayedCall(crit ? 320 : 150, () => label.active && label.setScale(1));
+    if (crit) {
+      const halo = this.add.image(x, y, 'fx_halo').setBlendMode(Phaser.BlendModes.ADD).setTint(color).setDepth(D_TEXT).setScale(1.6);
+      this.tweens.add({ targets: halo, alpha: 0, scale: 2.6, duration: 320, onComplete: () => halo.destroy() });
+    }
+    this.tweens.add({ targets: label, y: y - (num ? 16 : 12), duration: num ? 650 : 500, ease: 'Quad.easeOut' });
+    this.tweens.add({ targets: label, alpha: 0, delay: num ? 650 : 450, duration: 350, onComplete: () => label.destroy() });
   }
 
-  private bloodBurst(x: number, y: number): void {
-    const R = rng(Math.floor(this.elapsed * 1000));
-    for (let i = 0; i < 9; i++) {
-      const px = this.add.image(x, y, 'fx_px').setTint(R() < 0.5 ? 0x9a1a14 : 0x5a0e0c).setDepth(D_TEXT - 1).setScale(R() < 0.6 ? 0.5 : 1);
-      const vx = (R() - 0.5) * 28, up = 6 + R() * 10;
-      this.tweens.add({ targets: px, x: x + vx, duration: 380, ease: 'Linear' });
-      this.tweens.add({
-        targets: px,
-        y: { from: y, to: y - up },
-        duration: 160,
-        ease: 'Quad.easeOut',
-        yoyo: true,
-        onComplete: () => this.tweens.add({ targets: px, alpha: 0, duration: 300, onComplete: () => px.destroy() }),
-      });
-    }
+  /** Trafienie: krew u istot żywych, iskry i olej u maszyn (dron, wieżyczka, robot nie krwawią). */
+  private bloodBurst(a: Actor, x: number, y: number): void {
+    const fac = a.side === 'enemy' ? (a.ch.faction ?? enemyDef(a.ch.templateId)?.faction) : null;
+    if (fac === 'machine') this.fx.sparks(x, y);
+    else this.fx.blood(x, y, fac === 'mutant' || fac === 'beast' ? 14 : 11);
   }
 }

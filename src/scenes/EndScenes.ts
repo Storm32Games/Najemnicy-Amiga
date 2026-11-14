@@ -72,16 +72,16 @@ export class GameOverScene extends Phaser.Scene {
     // polegli: poza "die" - przewracają się jeden po drugim i zostają na ziemi
     const crew = this.crew();
     crew.forEach((ch, i) => {
-      const x = Math.round(BASE_W / 2 + (i - (crew.length - 1) / 2) * 62), y = 184 + (i % 2) * 5;
-      const sp = addUnit(this, x, y, `pc_${ch.recruitId ?? ch.id}`, unitLookOf(ch)).setDepth(3 + i % 2).setFlipX(i % 2 === 1);
+      const x = Math.round(BASE_W / 2 + (i - (crew.length - 1) / 2) * 84), y = 182 + (i % 2) * 6;
+      const sp = addUnit(this, x, y, `pc_${ch.recruitId ?? ch.id}`, unitLookOf(ch), 'idle', 2).setDepth(3 + (i % 2)).setFlipX(i % 2 === 1);
       sp.anims.stop();
       sp.setFrame('f_hurt');
       this.tweens.add({
         targets: sp, angle: sp.flipX ? -90 : 90, y: y + 2, delay: 600 + i * 380, duration: 420, ease: 'Quad.easeIn',
         onStart: () => SoundManager.sfx('hit', { vol: 0.25 }),
-        onComplete: () => sp.setTint(0x8a6060),
+        onComplete: () => sp.setTint(0xb09090),
       });
-      this.add.ellipse(x, y + 1, 26, 5, 0x000000, 0.45).setDepth(2);
+      this.add.ellipse(x, y + 2, 50, 7, 0x000000, 0.45).setDepth(2);
     });
     const vignette = canvasTexture(this, 'over_vig', BASE_W, BASE_H, (g, w, h) => {
       const grad = g.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h);

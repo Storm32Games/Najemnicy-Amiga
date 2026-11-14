@@ -39,8 +39,8 @@ const scr = (p: WPos, up = 0): { x: number; y: number } => ({ x: scrX(p.x), y: s
 const Z_MIN = 1, Z_MAX = 4, Z_TRAVEL = 2, Z_EVENT = 3;
 /** Opóźnienie automatycznego wymarszu po przyjściu z Przystani ze zleceniem (Oldgame/src/scenes/worldmap.js:74). */
 const AUTO_DEPART_MS = 700;
-const LIST_X = 6, LIST_Y = 18, LIST_W = 118;
-const SIDE_W = 138, SIDE_X = BASE_W - SIDE_W - 6, SIDE_Y = 18;
+const LIST_X = 6, LIST_Y = 18, LIST_W = 124, ROW_H = 29;
+const SIDE_W = 150, SIDE_X = BASE_W - SIDE_W - 6, SIDE_Y = 18;
 const D_LABEL = 5, D_PANEL = 20;
 
 export interface TravelSceneData {
@@ -232,7 +232,7 @@ export class TravelScene extends Phaser.Scene {
     this.log = this.add.container(0, 0).setDepth(D_PANEL);
     this.hint = label(this, BASE_W - 6, BASE_H - 4, 'Kółko / +−: przybliż · przeciągnij, WSAD: przesuń · R: cały region', { size: 5, color: PAL.dim, align: 'right' }).setOrigin(1, 1).setDepth(D_PANEL);
     // "Zawróć" działa także w trakcie marszu (Oldgame/src/scenes/worldmap.js:264)
-    const back = (this.backBtn = button(this, 6, BASE_H - 20, '◀ Wróć do Przystani', () => this.state !== 'event' && this.state !== 'arrived' && this.leave('HubScene'), { w: 100, size: 6.5 }));
+    const back = (this.backBtn = button(this, 6, BASE_H - 20, '◀ Wróć do Przystani', () => this.state !== 'event' && this.state !== 'arrived' && this.leave('HubScene'), { w: 132, size: 6.5 }));
     back.box.setDepth(D_PANEL);
     this.drawTop();
     this.select(this.job, true, false);
@@ -419,21 +419,21 @@ export class TravelScene extends Phaser.Scene {
   private drawList(): void {
     const L = this.list, st = campaign.state, lvl = campaignPartyLevel(st);
     L.removeAll(true);
-    const H = 16 + this.all.length * 22;
+    const H = 16 + this.all.length * (ROW_H + 2);
     L.add(panel(this, 0, 0, LIST_W, H));
     L.add(label(this, 6, 4, 'ZLECENIA', { size: 7, color: PAL.amber }));
     this.all.forEach((c, i) => {
-      const y = 14 + i * 22, on = c === this.job, col = TYPE_COLOR[c.type] ?? 0xffffff, df = difficulty(c.level, lvl);
-      const bg = this.add.rectangle(4, y, LIST_W - 8, 20, on ? 0x3a2c1e : PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, on ? PAL.amber : PAL.edge).setInteractive({ useHandCursor: true });
+      const y = 14 + i * (ROW_H + 2), on = c === this.job, col = TYPE_COLOR[c.type] ?? 0xffffff, df = difficulty(c.level, lvl);
+      const bg = this.add.rectangle(4, y, LIST_W - 8, ROW_H, on ? 0x3a2c1e : PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, on ? PAL.amber : PAL.edge).setInteractive({ useHandCursor: true });
       bg.on('pointerover', () => !on && bg.setStrokeStyle(1, PAL.edgeHi));
       bg.on('pointerout', () => !on && bg.setStrokeStyle(1, PAL.edge));
       bg.on('pointerdown', () => this.state === 'idle' && !modalOpen(this) && this.select(c, true));
       L.add(bg);
-      L.add(this.add.rectangle(4, y, 3, 20, col).setOrigin(0));
+      L.add(this.add.rectangle(4, y, 3, ROW_H, col).setOrigin(0));
       L.add(label(this, 10, y + 2, (c.story ? '★ ' : '') + c.title, { size: 6, color: on ? 0xffffff : PAL.text, maxW: LIST_W - 18 }));
-      const a = label(this, 10, y + 11, `${BIOME_NAMES[c.biome] ?? c.biome} · `, { size: 5, color: PAL.dim });
-      const b = label(this, 10 + a.displayWidth, y + 11, df.label, { size: 5, color: TONE[df.tone] });
-      const r = label(this, 10 + a.displayWidth + b.displayWidth, y + 11, ` · ${c.reward.scrap} Z`, { size: 5, color: PAL.dim });
+      const a = label(this, 10, y + 10, BIOME_NAMES[c.biome] ?? c.biome, { size: 5, color: PAL.dim, maxW: LIST_W - 18 });
+      const b = label(this, 10, y + 18, df.label, { size: 5, color: TONE[df.tone] });
+      const r = label(this, 10 + b.displayWidth, y + 18, ` · ${c.reward.scrap} Z`, { size: 5, color: PAL.dim });
       L.add([a, b, r]);
     });
   }

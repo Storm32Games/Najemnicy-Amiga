@@ -282,10 +282,12 @@ export class HubScene extends Phaser.Scene {
       return;
     }
     const d = difficulty(cur.level, lvl);
-    this.L(DX, 4, cut(cur.title, 34), { size: 9, bold: true, color: PAL.amber });
-    this.L(DX, 17, `Zleceniodawca: ${cur.giver} (${FACTION_NAMES[cur.faction]})`, { size: 6, color: PAL.dim });
-    const desc = this.L(DX, 28, cur.desc, { size: 7, wrap: DW, lineSpacing: 2 });
-    let y = Math.max(66, 28 + desc.displayHeight + 6);
+    // wszystkie napisy szczegółów mieszczą się w szerokości panelu DW (zawijanie / przycięcie), a opis zaczyna się pod nimi
+    const title = this.L(DX, 4, cur.title, { size: 9, bold: true, color: PAL.amber, maxW: DW });
+    const giver = this.L(DX, 6 + title.displayHeight, `Zleceniodawca: ${cur.giver} (${FACTION_NAMES[cur.faction]})`, { size: 6, color: PAL.dim, wrap: DW });
+    const descY = giver.y + giver.displayHeight + 3;
+    const desc = this.L(DX, descY, cur.desc, { size: 7, wrap: DW, lineSpacing: 2 });
+    let y = Math.max(66, descY + desc.displayHeight + 6);
     const row = (k: string, v: string, color: number = PAL.text): void => {
       const kl = this.L(DX, y, `${k}: `, { size: 6.5, color: PAL.dim });
       const vl = this.L(DX + kl.displayWidth, y, v, { size: 6.5, color, wrap: DW - kl.displayWidth });

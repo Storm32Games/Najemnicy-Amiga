@@ -5,9 +5,11 @@ import { parseColor } from '../ui/Kit';
 import { type CreatureSpecies, creatureSpecies, paintCreatureSheet } from './CreatureArt';
 import { ArtBook } from './IsoArt';
 import { mix, shade } from './Pixel';
+import { RECRUITS } from '../../core/data/recruits';
+import { hashStr } from './Pixel';
 import {
-  type BodyBuild, type HeadKind, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, type UnitSheet,
-  type WeaponKind, paintUnitSheet,
+  ANIMS, ANIM_ORDER, type AncestryLook, type BodyBuild, type HeadKind, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW,
+  type UnitLook, type UnitSheet, type WeaponKind, paintUnitSheet,
 } from './UnitArt';
 
 // Wygląd najemnika (kolory z RECRUITS / createCharacter: look.skin, hair, cloth, accent, body) -> paleta sprite'a 24x32.
@@ -17,6 +19,10 @@ import {
 export interface LookSource {
   classId: string;
   ancestry?: string;
+  /** Id rekruta (płeć z RECRUITS -> broda tylko u mężczyzn) i imię (ziarno cech losowych). */
+  recruitId?: string;
+  name?: string;
+  gender?: 'm' | 'f';
   look?: {
     skin?: string; hair?: string; cloth?: string; accent?: string; mask?: boolean; hairStyle?: number;
     body?: string; mutation?: boolean; cyber?: boolean;
@@ -91,11 +97,15 @@ export function unitLookOf(src: LookSource): UnitLook {
   const cyber = !!lk.cyber || anc === 'cyborg';
   const cloth = parseColor(lk.cloth, LOOK_SOLDIER.cloth);
   const skin = parseColor(lk.skin, mutation ? 0xa9c27a : LOOK_SOLDIER.skin);
-  const hairStyle = lk.hairStyle ?? 0;
+  // fryzury jak w hero.js: 0 krótkie, 1 łysy, 2 irokez, 3 długie z grzywką, 4 jeżyk, 5 kucyk
+  const hairStyle = ((lk.hairStyle ?? 0) % 6 + 6) % 6;
+  const medic = cls === 'medic' || cls === 'alchemist';
 
-  let head: HeadKind = HELMET.has(cls) ? 'helmet' : HOOD.has(cls) ? 'hood' : GOGGLES.has(cls) ? 'goggles' : CAP.has(cls) ? 'cap' : hairStyle % 5 === 2 ? 'mohawk' : 'bare';
+  let head: HeadKind = HELMET.has(cls) ? 'helmet' : HOOD.has(cls) ? 'hood' : GOGGLES.has(cls) ? 'goggles' : CAP.has(cls) ? 'cap' : medic ? 'headband' : 'bare';
   if (lk.mask && head === 'bare') head = 'hood';
   if (anc === 'nomad' && head === 'bare') head = 'goggles';
+  // szczurak / humanoid: uszy muszą być widoczne - bez hełmu i kaptura
+  if ((anc === 'ratling' || anc === 'humanoid') && (head === 'hood' || head === 'helmet' || head === 'cap')) head = 'bare';
 
   const body = asBody(lk.body) ?? (anc === 'ogrin' ? 'heavy' : anc === 'ratling' ? 'light' : HEAVY.has(cls) ? 'heavy' : LIGHT.has(cls) ? 'light' : 'medium');
 
@@ -119,7 +129,22 @@ export function unitLookOf(src: LookSource): UnitLook {
   };
   if (lk.mask) look.mask = true;
   if (cls === 'brute' || cls === 'monk') look.bareArms = true;
-  if (mutation) { look.mutation = true; look.eye = 0xb8ff4a; }
+  if (mutation) { look.mutation = true; look.eye = 0xb8ff4a; look.pustules = true; look.claws = true; }
+  if (anc === 'ratling' || anc === 'ogrin' || anc === 'vault' || anc === 'humanoid') look.ancestry = anc as AncestryLook;
+  // dodatki klas (outfit w hero.js): szal zwiadowcy / nomady, chusta szabrownika, bandolier, kitel, tatuaż, broda
+  const rec = src.recruitId ? RECRUITS.find((r) => r.id === src.recruitId) : undefined;
+  const gender = src.gender ?? rec?.gender;
+  const seed = hashStr(`${src.recruitId ?? src.name ?? ''}|${cls}|${lk.skin ?? ''}|${lk.hair ?? ''}`);
+  if (cls === 'scout' || cls === 'gunslinger') { look.scarf = 0x9a8a62; look.bandolier = 0x5a3a1e; }
+  if (cls === 'scavenger' || cls === 'herald') look.scarf = cls === 'herald' ? look.accent : 0x5a4a32;
+  if (anc === 'nomad') look.scarf = 0xc9a468;
+  if (cls === 'soldier' || cls === 'champion') look.bandolier = seed % 2 ? 0x4a3a22 : undefined;
+  if (look.bandolier === undefined) delete look.bandolier;
+  if (medic) look.coat = shade(cloth, 0.9);
+  if (cls === 'brute' || cls === 'monk') look.tattoo = mix(look.accent, 0x1a2a3a, 0.5);
+  if (anc === 'ogrin') look.spikes = true;
+  const beardOk = gender === 'm' || (gender === undefined && (cls === 'brute' || cls === 'monk'));
+  if (beardOk && anc !== 'ratling' && anc !== 'humanoid' && anc !== 'vault' && !medic && (seed % 3 === 0 || cls === 'brute' || cls === 'monk' || anc === 'ogrin') && hairStyle !== 4) look.beard = true;
   if (cyber) { look.cyber = true; look.eye = 0xff3a2a; }
   const sh = eq?.shield?.id;
   if (sh) look.shield = SHIELD_COLORS[sh] ?? 0x6a5a48;
@@ -204,13 +229,15 @@ export function enemyUnitLook(templateId: string | undefined | null, look?: Enem
   let hair = parseColor(lk.hair, LOOK_RAIDER.hair);
   const out: Partial<UnitLook> = {};
 
+  const ghoul = has(tid, 'ghoul', 'ghul', 'zombi');
+  const brute = has(tid, 'brute', 'kolos', 'hulk', 'abomin');
   if (boss) {
-    // Kostucha: białe włosy, czaszka zamiast twarzy, ciemny płaszcz, kosa
+    // Kostucha: białe włosy, czaszka w czerwonym kapturze, postrzępiony płaszcz, łańcuchy, czaszki u pasa, kosa
     head = 'reaper';
     weapon = 'scythe';
     hair = parseColor(lk.hair, 0xeeeeee);
-    out.cloak = 0x1c1416;
-    out.hunch = false;
+    body = 'heavy';
+    Object.assign(out, { cloak: 0x2a1a18, hunch: false, chains: true, skulls: true, spikes: true, ribs: true, sash: 0xb02018, height: -1, eye: 0xff2a1a } satisfies Partial<UnitLook>);
   } else if (robot) {
     head = 'machine';
     weapon = weapon ?? 'none';
@@ -218,28 +245,50 @@ export function enemyUnitLook(templateId: string | undefined | null, look?: Enem
     out.eye = 0xff2a1a;
   } else if (mutation) {
     head = 'bare';
-    hairStyle = 3;
+    hairStyle = 1;
     weapon = weapon ?? 'none';
-    out.hunch = body !== 'heavy';
-    out.eye = 0xb8ff4a;
+    out.eye = parseColor(lk.accent, 0xb8ff4a);
     out.bareArms = true;
+    out.claws = true;
+    if (brute || body === 'heavy') {
+      // mutant-kolos: ogromne asymetryczne ramię, krosty, łańcuchy, kolce
+      Object.assign(out, { hunch: false, bigArm: true, pustules: true, chains: true, spikes: true } satisfies Partial<UnitLook>);
+    } else {
+      // ghul: wychudzony, przygarbiony, w łachmanach, z odsłoniętymi żebrami
+      Object.assign(out, { hunch: true, rags: true, ribs: true, pustules: !ghoul } satisfies Partial<UnitLook>);
+      body = 'light';
+    }
   } else if (has(tid, 'burner', 'podpal', 'flame')) {
     head = 'gas';
+    out.apron = 0x4a3a2c;
   } else if (has(tid, 'psycho', 'szalen', 'berserk')) {
-    head = 'mask';
-    hairStyle = 4;
+    head = 'skull';
+    hairStyle = 6;
+    Object.assign(out, { bareArms: true, chains: true, tattoo: accent } satisfies Partial<UnitLook>);
   } else if (has(tid, 'chief', 'boss', 'herszt', 'warlord', 'leader')) {
     head = 'cap';
     body = 'heavy';
-  } else if (has(tid, 'gunner', 'sniper', 'shooter', 'strzel', 'snajper')) {
+    Object.assign(out, { fur: 0x8a7a62, sash: accent, spikes: true, beard: true, coat: 0x24201e } satisfies Partial<UnitLook>);
+  } else if (has(tid, 'sniper', 'snajper', 'marksman')) {
+    // snajper: płaszcz maskujący z kapturem, długi sztucer z lunetą
     head = 'hood';
     mask = !!lk.mask;
-  } else {
-    head = 'mohawk';
+    weapon = 'longgun';
+    Object.assign(out, { cloak: 0x4a5230, ghillie: true, scarf: 0x5a5a3a } satisfies Partial<UnitLook>);
+  } else if (has(tid, 'gunner', 'shooter', 'strzel')) {
+    // strzelec: ciężki karabin maszynowy, bandolier, chusta, jeżyk
+    head = 'bare';
+    hairStyle = 4;
     mask = !!lk.mask;
+    weapon = 'mg';
+    Object.assign(out, { bandolier: 0x6a4a24, scarf: accent, spikes: true } satisfies Partial<UnitLook>);
+  } else {
+    // zbir: gołe ramiona, pancerz z opony, kolce, tatuaż, broda, irokez
+    head = 'mohawk';
+    Object.assign(out, { bareArms: true, tire: true, spikes: true, tattoo: accent, beard: true } satisfies Partial<UnitLook>);
   }
   if (!weapon) weapon = def?.ai === 'beast' ? 'none' : 'pipe';
-  if (!lk.hair && !boss && head !== 'mohawk' && head !== 'mask') hair = 0x2a2018;
+  if (!lk.hair && !boss && head !== 'mohawk' && head !== 'skull') hair = 0x2a2018;
 
   const result: UnitLook = {
     skin: skinC,
@@ -298,10 +347,22 @@ export function ensureUnit(scene: Phaser.Scene, name: string, look: UnitLook | C
     }
   }
   for (const f of ['f', 'b'] as const) {
-    const idleKey = `${name}_${f}_idle`;
-    if (scene.anims.exists(idleKey)) continue;
-    scene.anims.create({ key: idleKey, frames: [`${f}_idle0`, `${f}_idle1`].map((frame) => ({ key: tex, frame })), frameRate: 1.6, repeat: -1 });
-    scene.anims.create({ key: `${name}_${f}_walk`, frames: [0, 1, 2, 3].map((i) => ({ key: tex, frame: `${f}_walk${i}` })), frameRate: 11, repeat: -1 });
+    for (const a of ANIM_ORDER) {
+      const key = `${name}_${f}_${a}`;
+      if (scene.anims.exists(key)) continue;
+      const def = ANIMS[a];
+      const seq = def.seq ?? def.poses.map((_, i) => i);
+      scene.anims.create({
+        key,
+        frames: seq.map((i, k) => ({ key: tex, frame: `${f}_${a}${i}`, duration: def.durs[k] ?? def.durs[def.durs.length - 1] })),
+        frameRate: 10,
+        repeat: def.loop ? -1 : 0,
+      });
+    }
+    // powalenie: upadek bez kałuży (klatki die0..die4)
+    const downKey = `${name}_${f}_down`;
+    if (!scene.anims.exists(downKey))
+      scene.anims.create({ key: downKey, frames: [0, 1, 2, 3, 4].map((i) => ({ key: tex, frame: `${f}_die${i}`, duration: ANIMS.die.durs[i] })), frameRate: 10, repeat: 0 });
   }
   return tex;
 }
@@ -310,6 +371,6 @@ export function ensureUnit(scene: Phaser.Scene, name: string, look: UnitLook | C
 export function addUnit(scene: Phaser.Scene, x: number, y: number, name: string, look: UnitLook | CreatureLook, anim: 'idle' | 'walk' = 'idle', scale = 1): Phaser.GameObjects.Sprite {
   const tex = ensureUnit(scene, name, look);
   const s = scene.add.sprite(x, y, tex, 'f_idle0').setOrigin(UNIT_FOOT_X / UNIT_FW, UNIT_FOOT_Y / UNIT_FH).setScale(scale);
-  s.play({ key: `${name}_f_${anim}`, startFrame: anim === 'idle' ? Math.abs(Math.round(x)) % 2 : 0 });
+  s.play({ key: `${name}_f_${anim}`, startFrame: anim === 'idle' ? Math.abs(Math.round(x)) % 4 : 0 });
   return s;
 }

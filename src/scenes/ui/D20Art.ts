@@ -75,7 +75,7 @@ function faceOnQuat(): Q {
 }
 
 const ENAMEL: RGB[] = [0x2a0a08, 0x4a120e, 0x761c14, 0xa0281a, 0xc43a22, 0xe0603a, 0xf8a070, 0xffe0c0];
-const BRASS_LIT = 0xffe0a0, BRASS = 0xc89a48, BRASS_DK = 0x6a4a20;
+const BRASS_LIT = 0xffe0a0, BRASS_DK = 0x6a4a20;
 const LIGHT = norm([-0.55, 0.7, 0.75]);
 
 /** Rasteryzuje kość w obrocie q na płótnie S x S. markFront = rysuj znaczek także na ściance frontowej. */

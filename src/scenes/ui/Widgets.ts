@@ -6,7 +6,7 @@ import { type CampaignState, freshState } from '../../core/campaign/state';
 import { NAME_COLORS, NAME_MAX, checkName } from '../../core/data/names';
 import { itemStatLine } from '../../core/HudState';
 import { abilityDef, itemDef } from '../../core/rules/lookup';
-import { abilityIcon, abilityKind, itemIcon } from '../legacy/icons';
+import { abilityIcon, abilityKind, itemIcon, itemKind } from '../legacy/icons';
 import { portraitCanvas } from '../legacy/portraits';
 import { BASE_H, BASE_W, PAL, type UiButton, ZOOM, applyZoom, autoZoom, button, canApplyZoomLive, hex, label, panel, parseColor } from './Kit';
 import { RES_CHOICES, type ResSetting, Settings, UI_SIZES } from './Settings';
@@ -76,33 +76,58 @@ const hashStr = (s: string): string => {
   return (h >>> 0).toString(36);
 };
 
-/** Klucz tekstury portretu 64x64 (budowany raz na wygląd). */
-export function portraitKey(scene: Phaser.Scene, ch: PortraitSource): string {
-  const key = `por_${hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`)}`;
-  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, portraitCanvas(ch, 64) as HTMLCanvasElement);
+/** Piksele ekranu przypadające na `size` pikseli projektowych (kamery UI mają zoom = ZOOM). */
+const screenPx = (size: number): number => Math.max(1, Math.round(size * ZOOM));
+
+/**
+ * Klucz tekstury portretu malowanego natywnie pod wyświetlany rozmiar: `px` = bok w pikselach EKRANU (size * ZOOM).
+ * Malarz portretów (legacy/portraits.ts) jest niezależny od rozdzielczości, więc zamiast skalować obraz 64x64
+ * o niecałkowity współczynnik, renderujemy go od razu w docelowej siatce (duże rozmiary: baza x całkowita krotność).
+ */
+export function portraitKey(scene: Phaser.Scene, ch: PortraitSource, px = 64): string {
+  const T = Math.max(8, Math.round(px));
+  const key = `por_${hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`)}_${T}`;
+  if (!scene.textures.exists(key)) {
+    // powyżej 128 px szukamy bazy 48..128 px powielanej całkowitą liczbę razy (ostre piksele, rozsądny koszt)
+    let base = T;
+    if (T > 128) for (let k = 2; k <= 8; k++) if (T % k === 0 && T / k >= 48 && T / k <= 128) { base = T / k; break; }
+    const src = portraitCanvas(ch, base) as HTMLCanvasElement;
+    if (src.width === T) scene.textures.addCanvas(key, src);
+    else {
+      const c = document.createElement('canvas');
+      c.width = c.height = T;
+      const g = c.getContext('2d')!;
+      g.imageSmoothingEnabled = false;
+      g.drawImage(src, 0, 0, T, T);
+      scene.textures.addCanvas(key, c);
+    }
+  }
   return key;
 }
 
-/** Portret w ramce; (x, y) = lewy górny róg, size w pikselach projektowych. */
+/** Portret w ramce; (x, y) = lewy górny róg, size w pikselach projektowych. Tekstura 1:1 z pikselami ekranu. */
 export function portrait(scene: Phaser.Scene, x: number, y: number, ch: PortraitSource, size = 32, frame: number = PAL.edge): Phaser.GameObjects.Container {
-  const img = scene.add.image(0, 0, portraitKey(scene, ch)).setOrigin(0).setDisplaySize(size, size);
+  const img = scene.add.image(0, 0, portraitKey(scene, ch, screenPx(size))).setOrigin(0).setDisplaySize(size, size);
   const edge = scene.add.rectangle(0, 0, size, size).setOrigin(0).setStrokeStyle(1, frame);
   return scene.add.container(x, y, [img, edge]);
 }
 
+/** Ikona przedmiotu malowana natywnie w size * ZOOM pikselach ekranu (bez skalowania o niecałkowity współczynnik). */
 export function itemIconImage(scene: Phaser.Scene, x: number, y: number, id: string, size = 12): Phaser.GameObjects.Image {
   const def = itemDef(id);
-  const key = `ico_${def?.icon ?? ''}_${def?.type ?? id}_${id}`;
-  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, itemIcon(def ?? id, 32) as HTMLCanvasElement);
+  const T = screenPx(size);
+  const key = `ico_${itemKind(def ?? id)}_${T}`;
+  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, itemIcon(def ?? id, T) as HTMLCanvasElement);
   return scene.add.image(x, y, key).setOrigin(0).setDisplaySize(size, size);
 }
 
-/** Ikona zdolności (Oldgame/src/gfx/icons.js: abilityIcon) - odznaka z glifem wg icon/id/fx zdolności. */
+/** Ikona zdolności (Oldgame/src/gfx/icons.js: abilityIcon) - odznaka z glifem wg id/icon zdolności, malowana natywnie. */
 export function abilityIconImage(scene: Phaser.Scene, x: number, y: number, id: string, size = 12): Phaser.GameObjects.Image {
   const def = abilityDef(id);
   const src = def ? { icon: def.icon, id: def.id, name: def.name, fx: def.fx } : id;
-  const key = `abico_${abilityKind(src)}`;
-  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, abilityIcon(src, 24) as HTMLCanvasElement);
+  const T = screenPx(size);
+  const key = `abico_${abilityKind(src)}_${T}`;
+  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, abilityIcon(src, T) as HTMLCanvasElement);
   return scene.add.image(x, y, key).setOrigin(0).setDisplaySize(size, size);
 }
 
