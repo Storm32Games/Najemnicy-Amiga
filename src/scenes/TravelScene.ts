@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { TYPE_NAMES } from '../core/campaign/contracts';
 import { FAUNA_CHANCE, FAUNA_KINDS, EVENTS, faunaAttackEvent, type EventChoice, type TravelEvent } from '../core/campaign/events';
@@ -64,7 +65,7 @@ export class TravelScene extends Phaser.Scene {
   private eventAt = -1;
   private event: TravelEvent | null = null;
   private stepT = 0;
-  private info!: Phaser.GameObjects.Text;
+  private info!: PixelText;
   private buttons: Phaser.GameObjects.Container[] = [];
   private dust: Motes | null = null;
   private pulse: Phaser.GameObjects.Arc | null = null;

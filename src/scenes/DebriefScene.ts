@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { type DebriefSummary, applyMissionResult } from '../core/campaign/debrief';
 import { campaign } from '../core/campaign/session';
@@ -26,7 +27,7 @@ export class DebriefScene extends Phaser.Scene {
   private sum!: DebriefSummary;
   private queue: { t: number; fn: () => void }[] = [];
   private t = 0;
-  private count: { text: Phaser.GameObjects.Text; to: number; v: number } | null = null;
+  private count: { text: PixelText; to: number; v: number } | null = null;
   private fire: (t: number) => void = () => {};
   private dust: Motes | null = null;
   private box!: Phaser.GameObjects.Container;
@@ -96,7 +97,7 @@ export class DebriefScene extends Phaser.Scene {
     };
     const LX = 10, RX = 196, RW = PW - RX - 10;
     let ly = 42;
-    const line = (s: string, color: number = PAL.text, size = 7): Phaser.GameObjects.Text => {
+    const line = (s: string, color: number = PAL.text, size = 7): PixelText => {
       const tx = label(this, LX, ly, s, { size, color, wrap: RX - LX - 10 });
       ly += tx.displayHeight + 4;
       return tx;

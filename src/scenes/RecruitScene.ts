@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { recruitCharacter, startCampaign } from '../core/campaign/session';
 import { MAX_PARTY } from '../core/campaign/state';
@@ -24,8 +25,8 @@ const DET_X = 182, DET_Y = 22, DET_W = 290, DET_H = 212;
 interface Card {
   r: RecruitDef;
   bg: Phaser.GameObjects.Rectangle;
-  mark: Phaser.GameObjects.Text;
-  name: Phaser.GameObjects.Text;
+  mark: PixelText;
+  name: PixelText;
 }
 
 export class RecruitScene extends Phaser.Scene {
@@ -36,8 +37,8 @@ export class RecruitScene extends Phaser.Scene {
   private custom = new Map<string, { name?: string; nameColor?: string }>();
   private view: RecruitDef = RECRUITS[0];
   private detail!: Phaser.GameObjects.Container;
-  private count!: Phaser.GameObjects.Text;
-  private hint!: Phaser.GameObjects.Text;
+  private count!: PixelText;
+  private hint!: PixelText;
   private start!: UiButton;
   private dust: Motes | null = null;
 
@@ -77,10 +78,10 @@ export class RecruitScene extends Phaser.Scene {
       const bg = this.add.rectangle(x, y, CARD_W, CARD_H, PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive({ useHandCursor: true });
       portrait(this, x + 4, y + 1, this.preview(r), 30, 0x000000);
       // jak w Oldgame/src/scenes/recruit.js:58-61: imię na pasku u dołu portretu, pod spodem klasa i rasa
-      this.add.rectangle(x + 4, y + 24, 30, 7, 0x000000, 0.72).setOrigin(0);
-      const name = label(this, x + CARD_W / 2, y + 24, cut(plainName(r.name), 9), { size: 5.5 }).setOrigin(0.5, 0);
-      label(this, x + CARD_W / 2, y + 32, cut(classDef(r.classId)?.name ?? r.classId, 10), { size: 5, color: PAL.amber }).setOrigin(0.5, 0);
-      label(this, x + CARD_W / 2, y + 38.5, cut(ancestryOf(r.ancestry)?.name ?? r.ancestry, 11), { size: 4.5, color: PAL.dim }).setOrigin(0.5, 0);
+      this.add.rectangle(x + 2, y + 21, CARD_W - 4, 10, 0x000000, 0.72).setOrigin(0);
+      const name = label(this, x + CARD_W / 2, y + 22, plainName(r.name), { maxW: CARD_W - 4 }).setOrigin(0.5, 0);
+      label(this, x + CARD_W / 2, y + 30, classDef(r.classId)?.name ?? r.classId, { color: PAL.amber, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
+      label(this, x + CARD_W / 2, y + 37, ancestryOf(r.ancestry)?.name ?? r.ancestry, { color: PAL.dim, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
       const mark = label(this, x + CARD_W - 3, y + 2, '', { size: 7, bold: true, color: PAL.toxic }).setOrigin(1, 0);
       bg.on('pointerover', () => !modalOpen(this) && this.show(r));
       bg.on('pointerdown', () => {
@@ -121,8 +122,8 @@ export class RecruitScene extends Phaser.Scene {
 
     // sylwetka
     add(portrait(this, 8, 8, ch, 64));
-    const nm = L(78, 7, ch.name, { size: 11, bold: true, color: parseColor(ch.nameColor, PAL.amber) });
-    add(miniButton(this, Math.min(DET_W - 62, 84 + nm.displayWidth), 9, '✎ Zmień imię', () => void this.rename(r), { w: 56 }).box);
+    const nm = L(78, 8, ch.name, { size: 12, color: parseColor(ch.nameColor, PAL.amber), maxW: DET_W - 76 - 84 });
+    add(miniButton(this, Math.min(DET_W - 76, 84 + nm.displayWidth), 7, '✎ Zmień imię', () => void this.rename(r), { w: 70 }).box);
     L(78, 22, `${cls?.name ?? r.classId} — ${cls?.role ?? ''}`, { color: PAL.amber });
     L(78, 33, `${anc.name} · poz. 1${cls?.pf2e ? `  (PF2e: ${cls.pf2e} / ${anc.pf2e})` : ''}`, { color: PAL.dim });
     L(78, 45, `„${r.bio}”`, { size: 7, italic: true, color: 0xcbbf9f, wrap: DET_W - 88 });

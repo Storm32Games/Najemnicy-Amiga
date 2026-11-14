@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
+import { titleTexture } from './ui/PixelFont';
 import { SoundManager } from '../audio/SoundManager';
-import { BASE_H, BASE_W, PAL, enter, goto, label } from './ui/Kit';
+import { BASE_H, BASE_W, enter, goto, label } from './ui/Kit';
 
 // Logo studia STORM 32 (port Oldgame/src/scenes/logo.js): grafika assets/storm32-logo.jpg jest próbkowana do siatki
 // małych kolorowych kostek, które sypią się z góry i układają w obraz; potem prawdziwy obraz przenika na wierzch.
@@ -57,7 +58,7 @@ export class LogoScene extends Phaser.Scene {
       this.img = this.add.image(BASE_W / 2, BASE_H / 2, 'storm32').setScale(k).setAlpha(0);
     } else {
       // brak pliku: od razu krótka plansza z nazwą studia
-      label(this, BASE_W / 2, BASE_H / 2, 'STORM 32', { size: 24, bold: true, color: PAL.steel }).setOrigin(0.5);
+      this.add.image(BASE_W / 2, BASE_H / 2, titleTexture(this, 'logo_fallback', 'STORM 32', 3, { top: '#a8c4d2', bottom: '#5a7584' }));
       this.t = TOTAL - 1.5;
     }
 

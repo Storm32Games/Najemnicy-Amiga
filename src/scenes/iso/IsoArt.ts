@@ -1,6 +1,7 @@
 // Proceduralne tekstury świata izometrycznego: podłogi, ściany, bloki budynków, rekwizyty,
 // kalkomanie (plamy, przypalenia), okluzja otoczenia i efekty (poświata, kursor, czcionka).
 // Palety pochodzą z Oldgame/src/gfx/textures.js i props.js; geometria 3D zastąpiona rzutem izometrycznym 2:1.
+import { textPixels } from '../ui/FontGlyphs';
 import type Phaser from 'phaser';
 import type { Biome, FloorType, PropType } from '../../core/tactical/mapgen';
 import {
@@ -874,32 +875,18 @@ export function paintVignette(w: number, h: number): PixelCanvas {
   return pc;
 }
 
-// ------------------------------------------------------------------ czcionka 3x5
+// ------------------------------------------------------------------ napisy w świecie (czcionka bitmapowa 6x8)
 
-const GLYPHS: Record<string, string> = {
-  '0': '111101101101111', '1': '010110010010111', '2': '111001111100111', '3': '111001111001111', '4': '101101111001001',
-  '5': '111100111001111', '6': '111100111101111', '7': '111001010010010', '8': '111101111101111', '9': '111101111001111',
-  '-': '000000111000000', '+': '000010111010000', A: '010101111101101', P: '110101110100100', '!': '010010010000010',
-  D: '110101101101110', L: '100100100100111', O: '111101101101111', U: '101101101101111',
-  B: '110101110101110', C: '011100100100011', E: '111100110100111', F: '111100110100100', G: '011100101101011',
-  H: '101101111101101', I: '111010010010111', J: '001001001101010', K: '101101110101101', M: '101111111101101',
-  N: '110101101101101', Q: '010101101110011', R: '110101110101101', S: '011100010001110', T: '111010010010010',
-  V: '101101101101010', W: '101101111111101', X: '101101010101101', Y: '101101010010010', Z: '111001010100111',
-  '.': '000000000000010', ':': '000010000010000', '?': '110001010000010', '/': '001001010100100', '%': '101001010100101',
-};
-
-/** Napis pikselową czcionką 3x5 z obrysem (biały - koloruj przez setTint). */
-const PL_FOLD: Record<string, string> = { Ą: 'A', Ć: 'C', Ę: 'E', Ł: 'L', Ń: 'N', Ó: 'O', Ś: 'S', Ź: 'Z', Ż: 'Z' };
-
+/**
+ * Napis ręcznie rysowaną czcionką 6x8 (FontGlyphs.ts): białe wnętrze (koloruj przez setTint) + czarny obrys 1 px
+ * w 8-sąsiedztwie. Wymiary płótna są nieparzyste, więc obraz z originem 0.5 trafia środkiem w pełny piksel.
+ */
 export function paintText(raw: string): PixelCanvas {
-  const text = [...raw.toUpperCase()].map((c) => PL_FOLD[c] ?? c).join('');
-  const w = text.length * 4 + 1;
-  const pc = new PixelCanvas(w + 2, 9);
-  [...text].forEach((ch, i) => {
-    const g = GLYPHS[ch];
-    if (!g) return;
-    for (let k = 0; k < 15; k++) if (g[k] === '1') pc.set(2 + i * 4 + (k % 3), 2 + Math.floor(k / 3), k < 6 ? 0xffffff : 0xd8d8d8);
-  });
-  pc.outline(0, 0x0a0608, 1);
+  const { px, w, h } = textPixels(raw.toUpperCase());
+  // margines: obrys 1 px, u góry dodatkowo wiersz akcentów wielkich liter (y = -1)
+  const W = (w + 2) | 1, H = (h + 3) | 1;
+  const pc = new PixelCanvas(W, H);
+  for (const [x, y] of px) for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) pc.set(1 + x + dx, 2 + y + dy, 0x000000);
+  for (const [x, y] of px) pc.set(1 + x, 2 + y, 0xffffff);
   return pc;
 }

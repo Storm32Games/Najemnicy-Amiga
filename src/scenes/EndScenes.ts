@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { campaign } from '../core/campaign/session';
 import { freshState } from '../core/campaign/state';
@@ -20,7 +21,7 @@ export class GameOverScene extends Phaser.Scene {
   private tw: Typewriter | null = null;
   private line = 0;
   private wait = 0;
-  private text!: Phaser.GameObjects.Text;
+  private text!: PixelText;
   private dust: Motes | null = null;
   private buttons!: Phaser.GameObjects.Container;
 
@@ -107,7 +108,7 @@ export class GameOverScene extends Phaser.Scene {
 export class VictoryScene extends Phaser.Scene {
   private tw: Typewriter | null = null;
   private line = 0;
-  private text!: Phaser.GameObjects.Text;
+  private text!: PixelText;
   private box!: Phaser.GameObjects.Container;
   private next!: Phaser.GameObjects.Container;
   private nextBtn: UiButton | null = null;

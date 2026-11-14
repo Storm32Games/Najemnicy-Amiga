@@ -782,9 +782,9 @@ export class WorldScene extends Phaser.Scene {
     const key = 'txt_EWAKUACJA';
     if (!this.textures.exists(key)) this.art.get(key, () => ({ pc: paintText('EWAKUACJA'), ax: 0, ay: 0 }));
     const sign = this.add.container(0, -58);
-    const box = this.add.rectangle(0, 0, 44, 11, 0x0b1a0c, 0.92).setStrokeStyle(1, 0x8fff7a);
     const txt = this.add.image(0, 0, key).setTint(0xb8ff9a);
-    const arrow = this.add.triangle(0, 9, -4, 0, 4, 0, 0, 5, 0x8fff7a).setOrigin(0.5, 0);
+    const box = this.add.rectangle(0, 0, txt.width + 4, txt.height + 2, 0x0b1a0c, 0.92).setStrokeStyle(1, 0x8fff7a);
+    const arrow = this.add.triangle(0, Math.ceil(box.height / 2) + 1, -4, 0, 4, 0, 0, 5, 0x8fff7a).setOrigin(0.5, 0);
     sign.add([box, txt, arrow]);
     beacon.add([column, sign]);
     beacon.setData('sign', sign);
@@ -2159,12 +2159,8 @@ export class WorldScene extends Phaser.Scene {
     if (result.casualties.length) this.hud.pushLog(`Polegli: ${result.casualties.join(', ')}.`, 'bad');
     SoundManager.music('defeat');
     this.hud.showBanner('DRUŻYNA POLEGŁA', 'bad');
-    this.overlay.add(
-      label(this, BASE_W / 2, BASE_H / 2 - 8, 'SYGNAŁ UTRACONY', { size: 14, bold: true, color: 0xff5555 })
-        .setOrigin(0.5)
-        .setBackgroundColor('#050a06')
-        .setPadding(5 * ZOOM, 3 * ZOOM, 5 * ZOOM, 3 * ZOOM),
-    );
+    const lost = label(this, BASE_W / 2, BASE_H / 2 - 8, 'SYGNAŁ UTRACONY', { size: 14, bold: true, color: 0xff5555 }).setOrigin(0.5);
+    this.overlay.add([this.add.rectangle(BASE_W / 2, BASE_H / 2 - 8, lost.width + 12, lost.height + 8, 0x050a06, 1), lost]);
     if (this.job)
       this.overlay.add(label(this, BASE_W / 2, BASE_H / 2 + 14, GAMEOVER_LINES[0], { size: 7, color: 0xc8b8a0, wrap: 300, align: 'center' }).setOrigin(0.5, 0));
     const hold = this.job ? 3600 : 100;
@@ -2452,7 +2448,7 @@ export class WorldScene extends Phaser.Scene {
           mark = this.add.image(0, 0, key).setDepth(D_TEXT - 4);
           this.barMarks.set(a, mark);
         }
-        mark.setTexture(key).setTint(a.state === 'dead' ? 0xffffff : 0xff6a50).setPosition(u.sprite.x, y0 - 5).setVisible(true);
+        mark.setTexture(key).setTint(a.state === 'dead' ? 0xffffff : 0xff6a50).setPosition(u.sprite.x, y0 - 6).setVisible(true);
       } else mark?.setVisible(false);
     }
   }
@@ -2580,10 +2576,10 @@ export class WorldScene extends Phaser.Scene {
     f.t = now;
     this.floatStack.set(a, f);
     const top = u.sprite.y - u.sprite.displayHeight * u.sprite.originY;
-    this.floatingText(u.sprite.x, top - 2 - Math.min(f.n, 4) * 7, text, color);
+    this.floatingText(u.sprite.x, top - 2 - Math.min(f.n, 4) * 9, text, color);
   }
 
-  /** Pikselowy napis (czcionka 3x5) unoszący się i zanikający. */
+  /** Pikselowy napis (czcionka bitmapowa 6x8 z obrysem) unoszący się i zanikający. */
   private floatingText(x: number, y: number, text: string, color: number): void {
     const key = `txt_${text}`;
     if (!this.textures.exists(key)) this.art.get(key, () => ({ pc: paintText(text), ax: 0, ay: 0 }));

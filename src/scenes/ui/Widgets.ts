@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PixelText } from './BitmapFont';
 import { SoundManager } from '../../audio/SoundManager';
 import { campaign } from '../../core/campaign/session';
 import { type CampaignState, freshState } from '../../core/campaign/state';
@@ -132,7 +133,7 @@ export function itemTip(id: string, extra = ''): string {
 export class Tip {
   private readonly box: Phaser.GameObjects.Container;
   private readonly bg: Phaser.GameObjects.Rectangle;
-  private readonly text: Phaser.GameObjects.Text;
+  private readonly text: PixelText;
   private owner: Phaser.GameObjects.GameObject | null = null;
 
   constructor(scene: Phaser.Scene, wrap = 200) {
@@ -570,7 +571,7 @@ export class ScrollList<T> {
 
 /** Mały przycisk do wierszy list. */
 export function miniButton(scene: Phaser.Scene, x: number, y: number, text: string, onClick: () => void, o: { w?: number; enabled?: boolean; primary?: boolean } = {}): UiButton {
-  return button(scene, x, y, text, onClick, { size: 6, h: 10, w: o.w, enabled: o.enabled, primary: o.primary });
+  return button(scene, x, y, text, onClick, { size: 6, h: 11, w: o.w, enabled: o.enabled, primary: o.primary });
 }
 
 /** Pasek postępu (PW / PD). */

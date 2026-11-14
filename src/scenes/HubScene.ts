@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { BIOME_NAMES, FACTION_NAMES, MOOD_NAMES, TYPE_NAMES, difficulty, refreshBoard, storyHint } from '../core/campaign/contracts';
 import { buy, buyPrice, healAtClinic, healCost, nomadDiscount, restDay, sell, sellPrice, shopStock } from '../core/campaign/economy';
@@ -48,7 +49,7 @@ export class HubScene extends Phaser.Scene {
   private menu!: Phaser.GameObjects.Container;
   private win!: Phaser.GameObjects.Container;
   private body!: Phaser.GameObjects.Container;
-  private title!: Phaser.GameObjects.Text;
+  private title!: PixelText;
   private tip!: Tip;
   private entry: HubSceneData = {};
   private t = 0;
@@ -167,7 +168,7 @@ export class HubScene extends Phaser.Scene {
     this.redraw();
   }
 
-  private L(x: number, y: number, s: string, o: LabelOpts = {}, parent: Phaser.GameObjects.Container = this.body): Phaser.GameObjects.Text {
+  private L(x: number, y: number, s: string, o: LabelOpts = {}, parent: Phaser.GameObjects.Container = this.body): PixelText {
     const t = label(this, x, y, s, o);
     parent.add(t);
     return t;
@@ -254,13 +255,16 @@ export class HubScene extends Phaser.Scene {
         this.sel = c.id;
         this.redraw();
       });
+      // szerokości w pikselach czcionki 6x8: lewe napisy przycinamy, żeby nie wchodziły na prawe
+      const reward = label(this, w - 4, 1, `${c.reward.scrap} Z`, { color: PAL.amber }).setOrigin(1, 0);
+      const diff = label(this, w - 4, 18, d.label, { color: TONE[d.tone] }).setOrigin(1, 0);
       row.add([
         bg,
-        label(this, 4, 2, cut((c.story ? '★ ' : '') + c.title, 30), { size: 6.5, bold: true, color: c.story ? PAL.amber : PAL.text }),
-        label(this, w - 4, 2, `${c.reward.scrap} Z`, { size: 6.5, color: PAL.amber }).setOrigin(1, 0),
-        label(this, 4, 11, cut(`${c.giver} · ${FACTION_NAMES[c.faction]}`, 38), { size: 5, color: PAL.dim }),
-        label(this, 4, 18, `${TYPE_NAMES[c.type]} · poz. ${c.level} · ${BIOME_NAMES[c.biome]}`, { size: 5, color: PAL.toxic }),
-        label(this, w - 4, 18, d.label, { size: 5, bold: true, color: TONE[d.tone] }).setOrigin(1, 0),
+        label(this, 4, 1, (c.story ? '★ ' : '') + c.title, { color: c.story ? PAL.amber : PAL.text, maxW: w - 12 - reward.width }),
+        reward,
+        label(this, 4, 10, `${c.giver} · ${FACTION_NAMES[c.faction]}`, { color: PAL.dim, maxW: w - 8 }),
+        label(this, 4, 18, `${TYPE_NAMES[c.type]} · poz. ${c.level} · ${BIOME_NAMES[c.biome]}`, { color: PAL.toxic, maxW: w - 12 - diff.width }),
+        diff,
       ]);
     }, this.body).setItems(st.contracts);
     if (!st.contracts.length) this.L(8, 4, 'Tablica jest pusta. Odpocznij, a ktoś coś dopisze.', { size: 7, color: PAL.dim, wrap: LW - 8 });

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { RECRUITS } from '../core/data/recruits';
 import { INTRO_SLIDES, type IntroSlideId } from '../core/data/story';
@@ -24,8 +25,8 @@ export class IntroScene extends Phaser.Scene {
   private slideObjects: Phaser.GameObjects.GameObject[] = [];
   private updaters: Updater[] = [];
   private tw: Typewriter | null = null;
-  private text!: Phaser.GameObjects.Text;
-  private dots!: Phaser.GameObjects.Text;
+  private text!: PixelText;
+  private dots!: PixelText;
   private flash!: Phaser.GameObjects.Rectangle;
   private next!: UiButton;
   private boomed = false;

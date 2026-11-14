@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { type PixelText, pixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import {
   type ActionButton,
@@ -22,7 +23,7 @@ import {
 } from '../core/HudState';
 import type { Character } from '../core/rules/types';
 import { TurnPhase } from '../core/TurnManager';
-import { BASE_H, BASE_W, FONT, PAL, ZOOM, button as kitButton, fitCamera, label } from './ui/Kit';
+import { BASE_H, BASE_W, PAL, button as kitButton, fitCamera, label } from './ui/Kit';
 import { type Window as UiWindow, abilityIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
 
 // HUD misji - port Oldgame/src/mission/hud.js (DOM) do Phasera, w stylu terminala CRT.
@@ -52,7 +53,6 @@ const C = {
 const TONE: Record<LogTone, number> = { dim: C.grey, good: C.green, bad: C.red, amber: C.amber, hd: C.white };
 const HP_TONE = { good: C.green, amber: C.amber, bad: C.red } as const;
 
-const hex = (c: number): string => `#${c.toString(16).padStart(6, '0')}`;
 const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
 const M = 4; // margines od krawędzi
@@ -88,7 +88,7 @@ const AB_BH = 11;
 
 interface Button {
   bg: Phaser.GameObjects.Rectangle;
-  text: Phaser.GameObjects.Text;
+  text: PixelText;
   enabled: boolean;
   hovered: boolean;
   color: number;
@@ -112,7 +112,7 @@ export class UIScene extends Phaser.Scene {
 
   private partyLayer!: Phaser.GameObjects.Container;
   private foeLayer!: Phaser.GameObjects.Container;
-  private roundText!: Phaser.GameObjects.Text;
+  private roundText!: PixelText;
 
   private btnEnd!: Button;
   private btnInv!: Button;
@@ -131,27 +131,28 @@ export class UIScene extends Phaser.Scene {
   private promptWin: UiWindow | null = null;
 
   private hoverBg!: Phaser.GameObjects.Rectangle;
-  private hoverText!: Phaser.GameObjects.Text;
+  private hoverText!: PixelText;
 
   // dziennik
   private logPanel!: Phaser.GameObjects.Container;
   private logBg!: Phaser.GameObjects.Rectangle;
-  private logLineTexts: Phaser.GameObjects.Text[] = [];
-  private logMeasure!: Phaser.GameObjects.Text;
+  private logLineTexts: PixelText[] = [];
+  private logMeasure!: PixelText;
   private logWrapCache = new Map<number, string[]>();
   private logScroll = 0; // linii od dołu
   private logUnseen = 0;
   private logCollapsed = false;
   private logSeenId = 0;
-  private logNewBtn!: Phaser.GameObjects.Text;
-  private logColBtn!: Phaser.GameObjects.Text;
+  private logNewBtn!: PixelText;
+  private logColBtn!: PixelText;
   private logScrollBar!: Phaser.GameObjects.Graphics;
+  private logNewBg!: Phaser.GameObjects.Rectangle;
 
   // karta postaci / ekwipunek
   private sheet!: Phaser.GameObjects.Container;
-  private sheetFooter: Phaser.GameObjects.Text | null = null;
+  private sheetFooter: PixelText | null = null;
 
-  private banner: Phaser.GameObjects.Text | null = null;
+  private banner: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super('UIScene');
@@ -321,12 +322,13 @@ export class UIScene extends Phaser.Scene {
 
   // ================================================================== prymitywy
 
-  private text(x: number, y: number, s: string, color: number = C.green, size = 8): Phaser.GameObjects.Text {
-    return this.add.text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, fontStyle: 'bold', color: hex(color) }).setResolution(ZOOM).setShadow(0, 0, hex(color), 2, false, true);
+  /** Tekst HUD: czcionka bitmapowa 6x8 z czarnym obrysem; size >= 11 = pogrubienie (bez skalowania). */
+  private text(x: number, y: number, s: string, color: number = C.green, size = 8): PixelText {
+    return pixelText(this, x, y, s, { color, bold: size >= 11 });
   }
 
-  private recolor(t: Phaser.GameObjects.Text, color: number, glow = true): Phaser.GameObjects.Text {
-    return t.setColor(hex(color)).setShadow(0, 0, hex(color), glow ? 2 : 0, false, glow);
+  private recolor(t: PixelText, color: number, _glow = true): PixelText {
+    return t.setColor(color);
   }
 
   /** Tło panelu, które połyka kliknięcia (żeby nie przechodziły do WorldScene). */
@@ -348,13 +350,14 @@ export class UIScene extends Phaser.Scene {
 
   private button(x: number, y: number, w: number, label: string, onClick: () => void): Button {
     const bg = this.add.rectangle(x, y, w, BTN_H, C.bg, 0.92).setOrigin(0).setStrokeStyle(1, C.green).setInteractive({ useHandCursor: true });
-    const text = this.text(x + w / 2, y + 1, label).setOrigin(0.5, 0);
+    const text = this.text(x + w / 2, y + 2, label).setOrigin(0.5, 0);
     const b: Button = {
       bg, text, enabled: true, hovered: false, color: C.green,
       set: (l, enabled, color = C.green) => {
         b.enabled = enabled;
         b.color = color;
-        text.setText(l);
+        // nawiasy "[ ... ]" zastępuje ramka przycisku - czcionka 6x8 potrzebuje tego miejsca na napis
+        text.setText(l.replace(/^\[\s*|\s*\]$/g, ''));
         const filled = b.hovered && enabled;
         const dim = color === C.amber ? C.amberDim : color === C.red ? C.redDim : C.greenDim;
         bg.setStrokeStyle(1, enabled ? color : dim).setFillStyle(filled ? color : C.bg, filled ? 1 : 0.92);
@@ -792,11 +795,11 @@ export class UIScene extends Phaser.Scene {
     this.logMeasure = this.text(0, 0, '', C.grey).setWordWrapWidth(LOG_W - 14).setVisible(false);
     this.logScrollBar = this.add.graphics();
 
+    // ciemny tekst na bursztynie: bez obrysu (jasne tło samo daje kontrast)
+    this.logNewBg = this.add.rectangle(LOG_W / 2, LOG_H - 12, 10, 10, C.amber, 1).setOrigin(0.5, 0).setVisible(false);
     this.logNewBtn = this.text(LOG_W / 2, LOG_H - 11, '', C.bg)
+      .setFontStyle('plain')
       .setOrigin(0.5, 0)
-      .setBackgroundColor(hex(C.amber))
-      .setPadding(3, 0, 3, 0)
-      .setShadow(0, 0, '#000', 0)
       .setInteractive({ useHandCursor: true })
       .setVisible(false);
     this.logNewBtn.on('pointerdown', () => {
@@ -806,7 +809,7 @@ export class UIScene extends Phaser.Scene {
       this.drawLog();
     });
 
-    this.logPanel.add([this.logBg, head, line, this.logColBtn, ...this.logLineTexts, this.logScrollBar, this.scanlines(LOG_W, LOG_H), this.logNewBtn]);
+    this.logPanel.add([this.logBg, head, line, this.logColBtn, ...this.logLineTexts, this.logScrollBar, this.scanlines(LOG_W, LOG_H), this.logNewBg, this.logNewBtn]);
   }
 
   /** Wszystkie wpisy złamane na linie (z pamięcią podręczną zawijania). */
@@ -878,7 +881,11 @@ export class UIScene extends Phaser.Scene {
 
     const showNew = !this.logCollapsed && this.logScroll > 0;
     this.logNewBtn.setVisible(showNew);
-    if (showNew) this.logNewBtn.setText(`▼ NAJNOWSZE${this.logUnseen ? ` (+${this.logUnseen})` : ''}`);
+    this.logNewBg.setVisible(showNew);
+    if (showNew) {
+      this.logNewBtn.setText(`▼ NAJNOWSZE${this.logUnseen ? ` (+${this.logUnseen})` : ''}`);
+      this.logNewBg.setSize(this.logNewBtn.width + 6, 10);
+    }
   }
 
   private scrollLog(delta: number): void {
@@ -1020,15 +1027,12 @@ export class UIScene extends Phaser.Scene {
     if (!b) return;
     this.banner?.destroy();
     const color = TONE[b.tone];
-    const t = this.text(BASE_W / 2, BASE_H * 0.36, b.sub ? `${b.text}\n${b.sub}` : b.text, color, 16)
-      .setOrigin(0.5)
-      .setAlign('center')
-      .setBackgroundColor('rgba(5,10,6,0.75)')
-      .setPadding(8, 3, 8, 3)
-      .setShadow(0, 0, hex(color), 6, false, true);
-    this.banner = t;
-    t.setScale(1.3).setAlpha(0);
-    this.tweens.add({ targets: t, scale: 1, alpha: 1, duration: 140, ease: 'Back.easeOut' });
-    this.tweens.add({ targets: t, alpha: 0, delay: 1300, duration: 400, onComplete: () => t.destroy() });
+    const t = this.text(0, 0, b.sub ? `${b.text}\n${b.sub}` : b.text, color, 16).setOrigin(0.5).setAlign('center');
+    const bg = this.add.rectangle(0, 0, t.width + 16, t.height + 6, 0x050a06, 0.75).setStrokeStyle(1, color);
+    // baner bez skalowania (skala != 1 rozjechałaby piksele czcionki z siatką) - tylko wjazd z góry i zanik
+    const box = this.add.container(Math.round(BASE_W / 2), Math.round(BASE_H * 0.36) - 6, [bg, t]).setAlpha(0);
+    this.banner = box;
+    this.tweens.add({ targets: box, y: Math.round(BASE_H * 0.36), alpha: 1, duration: 140, ease: 'Quad.easeOut', onUpdate: () => (box.y = Math.round(box.y)) });
+    this.tweens.add({ targets: box, alpha: 0, delay: 1300, duration: 400, onComplete: () => box.destroy() });
   }
 }

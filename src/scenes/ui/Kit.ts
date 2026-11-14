@@ -1,12 +1,15 @@
 import Phaser from 'phaser';
 import { SoundManager } from '../../audio/SoundManager';
 import { Settings } from './Settings';
+import { PixelText, pixelText } from './BitmapFont';
+
+export { PixelText } from './BitmapFont';
 
 // Wspólny zestaw UI scen menu + model rozdzielczości.
 //
 // Gra jest komponowana na siatce projektowej 480x270 (BASE_W x BASE_H) - wszystkie współrzędne scen są w tych
 // "pikselach projektowych". Płótno ma jednak rozmiar BASE * ZOOM, a każda kamera ma zoom = ZOOM, więc pixel art
-// zostaje gruby, a tekst (renderowany z resolution = ZOOM) jest ostry i czytelny.
+// zostaje gruby; tekst to czcionka bitmapowa w tej samej siatce pikseli (BitmapFont.ts).
 // (Odpowiednik Engine.pixelScale z Oldgame/src/core/engine.js.)
 
 export const BASE_W = 480;
@@ -76,28 +79,29 @@ export interface LabelOptions {
   italic?: boolean;
   /** Szerokość zawijania w pikselach projektowych. */
   wrap?: number;
+  /** Maksymalna szerokość linii (przycięcie z wielokropkiem). */
+  maxW?: number;
   align?: 'left' | 'center' | 'right';
   shadow?: boolean;
   lineSpacing?: number;
 }
 
 /**
- * Ostry tekst: rasteryzowany czcionką ZOOM-krotnie większą i pomniejszony o 1/ZOOM, więc trafia 1:1 w piksele płótna,
- * a odstępy wierszy są równe. UWAGA: rozmiar w pikselach projektowych to displayWidth / displayHeight (nie width / height).
+ * Tekst pikselowy (ręcznie rysowana czcionka bitmapowa 6x8, BitmapFont.ts) - 1 piksel czcionki = 1 piksel projektowy.
+ * `size` nie skaluje czcionki (brak pixel-mismatch): size >= 12 daje wariant pogrubiony (nagłówki); `bold` przy
+ * mniejszych rozmiarach jest ignorowane, bo pogrubiona czcionka 6x8 nie mieści się w gęstych układach.
+ * Domyślnie czarny obrys 1 px (czytelność na tle pixel artu); shadow: false = bez obrysu.
  */
-export function label(scene: Phaser.Scene, x: number, y: number, s: string, o: LabelOptions = {}): Phaser.GameObjects.Text {
-  const style: Phaser.Types.GameObjects.Text.TextStyle = {
-    fontFamily: FONT,
-    fontSize: `${(o.size ?? 8) * ZOOM}px`,
-    fontStyle: `${o.italic ? 'italic ' : ''}${o.bold ? 'bold' : ''}`.trim() || 'normal',
-    color: hex(o.color ?? PAL.text),
-    align: o.align ?? 'left',
-    lineSpacing: (o.lineSpacing ?? 1) * ZOOM,
-  };
-  if (o.wrap) style.wordWrap = { width: o.wrap * ZOOM, useAdvancedWrap: true };
-  const t = scene.add.text(x, y, s, style).setScale(1 / ZOOM);
-  if (o.shadow !== false) t.setShadow(0.5 * ZOOM, 0.5 * ZOOM, '#000000', 0, false, true);
-  return t;
+export function label(scene: Phaser.Scene, x: number, y: number, s: string, o: LabelOptions = {}): PixelText {
+  return pixelText(scene, x, y, s, {
+    color: o.color ?? PAL.text,
+    bold: (o.size ?? 8) >= 12,
+    style: o.shadow === false ? 'plain' : 'outline',
+    wrap: o.wrap,
+    maxW: o.maxW,
+    align: o.align,
+    lineSpacing: o.lineSpacing,
+  });
 }
 
 /** Panel w stylu starego .panel: ciemne tło, rdzawa ramka, twardy cień. Połyka kliknięcia. */
@@ -127,6 +131,8 @@ export function button(scene: Phaser.Scene, x: number, y: number, text: string, 
   const size = o.size ?? 8;
   const t = label(scene, 0, 0, text.toUpperCase(), { size, bold: true }).setOrigin(0.5);
   const w = o.w ?? Math.ceil(t.displayWidth) + 14;
+  // napis zawsze mieści się w przycisku (czcionka bitmapowa nie zmniejsza się)
+  t.setMaxLineWidth(w - 6);
   const h = o.h ?? size + 8;
   const base = o.primary ? PAL.amber : o.danger ? PAL.bad : PAL.text;
   const edge = o.primary ? PAL.amber : o.danger ? PAL.blood : PAL.edge;
@@ -186,10 +192,10 @@ export class Typewriter {
   private shown = 0;
   private acc = 0;
   private readonly chars: string[];
-  private readonly target: Phaser.GameObjects.Text;
+  private readonly target: PixelText;
   private readonly cps: number;
 
-  constructor(target: Phaser.GameObjects.Text, text: string, cps = 34) {
+  constructor(target: PixelText, text: string, cps = 34) {
     this.target = target;
     this.cps = cps;
     // zawijamy cały tekst z góry, żeby słowa nie przeskakiwały między wierszami w trakcie pisania
