@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><title>Creature sheets</title>
+<style>body{margin:0;background:#5e5040;color:#eee;font:12px monospace} canvas{image-rendering:pixelated;display:block} .blk{margin:6px;display:inline-block;vertical-align:top} #game canvas{display:block}</style></head>
+<body>
+<div id="out"></div>
+<script type="module">
+// Contact sheet / engine test page for creature.js (agent CREATURE-SPRITES).
+//  ?c=dog_mutant,rat_mutant  creatures (template ids, or wolf/boar/spider/beetle)   ?k=3 magnification   ?anims=idle,walk
+//  ?view=game  -> real ActorSprites in a Three.js scene (all anims cycling)
+import { analyze } from './look.js';
+import { buildHeroSheet } from './hero.js';
+import { buildCreatureSheet } from './creature.js';
+const q = new URLSearchParams(location.search);
+const ALL = ['rat_mutant', 'dog_mutant', 'wolf', 'boar', 'kretowij', 'scorpion', 'spider', 'beetle', 'fly_swarm', 'drone', 'turret'];
+const list = (q.get('c') || ALL.join(',')).split(',');
+const k = +(q.get('k') || 3), animsSel = q.get('anims') ? q.get('anims').split(',') : null;
+const out = document.getElementById('out');
+if (q.get('view') === 'game') {
+  const { THREE } = await import('../core/engine.js');
+  const G = await import('./index.js');
+  const W = 480, H = 270, sc = +(q.get('s') || 2.6);
+  const c = document.createElement('canvas'); out.appendChild(c); c.id = 'gl';
+  const r = new THREE.WebGLRenderer({ canvas: c, antialias: false, preserveDrawingBuffer: true });
+  r.setPixelRatio(1); r.setSize(W, H, false); r.outputColorSpace = THREE.SRGBColorSpace; c.style.cssText = `width:${W * sc}px;height:${H * sc}px;image-rendering:pixelated`;
+  const post = G.createPost(r, W, H);
+  const scene = new THREE.Scene(); const atm = G.setupAtmosphere(scene, q.get('mood') || 'dusk');
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), G.tileMaterial('sand')); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  const anim = q.get('anim') || 'idle';
+  const descs = [{ classId: 'soldier', name: 'ref' }, ...list.map(t => ({ templateId: t, isEnemy: true }))];
+  const sprites = descs.map((d, i) => { const s = G.createActorSprite(d); s.object3d.position.set(-6 + (i % 6) * 2.4, 0, -2 + Math.floor(i / 6) * 2.6); scene.add(s.object3d); s.setFacing(i % 2 ? -1 : 1); s.play(anim); return s; });
+  window.__sprites = sprites;
+  const zoom = +(q.get('zoom') || 0.55);
+  const cam = new THREE.OrthographicCamera(-8 * 16 / 9 * zoom, 8 * 16 / 9 * zoom, 8 * zoom, -8 * zoom, 0.1, 200);
+  cam.position.set(0, 14, 14); cam.lookAt(0, 0.6, 0);
+  let last = performance.now();
+  const tick = (n) => { const dt = Math.min(0.05, (n - last) / 1000); last = n; sprites.forEach(s => { s.update(dt); if (anim !== 'idle' && anim !== 'walk' && s.anim === 'idle') s.play(anim); }); atm.update(dt); post.render(scene, cam); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+} else {
+  const hero = buildHeroSheet(analyze({ classId: 'soldier', name: 'ref' }));
+  for (const t of list) {
+    const A = analyze({ templateId: t, isEnemy: true });
+    const t0 = performance.now(); const S = buildCreatureSheet(A); const ms = (performance.now() - t0).toFixed(0);
+    const blk = document.createElement('div'); blk.className = 'blk'; out.appendChild(blk);
+    if (!S) { blk.textContent = t + ': null (' + A.kind + '/' + A.variant + ')'; continue; }
+    const rowsSel = animsSel || Object.keys(S.info);
+    const cols = S.cols, labelW = 40;
+    const cv = document.createElement('canvas'); const hw = hero.fw;
+    cv.width = (labelW + hw + 4 + cols * (S.fw + 2)) * k; cv.height = (14 + rowsSel.length * (S.fh + 2)) * k;
+    const g = cv.getContext('2d'); g.imageSmoothingEnabled = false; g.scale(k, k);
+    g.fillStyle = '#eee'; g.font = '8px monospace'; g.fillText(`${t} ${A.kind}/${A.variant} ${S.fw}x${S.fh} gy${S.gy} hpx${S.hpx} ${ms}ms`, 2, 9);
+    rowsSel.forEach((an, ri) => {
+      const y0 = 14 + ri * (S.fh + 2), inf = S.info[an], am = S.anims[an];
+      g.fillStyle = '#eee'; g.fillText(an, 1, y0 + 10); g.fillText(`${am.n}x${am.dur}`, 1, y0 + 20);
+      // human reference (same texel density when hpx matches): ground aligned
+      const hs = S.hpx / hero.hpx;
+      g.drawImage(hero.canvas, 0, 0, hero.fw, hero.fh, labelW, y0 + S.gy - hero.gy * hs, hero.fw * hs, hero.fh * hs);
+      for (let i = 0; i < cols; i++) {
+        const x0 = labelW + hw + 4 + i * (S.fw + 2);
+        g.fillStyle = i < inf.n ? '#6e5e4a' : '#4a4034'; g.fillRect(x0, y0, S.fw, S.fh);
+        g.fillStyle = '#4a3e30'; g.fillRect(x0, y0 + S.gy, S.fw, 1); g.fillRect(x0 + S.fw / 2, y0 + S.gy, 1, 3);
+        if (i < inf.n) g.drawImage(S.canvas, i * S.fw, inf.row * S.fh, S.fw, S.fh, x0, y0, S.fw, S.fh);
+      }
+    });
+    blk.appendChild(cv);
+  }
+  window.__done = true;
+}
+</script>
+</body></html>

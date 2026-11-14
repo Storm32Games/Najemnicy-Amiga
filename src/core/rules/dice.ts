@@ -1,0 +1,137 @@
+// Kości, testy, stopnie sukcesu, biegłość. Migracja z Oldgame/src/rules/dice.js.
+// Czysty TypeScript: zero zależności od Phasera / Three.js / DOM.
+import { DC_TABLE } from '../data/rules.ts';
+import type { DiceExpr } from '../data/types.ts';
+
+/** Generator liczb [0, 1). Domyślnie Math.random; makeRng() daje deterministyczny mulberry32. */
+export type Rng = () => number;
+/** 0 krytyczna porażka, 1 porażka, 2 sukces, 3 krytyczny sukces. */
+export type Degree = 0 | 1 | 2 | 3;
+
+/** FNV-1a hash tekstu -> uint32 (ziarno map i sklepów). */
+export function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Deterministyczny mulberry32. Bez ziarna zwraca Math.random. */
+export function makeRng(seed?: number | string | null): Rng {
+  if (seed === undefined || seed === null) return Math.random;
+  let a = typeof seed === 'string' ? hashSeed(seed) : seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Rzut kością 1..sides. */
+export const d = (sides: number, rng: Rng = Math.random): number => 1 + Math.floor(rng() * sides);
+/** Liczba całkowita z przedziału [a, b]. */
+export const randInt = (a: number, b: number, rng: Rng = Math.random): number => a + Math.floor(rng() * (b - a + 1));
+/** Losowy element tablicy. */
+export const pickOne = <T>(arr: readonly T[], rng: Rng = Math.random): T => arr[Math.floor(rng() * arr.length)];
+
+export interface RollResult {
+  total: number;
+  rolls: number[];
+  expr: string;
+  mod: number;
+}
+
+/** "2d6+3", "1d8", "1d4-1", "2d6+1d4+2", "5". */
+export function roll(expr: DiceExpr | number, rng: Rng = Math.random): RollResult {
+  const s = String(expr).replace(/\s+/g, '');
+  const re = /([+-]?)(\d*)d(\d+)|([+-]?)(\d+)/g;
+  let m: RegExpExecArray | null;
+  let total = 0;
+  let mod = 0;
+  const rolls: number[] = [];
+  while ((m = re.exec(s))) {
+    if (m[3] !== undefined) {
+      const sign = m[1] === '-' ? -1 : 1;
+      const n = m[2] === '' ? 1 : Number(m[2]);
+      const sides = Number(m[3]);
+      for (let i = 0; i < n; i++) {
+        const r = d(sides, rng);
+        rolls.push(r);
+        total += sign * r;
+      }
+    } else {
+      const v = (m[4] === '-' ? -1 : 1) * Number(m[5]);
+      mod += v;
+      total += v;
+    }
+  }
+  return { total, rolls, expr: s, mod };
+}
+
+export interface ParsedDice {
+  n: number;
+  sides: number;
+  mod: number;
+}
+
+/** "2d6+3" -> {n: 2, sides: 6, mod: 3}. Liczba bez kości -> {n: 0, sides: 0, mod}. */
+export function parseDice(expr: DiceExpr): ParsedDice {
+  const m = /^(\d*)d(\d+)([+-]\d+)?$/.exec(String(expr).replace(/\s+/g, ''));
+  if (!m) return { n: 0, sides: 0, mod: parseInt(expr, 10) || 0 };
+  return { n: m[1] === '' ? 1 : Number(m[1]), sides: Number(m[2]), mod: m[3] ? Number(m[3]) : 0 };
+}
+
+export function averageDice(expr: DiceExpr): number {
+  const p = parseDice(expr);
+  return (p.n * (p.sides + 1)) / 2 + p.mod;
+}
+
+/** Stopień sukcesu PF2e: ±10 od ST + naturalna 20 / 1 przesuwa o stopień. */
+export function degreeOf(total: number, dc: number, nat?: number): Degree {
+  let deg: number = total >= dc + 10 ? 3 : total >= dc ? 2 : total <= dc - 10 ? 0 : 1;
+  if (nat === 20) deg = Math.min(3, deg + 1);
+  else if (nat === 1) deg = Math.max(0, deg - 1);
+  return deg as Degree;
+}
+
+export interface CheckResult {
+  d20: number;
+  mod: number;
+  total: number;
+  dc: number;
+  degree: Degree;
+  nat20: boolean;
+  nat1: boolean;
+}
+
+export function check(mod: number, dc: number, rng: Rng = Math.random): CheckResult {
+  const r = d(20, rng);
+  const total = r + mod;
+  return { d20: r, mod, total, dc, degree: degreeOf(total, dc, r), nat20: r === 20, nat1: r === 1 };
+}
+
+export const flatCheck = (dc: number, rng: Rng = Math.random): CheckResult => check(0, dc, rng);
+
+/** Szansa (0..1) na co najmniej sukces / krytyk dla danego modyfikatora i ST - do podpowiedzi w UI. */
+export function hitChances(mod: number, dc: number): { hit: number; crit: number } {
+  let hit = 0;
+  let crit = 0;
+  for (let k = 1; k <= 20; k++) {
+    const g = degreeOf(k + mod, dc, k);
+    if (g >= 2) hit++;
+    if (g === 3) crit++;
+  }
+  return { hit: hit / 20, crit: crit / 20 };
+}
+
+/** Standardowe ST wg poziomu (tabela PF2e). */
+export const dcForLevel = (level: number): number => DC_TABLE[Math.max(0, Math.min(DC_TABLE.length - 1, level | 0))];
+
+/** Premia z biegłości: 0 bez szkolenia, inaczej 2*ranga + poziom. */
+export const profBonus = (rank: number, level: number): number => (rank > 0 ? 2 * rank + level : 0);
+
+export const fmtMod = (n: number): string => (n >= 0 ? '+' + n : String(n));

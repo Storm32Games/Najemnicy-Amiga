@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><title>flora</title><style>body{margin:0;background:#8a6a48;padding:6px}canvas{image-rendering:pixelated}</style></head><body>
+<script type="module">
+// Dev gallery: the flora atlas (?k=3)
+import { buildFloraAtlas } from './flora.js'; const k = +(new URLSearchParams(location.search).get('k') || 3);
+const A = buildFloraAtlas(); A.canvas.style.width = A.canvas.width * k + 'px'; document.body.appendChild(A.canvas); window.__done = A.cells.length;
+</script></body></html>
