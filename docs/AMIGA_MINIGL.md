@@ -56,6 +56,26 @@ zwalniają tło poprzedniej planszy — naraz w pamięci są tylko 4 kafle tła.
 **Efekty retro** (`FxScene.ts`) — trzy pełnoekranowe warstwy z alfą. W profilu Amiga wyłączone: bez shaderów
 i przy limicie wypełniania to najdroższa rzecz na klatce.
 
+## Mapa regionu i podróż między sektorami (`src/core/campaign/region.ts`)
+
+Port `Oldgame/src/scenes/meta/worldterrain.js` + `worldmap.js` bez three.js. Wcześniej mapa była płaska
+(malowana z góry), a drużyna szła prostą linią przez wszystko — także przez miasto i góry.
+
+| Element | Logika (core, Q8 = 1/256 jednostki świata) | W C |
+|---|---|---|
+| Teren | `regionHeightF` (1:1 z `hgt()`: góry z grzbietami, wydmy, płaskowyże, krater z wałem, suche koryto, spłaszczone miasto i Przystań) wypiekany raz do `heightGrid()` 145×97 `Int16` (krok 0.5 j., 27.5 KB); `heightQ8` = interpolacja dwuliniowa na intach | `static const int16_t hmap[]` z pliku |
+| Sektory | `SECTORS` (obrys, podpis, stałe miejsca zleceń), `PLAZAS` w mieście, `contractSpots` | tablica `struct` |
+| Trasy | `buildRoute`: do ruin autostrada → brama → aleja → przecznica; poza miastem kręty szlak przez 2 punkty kontrolne odsunięte w bok, a gdy prosta przecina miasto — objazd od południa/północy. Catmull-Rom na intach (wagi Q8, suma 512), długości przez `isqrt` | `int32_t x[], z[], cum[]` |
+| Marsz | `routeTicks` = max(6 s, długość / 4.2 j/s) w tickach 50 Hz; `routePointAt` (wyszukiwanie binarne po `cum`) | bez FPU |
+
+Rysowanie (`scenes/iso/RegionArt.ts`): rzut ukośny z południa (7.4 px/j. w poziomie, 5.6 px/j. w głąb,
+6 px na jednostkę wysokości). Teren malowany kolumnami „voxel space” od najbliższego do najdalszego z buforem Y,
+cieniowanie stoków od NW, urwiska płaskowyżów ciemniejsze, jezioro w kraterze jako płaska tafla.
+Budynki miasta, wieżowce, wiadukt, fabryki z kominami, chłodnia, obóz Nomadów i Przystań to bryły
+(front + dach) sortowane po krawędzi frontu. Marker drużyny i bestie stoją na wysokości terenu, głębia po Y.
+Całość to jeden obraz 480×270 → w profilu Amiga 4 kafle (`tiledImage`); w porcie gotowy obrazek.
+Na żywo zostają tylko: szlaki (kropki), flagi, 7 ognisk, migająca latarnia bunkra, marker i 5 bestii.
+
 ## Profil Amiga w przeglądarce
 
 `?profile=amiga` w URL (albo Opcje → „Profil Amiga”, po restarcie): 50 kl./s, bez nakładek FX,
@@ -66,6 +86,7 @@ logo bez dużej tekstury JPG. `?profile=pc` wymusza zwykły tryb.
 1. ~~Animacje plansz intro na `isin` + ticki~~ — zrobione (`fx.ts`).
 2. ~~Kafle ≤ 256 px dla teł w profilu Amiga~~ — zrobione (`tiledImage`, `potTiles`).
 3. Tła: wypiec do obrazków (np. IFF/PNG z paletą) zamiast malowania w kodzie — w porcie nie będzie Canvas 2D.
-4. `src/core` poza ekranami startowymi: domyślne `Math.random` → wspólny ziarnisty RNG, koszty Dijkstry
+4. ~~Mapa regionu z wysokościami i trasami między sektorami~~ — zrobione (`region.ts`, `RegionArt.ts`).
+5. `src/core` poza ekranami startowymi: domyślne `Math.random` → wspólny ziarnisty RNG, koszty Dijkstry
    w półkrokach całkowitych (1→2, przekątna 1.5→3), `Math.hypot` → porównania kwadratów odległości.
-5. Dźwięk: syntezę Web Audio wyrenderować do 8-bitowych sampli dla Paula/AHI.
+6. Dźwięk: syntezę Web Audio wyrenderować do 8-bitowych sampli dla Paula/AHI.

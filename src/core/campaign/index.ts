@@ -6,3 +6,4 @@ export * from './debrief.ts';
 export * from './events.ts';
 export * from './travel.ts';
 export * from './session.ts';
+export * from './region.ts';

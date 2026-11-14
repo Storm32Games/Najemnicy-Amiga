@@ -3,37 +3,32 @@ import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { TYPE_NAMES } from '../core/campaign/contracts';
 import { FAUNA_CHANCE, FAUNA_KINDS, EVENTS, faunaAttackEvent, type EventChoice, type TravelEvent } from '../core/campaign/events';
+import { HOME, SECTORS, WQ, buildRoute, contractSpots, heightQ8, routePointAt, routeTicks, sectorOf, type Route, type WPos } from '../core/campaign/region';
 import { campaign } from '../core/campaign/session';
 import type { Contract } from '../core/campaign/state';
 import { bestForChoice, choiceDC, resolveEventChoice, rollTravelEvent } from '../core/campaign/travel';
+import { TickClock, isin } from '../core/frontend';
 import { shortName } from '../core/data/names';
 import { DEGREE_NAMES, SKILLS } from '../core/data/rules';
-import type { Biome } from '../core/tactical/mapgen';
 import type { ObjectiveType } from '../core/tactical/mission';
 import { getStat } from '../core/rules/stats';
 import { ENEMIES } from '../core/data/enemies';
 import type { EnemyShape } from '../core/data/types';
 import { paintCreatureSheet } from './iso/CreatureArt';
 import { ArtBook } from './iso/IsoArt';
+import { beaconPos, paintRegion, regionFires, scrX, scrY } from './iso/RegionArt';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, button, canvasTexture, cut, enter, goto, hex, label, panel, parseColor, seeded } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, button, campfire, cut, enter, goto, hex, label, panel, parseColor, tiledImage } from './ui/Kit';
 import { openWindow } from './ui/Widgets';
 
 // Mapa regionu i podróż na miejsce zlecenia (port Oldgame/src/scenes/worldmap.js + meta/worldterrain.js).
-// Krajobraz 3D zastąpiony mapą malowaną z góry; zdarzenia w drodze rozstrzyga src/core/campaign/travel.ts.
+// Teren z wysokościami, sektory i trasy: src/core/campaign/region.ts (Q8, ticki 50 Hz).
+// Malowanie krajobrazu: iso/RegionArt.ts. Zdarzenia w drodze: src/core/campaign/travel.ts.
 
-/** Współrzędne świata ze starej mapy (x: zachód-wschód, z: północ-południe) -> piksele projektowe. */
-const sx = (x: number): number => Math.round(232 + x * 7.4);
-const sy = (z: number): number => Math.round(112 + z * 5.6);
-
-const HOME = { x: -17, z: 8 };
-const SECTORS: { id: Biome; name: string; sub: string; color: number; x: number; z: number; rx: number; rz: number; label: [number, number]; spots: [number, number][] }[] = [
-  { id: 'ruins', name: 'RUINY MIASTA', sub: 'sektor miejski', color: 0xf2a93b, x: 2.5, z: 2, rx: 14.1, rz: 10.7, label: [2.5, 13.8], spots: [[-3, -2], [7.5, 5], [1, 7.5], [9, -3.5], [-6, 5]] },
-  { id: 'wastes', name: 'PUSTKOWIA', sub: 'wydmy i obóz Nomadów', color: 0xd8c090, x: 24, z: 11, rx: 7.2, rz: 7.6, label: [24, 17.8], spots: [[21.5, 11.5], [27.5, 7.5], [20.5, 15], [27, 14], [23.5, 5.6]] },
-  { id: 'industrial', name: 'STREFA PRZEMYSŁOWA', sub: 'fabryki i krater', color: 0xe0703a, x: 15, z: -12, rx: 8.6, rz: 4.4, label: [24, -17.4], spots: [[10.5, -14.2], [18.5, -10.6], [14.5, -9.6], [20.5, -13.6]] },
-  { id: 'bunker', name: 'GÓRY · BUNKIER', sub: 'schrony w skałach', color: 0x6ab0ff, x: -15, z: -11, rx: 9, rz: 5.2, label: [-15, -17.4], spots: [[-13, -7.6], [-19.5, -8.2], [-9, -10.2], [-16.5, -12.5]] },
-];
 const TYPE_COLOR: Record<ObjectiveType, number> = { eliminate: 0xc43d2f, retrieve: 0x7fc46a, rescue: 0x4aa8ff, hunt: 0xf2a93b, boss: 0xff30ff };
+const Q = (v: number): number => Math.round(v * WQ);
+/** Punkt świata (Q8) -> ekran z wysokością terenu. */
+const scr = (p: WPos, up = 0): { x: number; y: number } => ({ x: scrX(p.x), y: scrY(Math.round(p.x), Math.round(p.z), up) });
 
 export interface TravelSceneData {
   contract: Contract;
@@ -41,11 +36,15 @@ export interface TravelSceneData {
   event?: string;
 }
 
-/** Zmutowana bestia krążąca po mapie regionu. */
+/** Zmutowana bestia krążąca po mapie regionu - pozycja w świecie (Q8), ekran liczony z rzutu z wysokością. */
 interface Beast {
   sprite: Phaser.GameObjects.Sprite;
   name: string;
-  home: { x: number; y: number };
+  x: number;
+  z: number;
+  hx: number;
+  hz: number;
+  alpha: number;
   wait: number;
   dead: boolean;
   busy: boolean;
@@ -58,21 +57,25 @@ const BEAST_EYES = ['#ff3a2a', '#ffe040', '#40ffc0', '#ff60ff', '#8fff40'];
 export class TravelScene extends Phaser.Scene {
   private job!: Contract;
   private marker!: Phaser.GameObjects.Sprite;
-  private from = { x: 0, y: 0 };
-  private to = { x: 0, y: 0 };
-  private k = 0;
+  private route!: Route;
+  /** Postęp marszu w tickach 50 Hz i czas całej trasy (Oldgame: max(6 s, długość / 4.2)). */
+  private tick = 0;
+  private dur = 300;
+  private readonly clock = new TickClock();
+  private pos: WPos = { x: 0, z: 0 };
   private state: 'idle' | 'moving' | 'event' | 'arrived' = 'idle';
-  private eventAt = -1;
+  private eventTick = -1;
+  private ambushTick = -1;
   private event: TravelEvent | null = null;
   private stepT = 0;
   private info!: PixelText;
   private buttons: Phaser.GameObjects.Container[] = [];
   private dust: Motes | null = null;
   private pulse: Phaser.GameObjects.Arc | null = null;
+  private trail: Phaser.GameObjects.Graphics | null = null;
+  private fires: ((t: number) => void)[] = [];
+  private beacon: Phaser.GameObjects.Rectangle | null = null;
   private t = 0;
-  /** Czas całej podróży w s (Oldgame: max(6 s, długość trasy / 4.2)). */
-  private dur = 6;
-  private ambushAt = -1;
   private fauna: Beast[] = [];
   private backBtn: ReturnType<typeof button> | null = null;
 
@@ -99,64 +102,69 @@ export class TravelScene extends Phaser.Scene {
       return;
     }
     this.state = 'idle';
-    this.k = 0;
+    this.tick = 0;
     this.t = 0;
     this.buttons = [];
     this.fauna = [];
+    this.fires = [];
+    this.clock.reset();
 
-    this.paintMap();
-    this.add.image(0, 0, 'travel_map').setOrigin(0);
+    // krajobraz z wysokościami (w profilu Amiga: kafle <= 256 px)
+    paintRegion(this, 'travel_map', BASE_W, BASE_H);
+    tiledImage(this, 'travel_map');
+    for (const f of regionFires()) this.fires.push(campfire(this, f.x, f.y, f.size, 2));
+    const bp = beaconPos();
+    this.beacon = this.add.rectangle(bp.x, bp.y, 2, 2, 0xff3020).setDepth(2);
     for (const s of SECTORS) {
-      label(this, sx(s.label[0]), sy(s.label[1]), s.name, { size: 7, bold: true, color: s.color }).setOrigin(0.5, 0).setAlpha(0.9);
-      label(this, sx(s.label[0]), sy(s.label[1]) + 9, s.sub, { size: 5, color: 0xc9b890 }).setOrigin(0.5, 0);
+      label(this, scrX(s.label.x), scrY(s.label.x, s.label.z), s.name, { size: 7, bold: true, color: s.color }).setOrigin(0.5, 0).setAlpha(0.9).setDepth(4);
+      label(this, scrX(s.label.x), scrY(s.label.x, s.label.z) + 9, s.sub, { size: 5, color: 0xc9b890 }).setOrigin(0.5, 0).setDepth(4);
     }
-    label(this, sx(HOME.x), sy(HOME.z) + 9, 'PRZYSTAŃ', { size: 7, bold: true, color: PAL.amber }).setOrigin(0.5, 0);
+    const home = scr(HOME);
+    label(this, home.x, home.y + 13, 'PRZYSTAŃ', { size: 7, bold: true, color: PAL.amber }).setOrigin(0.5, 0).setDepth(4);
 
-    // znaczniki zleceń: stałe miejsca w sektorze, cel podświetlony
-    const used: Partial<Record<Biome, number>> = {};
-    const pts = new Map<string, { x: number; y: number }>();
-    for (const c of st.contracts) {
-      const sec = SECTORS.find((q) => q.id === c.biome) ?? SECTORS[0];
-      const n = (used[c.biome] = (used[c.biome] ?? 0) + 1);
-      const spot = sec.spots[(n - 1) % sec.spots.length];
-      pts.set(c.id, { x: sx(spot[0]), y: sy(spot[1]) });
-    }
-    if (!pts.has(this.job.id)) {
-      const sec = SECTORS.find((q) => q.id === this.job.biome) ?? SECTORS[0];
-      pts.set(this.job.id, { x: sx(sec.spots[0][0]), y: sy(sec.spots[0][1]) });
-    }
-    this.from = { x: sx(HOME.x) + 10, y: sy(HOME.z) + 4 };
-    this.to = pts.get(this.job.id)!;
+    // miejsca zleceń: stałe punkty w sektorach; trasy jak w Oldgame (autostrada + ulice, objazd miasta, kręte szlaki)
+    const all = st.contracts.some((k) => k.id === this.job.id) ? st.contracts : [...st.contracts, this.job];
+    const spots = contractSpots(all);
+    const routes = new Map<string, Route>();
+    all.forEach((c, i) => routes.set(c.id, buildRoute(spots.get(c.id) ?? sectorOf(c.biome).spots[0], c.biome, i)));
+    this.route = routes.get(this.job.id)!;
+    this.dur = routeTicks(this.route);
 
-    const route = this.add.graphics().setDepth(2);
-    const len = Phaser.Math.Distance.Between(this.from.x, this.from.y, this.to.x, this.to.y);
-    for (let d = 0; d < len; d += 6) {
-      const k = d / len;
-      route.fillStyle(0xf2a93b, 0.75).fillRect(Math.round(this.from.x + (this.to.x - this.from.x) * k), Math.round(this.from.y + (this.to.y - this.from.y) * k), 2, 2);
+    // szlaki: inne zlecenia przygaszone, wybrana trasa pulsuje (rysowana od końca autostrady)
+    const tracks = this.add.graphics().setDepth(2);
+    for (const c of all) {
+      if (c.id === this.job.id) continue;
+      this.drawTrack(tracks, routes.get(c.id)!, 0x8a6a48, 0.8);
     }
-    for (const c of st.contracts.some((k) => k.id === this.job.id) ? st.contracts : [...st.contracts, this.job]) {
-      const p = pts.get(c.id)!;
+    this.trail = this.add.graphics().setDepth(2);
+    this.drawTrack(this.trail, this.route, 0xffc050, 1);
+
+    for (const c of all) {
+      const p = scr(spots.get(c.id)!);
       const col = TYPE_COLOR[c.type] ?? 0xffffff, target = c.id === this.job.id;
       this.add.rectangle(p.x, p.y - 7, 1, 14, 0x1c1c1c).setDepth(3);
       this.add.rectangle(p.x + 4, p.y - 11, 7, 5, col).setDepth(3).setAlpha(target ? 1 : 0.55);
       if (target) {
         this.pulse = this.add.circle(p.x, p.y, 6).setStrokeStyle(1, c.story ? 0xff30ff : PAL.amber).setDepth(3);
-        const t = label(this, p.x, p.y - 26, (c.story ? '★ ' : '') + cut(c.title, 30), { size: 6, bold: true }).setOrigin(0.5, 0).setDepth(6);
-        this.add.rectangle(p.x, p.y - 22, t.displayWidth + 8, 10, 0x14100c, 0.92).setStrokeStyle(1, col).setDepth(5);
+        const ty = Math.max(3, p.y - 26);
+        const t = label(this, p.x, ty, (c.story ? '★ ' : '') + cut(c.title, 30), { size: 6, bold: true }).setOrigin(0.5, 0).setDepth(6);
+        this.add.rectangle(p.x, ty + 4, t.displayWidth + 8, 10, 0x14100c, 0.92).setStrokeStyle(1, col).setDepth(5);
       }
     }
 
     const lead = st.party.find((c) => !c.conditions.dead && c.hp > 0) ?? st.party[0];
-    this.marker = addUnit(this, this.from.x, this.from.y, `pc_${lead.recruitId ?? lead.id}`, unitLookOf(lead)).setDepth(8);
-    this.marker.setFlipX(this.to.x < this.from.x);
+    this.pos = routePointAt(this.route, 0);
+    const p0 = scr(this.pos);
+    this.marker = addUnit(this, p0.x, p0.y, `pc_${lead.recruitId ?? lead.id}`, unitLookOf(lead)).setDepth(8);
+    const ahead = routePointAt(this.route, Q(1.5));
+    this.marker.setFlipX(ahead.x < this.pos.x);
     this.dust = new Motes(this, 90, { x: 0, y: 0, w: BASE_W, h: 232 }, 0xf0c080, 12, 1, 4, 0.35, 9);
-    this.dur = Math.max(6, len / 7.4 / 4.2);
     this.spawnFauna();
 
     // dolny pasek
     panel(this, 6, 236, BASE_W - 12, 30).setDepth(20);
     label(this, 12, 240, cut(this.job.title, 44), { size: 8, bold: true, color: PAL.amber }).setDepth(21);
-    this.info = label(this, 12, 252, `${TYPE_NAMES[this.job.type]} · poz. ${this.job.level} · podróż: ${this.job.travelDays || 1} dn.`, { size: 6, color: PAL.dim }).setDepth(21);
+    this.info = label(this, 12, 252, `${TYPE_NAMES[this.job.type]} · poz. ${this.job.level} · podróż: ${this.job.travelDays || 1} dn. · ${sectorOf(this.job.biome).name.toLowerCase()}`, { size: 6, color: PAL.dim }).setDepth(21);
     // "Zawróć" działa także w trakcie marszu (Oldgame/src/scenes/worldmap.js:264)
     const back = (this.backBtn = button(this, BASE_W - 190, 243, '◀ Wróć do Przystani', () => this.state !== 'event' && goto(this, 'HubScene'), { w: 96, size: 6.5 }));
     const go = button(this, BASE_W - 88, 241, 'Wyrusz ▶', () => this.depart(), { primary: true, w: 76, h: 20, size: 8 });
@@ -168,160 +176,16 @@ export class TravelScene extends Phaser.Scene {
     SoundManager.ambience('wind');
   }
 
-  /** Mapa regionu z góry: piasek, miasto w siatce ulic, wydmy, fabryki z kraterem, góry z bunkrami, Przystań. */
-  private paintMap(): void {
-    canvasTexture(this, 'travel_map', BASE_W, BASE_H, (g, w, h) => {
-      const r = seeded(77);
-      g.fillStyle = '#8a6a44';
-      g.fillRect(0, 0, w, h);
-      for (let i = 0; i < 2600; i++) {
-        g.fillStyle = r() < 0.5 ? '#94734a' : '#7c5e3c';
-        g.fillRect(Math.floor(r() * w), Math.floor(r() * h), 1 + Math.floor(r() * 2), 1);
-      }
-      const blob = (cx: number, cy: number, rx: number, ry: number, col: string, n = 1): void => {
-        g.fillStyle = col;
-        for (let i = 0; i < n; i++) {
-          g.beginPath();
-          g.ellipse(cx + (r() - 0.5) * rx * 0.5 * (n > 1 ? 1 : 0), cy + (r() - 0.5) * ry * 0.5 * (n > 1 ? 1 : 0), rx * (n > 1 ? 0.6 + r() * 0.4 : 1), ry * (n > 1 ? 0.6 + r() * 0.4 : 1), 0, 0, Math.PI * 2);
-          g.fill();
-        }
-      };
-      // pustkowia: jasne wydmy
-      const W = SECTORS[1];
-      blob(sx(W.x), sy(W.z), W.rx * 7.4, W.rz * 5.6, '#b89460', 5);
-      for (let i = 0; i < 40; i++) {
-        const x = sx(W.x) + (r() - 0.5) * W.rx * 14, y = sy(W.z) + (r() - 0.5) * W.rz * 10;
-        g.fillStyle = '#d0ac74';
-        g.fillRect(x, y, 6 + r() * 8, 1);
-        g.fillStyle = '#967448';
-        g.fillRect(x + 2, y + 1, 6 + r() * 8, 1);
-      }
-      for (const [x, y] of [[sx(22), sy(11)], [sx(24), sy(12)], [sx(23), sy(9.6)]]) {
-        g.fillStyle = '#6a3c22';
-        g.beginPath();
-        g.moveTo(x - 4, y + 3);
-        g.lineTo(x, y - 4);
-        g.lineTo(x + 4, y + 3);
-        g.fill();
-      }
-      // góry z bunkrami
-      const B = SECTORS[3];
-      blob(sx(B.x), sy(B.z), B.rx * 7.4, B.rz * 5.6, '#5a5650', 5);
-      for (let i = 0; i < 26; i++) {
-        const x = sx(B.x) + (r() - 0.5) * B.rx * 13, y = sy(B.z) + (r() - 0.5) * B.rz * 9, s = 5 + r() * 8;
-        g.fillStyle = '#44403c';
-        g.beginPath();
-        g.moveTo(x - s, y + s * 0.6);
-        g.lineTo(x, y - s);
-        g.lineTo(x + s, y + s * 0.6);
-        g.fill();
-        g.fillStyle = '#8a8680';
-        g.beginPath();
-        g.moveTo(x - s * 0.35, y - s * 0.4);
-        g.lineTo(x, y - s);
-        g.lineTo(x + s * 0.2, y - s * 0.5);
-        g.fill();
-      }
-      // strefa przemysłowa + krater
-      const I = SECTORS[2];
-      blob(sx(I.x), sy(I.z), I.rx * 7.4, I.rz * 5.6, '#5c4a3c', 4);
-      for (let i = 0; i < 16; i++) {
-        const x = sx(I.x) + (r() - 0.5) * I.rx * 12, y = sy(I.z) + (r() - 0.5) * I.rz * 8, bw = 8 + r() * 12, bh = 5 + r() * 6;
-        g.fillStyle = '#3a3230';
-        g.fillRect(x, y, bw, bh);
-        g.fillStyle = '#4c4440';
-        g.fillRect(x, y, bw, 2);
-        if (r() < 0.5) {
-          g.fillStyle = '#2a2422';
-          g.fillRect(x + 2, y - 5, 2, 6);
-          g.fillStyle = 'rgba(160,150,140,0.5)';
-          g.fillRect(x + 1, y - 8, 4, 3);
-        }
-      }
-      g.fillStyle = '#2c2420';
-      g.beginPath();
-      g.ellipse(sx(19.5), sy(-6), 13, 8, 0, 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = '#6fae3c';
-      g.beginPath();
-      g.ellipse(sx(19.5), sy(-6), 7, 4, 0, 0, Math.PI * 2);
-      g.fill();
-      // ruiny miasta: siatka ulic i kwartały
-      const C = SECTORS[0];
-      blob(sx(C.x), sy(C.z), C.rx * 7.4, C.rz * 5.6, '#4a4640', 1);
-      const cell = 13;
-      for (let gy = -5; gy <= 5; gy++)
-        for (let gx = -8; gx <= 8; gx++) {
-          const x = sx(C.x) + gx * cell, y = sy(C.z) + gy * (cell - 3);
-          const dx = (x - sx(C.x)) / (C.rx * 7.4), dy = (y - sy(C.z)) / (C.rz * 5.6);
-          if (dx * dx + dy * dy > 0.86 || r() < 0.12) continue;
-          const v = 44 + Math.floor(r() * 26);
-          g.fillStyle = `rgb(${v + 8},${v + 4},${v})`;
-          g.fillRect(x - 5, y - 4, 10, 7);
-          g.fillStyle = `rgb(${v + 26},${v + 22},${v + 16})`;
-          g.fillRect(x - 5, y - 4, 10, 2);
-          if (r() < 0.3) {
-            g.fillStyle = '#2a2622';
-            g.fillRect(x - 5 + Math.floor(r() * 6), y - 2, 4, 4);
-          }
-        }
-      // roślinność pustkowi (Oldgame/src/gfx/flora.js w skali mapy): suche krzaki, martwe drzewa, kaktusy, trawy
-      const fr = seeded(31);
-      const nearSector = (x: number, y: number): boolean => SECTORS.some((q) => ((x - sx(q.x)) / (q.rx * 7.4)) ** 2 + ((y - sy(q.z)) / (q.rz * 5.6)) ** 2 < 1.1);
-      for (let i = 0; i < 140; i++) {
-        const x = Math.round(fr() * w), y = Math.round(10 + fr() * (h - 50));
-        if (nearSector(x, y) || Math.hypot(x - sx(HOME.x), y - sy(HOME.z)) < 22) continue;
-        const kind = fr();
-        if (kind < 0.4) {
-          // kępa suchej trawy
-          g.fillStyle = fr() < 0.5 ? '#a08a4a' : '#7a6a38';
-          for (let k = 0; k < 4; k++) g.fillRect(x + k - 2, y - (k % 2 ? 3 : 2), 1, k % 2 ? 3 : 2);
-        } else if (kind < 0.7) {
-          // krzak
-          g.fillStyle = '#4a4a2a';
-          g.fillRect(x - 2, y - 2, 5, 2);
-          g.fillStyle = fr() < 0.3 ? '#6a7a3a' : '#5a5232';
-          g.fillRect(x - 1, y - 3, 3, 2);
-        } else if (kind < 0.88) {
-          // martwe drzewo
-          g.fillStyle = '#3a2a1e';
-          g.fillRect(x, y - 7, 1, 7);
-          g.fillRect(x - 2, y - 6, 2, 1);
-          g.fillRect(x + 1, y - 5, 2, 1);
-          g.fillRect(x - 3, y - 7, 1, 1);
-          g.fillStyle = 'rgba(0,0,0,0.25)';
-          g.fillRect(x + 1, y, 4, 1);
-        } else {
-          // kaktus / zmutowany sukulent
-          g.fillStyle = fr() < 0.5 ? '#5a7a3a' : '#7a8a4a';
-          g.fillRect(x, y - 5, 2, 5);
-          g.fillRect(x - 2, y - 4, 1, 2);
-          g.fillRect(x - 1, y - 3, 1, 1);
-          g.fillRect(x + 2, y - 3, 1, 1);
-          g.fillRect(x + 3, y - 4, 1, 2);
-          if (fr() < 0.3) {
-            g.fillStyle = '#c8ff60';
-            g.fillRect(x, y - 6, 1, 1);
-          }
-        }
-      }
-      // Przystań: mur, hala, światła
-      const hx = sx(HOME.x), hy = sy(HOME.z);
-      g.fillStyle = '#38322c';
-      g.fillRect(hx - 13, hy - 9, 26, 18);
-      g.fillStyle = '#6a5a48';
-      g.fillRect(hx - 11, hy - 7, 22, 14);
-      g.fillStyle = '#4a3a30';
-      g.fillRect(hx - 8, hy - 5, 16, 8);
-      g.fillStyle = '#ffc860';
-      for (const [dx, dy] of [[-12, -8], [11, -8], [-12, 7], [11, 7], [-2, 3]]) g.fillRect(hx + dx, hy + dy, 2, 2);
-      // winieta
-      const grad = g.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, h * 0.95);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(1, 'rgba(20,8,4,0.6)');
-      g.fillStyle = grad;
-      g.fillRect(0, 0, w, h);
-    });
+  /** Szlak jako kropki co ~1 jednostkę, położone na terenie (bez odcinka autostrady, ten jest na mapie). */
+  private drawTrack(g: Phaser.GameObjects.Graphics, r: Route, color: number, alpha: number): void {
+    let next = r.cum[r.trackFrom];
+    for (let i = r.trackFrom; i < r.n; i++) {
+      if (r.cum[i] < next) continue;
+      next = r.cum[i] + Q(0.9);
+      const x = scrX(r.x[i]), y = scrY(r.x[i], r.z[i]);
+      g.fillStyle(0x1a120c, alpha * 0.6).fillRect(x, y + 1, 2, 1);
+      g.fillStyle(color, alpha).fillRect(x, y - 1, 2, 2);
+    }
   }
 
   private depart(): void {
@@ -330,41 +194,59 @@ export class TravelScene extends Phaser.Scene {
     for (const b of this.buttons) b.setVisible(false);
     const forced = this.forced;
     this.event = forced ? (forced === 'fauna_attack' ? null : EVENTS.find((e) => e.id === forced) ?? null) : rollTravelEvent();
-    this.eventAt = this.event ? 0.55 + Math.random() * 0.25 : -1;
+    this.eventTick = this.event ? Math.floor((this.dur * (55 + Math.floor(Math.random() * 26))) / 100) : -1;
     const ambush = forced === 'fauna_attack' || (!forced && Math.random() < FAUNA_CHANCE);
-    this.ambushAt = ambush && this.fauna.some((f) => !f.dead) ? 0.18 + Math.random() * 0.25 : -1;
+    this.ambushTick = ambush && this.fauna.some((f) => !f.dead) ? Math.floor((this.dur * (18 + Math.floor(Math.random() * 26))) / 100) : -1;
     this.backBtn?.setLabel('◀ Zawróć');
     this.info.setText(`Wyruszacie: ${cut(this.job.title, 40)}`);
     this.marker.play(this.marker.anims.currentAnim!.key.replace('_idle', '_walk'));
     SoundManager.sfx('click');
   }
 
+  /** Marker drużyny na pozycji w świecie: wysokość terenu + lekkie podskakiwanie w marszu. */
+  private placeMarker(): void {
+    const bob = this.state === 'moving' ? Math.abs(isin((this.clock.tick * 6) & 255)) >> 11 : 0;
+    const p = scr(this.pos);
+    this.marker.setPosition(p.x, p.y - bob).setDepth(8 + p.y / 1000);
+  }
+
   update(_time: number, delta: number): void {
     const dt = Math.min(delta / 1000, 0.1);
     this.t += dt;
+    const ticks = this.clock.advance(delta);
     this.dust?.update(dt);
     this.pulse?.setScale(1 + 0.25 * Math.sin(this.t * 4));
+    this.trail?.setAlpha(0.55 + 0.35 * Math.sin(this.t * 4));
+    this.beacon?.setVisible((this.clock.tick & 31) < 16);
+    for (const f of this.fires) f(this.t);
     this.updateFauna(dt);
-    if (this.state !== 'moving') return;
-    const before = this.k;
-    this.k = Math.min(1, this.k + dt / this.dur);
-    this.marker.setPosition(this.from.x + (this.to.x - this.from.x) * this.k, this.from.y + (this.to.y - this.from.y) * this.k);
+    if (this.state !== 'moving') {
+      this.placeMarker();
+      return;
+    }
+    const before = this.tick;
+    this.tick = Math.min(this.dur, this.tick + ticks);
+    const d = Math.floor((this.route.len * this.tick) / this.dur);
+    this.pos = routePointAt(this.route, d);
+    const ahead = routePointAt(this.route, d + Q(0.6));
+    if (Math.abs(ahead.x - this.pos.x) > 8) this.marker.setFlipX(ahead.x < this.pos.x);
+    this.placeMarker();
     this.stepT += dt;
     if (this.stepT > 0.3) {
       this.stepT = 0;
       SoundManager.sfx('step', { vol: 0.3 });
     }
-    if (this.ambushAt >= 0 && before < this.ambushAt && this.k >= this.ambushAt) {
-      this.ambushAt = -1;
+    if (this.ambushTick >= 0 && before < this.ambushTick && this.tick >= this.ambushTick) {
+      this.ambushTick = -1;
       if (this.startAmbush()) return;
     }
-    if (this.event && before < this.eventAt && this.k >= this.eventAt) {
+    if (this.event && before < this.eventTick && this.tick >= this.eventTick) {
       this.state = 'event';
       this.marker.play(this.marker.anims.currentAnim!.key.replace('_walk', '_idle'));
       this.showEvent(this.event);
       return;
     }
-    if (this.k >= 1) {
+    if (this.tick >= this.dur) {
       this.state = 'arrived';
       this.info.setText('Jesteście na miejscu.');
       this.backBtn?.box.setVisible(false);
@@ -473,38 +355,52 @@ export class TravelScene extends Phaser.Scene {
     return sp;
   }
 
-  /** 5 bestii z dala od Przystani, celów i trasy. */
+
+  /** Bestia na ekranie: rzut z wysokością terenu, głębia po Y. */
+  private placeBeast(f: Beast): void {
+    const p = scr(f);
+    f.sprite.setPosition(p.x, p.y).setDepth(7 + p.y / 1000).setAlpha(f.alpha);
+  }
+
+  /** 5 bestii na nizinach (wysokość < 1.2), z dala od Przystani, miejsc zleceń i trasy (Oldgame spawnFauna). */
   private spawnFauna(): void {
-    const distToRoute = (x: number, y: number): number => {
-      const dx = this.to.x - this.from.x, dy = this.to.y - this.from.y, l2 = dx * dx + dy * dy || 1;
-      const k = Phaser.Math.Clamp(((x - this.from.x) * dx + (y - this.from.y) * dy) / l2, 0, 1);
-      return Math.hypot(x - (this.from.x + dx * k), y - (this.from.y + dy * k));
-    };
+    const r = this.route, spots = [...contractSpots(campaign.state.contracts).values()];
+    const far = (x: number, z: number, px: number, pz: number, min: number): boolean => (x - px) ** 2 + (z - pz) ** 2 > (min * WQ) ** 2;
     for (let i = 0; i < 5; i++) {
-      let x = 0, y = 0;
+      let x = 0, z = 0;
       for (let t = 0; t < 60; t++) {
-        x = 30 + Math.random() * (BASE_W - 60);
-        y = 24 + Math.random() * 190;
-        if (Math.hypot(x - this.from.x, y - this.from.y) > 40 && distToRoute(x, y) > 28) break;
+        x = Q(-26 + Math.random() * 56);
+        z = Q(-14 + Math.random() * 30);
+        if (heightQ8(x, z) >= Q(1.2) || !far(x, z, HOME.x, HOME.z, 6) || !spots.every((s) => far(x, z, s.x, s.z, 3))) continue;
+        let ok = true;
+        for (let k = 0; k < r.n && ok; k += 4) ok = far(x, z, r.x[k], r.z[k], 4);
+        if (ok) break;
       }
       const kind = FAUNA_KINDS[Math.floor(Math.random() * FAUNA_KINDS.length)];
-      this.fauna.push({ sprite: this.beastSprite(kind.templateId, i, x, y), name: kind.name, home: { x, y }, wait: Math.random() * 3, dead: false, busy: false });
+      const f: Beast = { sprite: this.beastSprite(kind.templateId, i, 0, 0), name: kind.name, x, z, hx: x, hz: z, alpha: 1, wait: Math.random() * 3, dead: false, busy: false };
+      this.placeBeast(f);
+      this.fauna.push(f);
     }
   }
 
-  /** Bestie spacerują wokół legowiska. */
+  /** Bestie spacerują wokół legowiska, nie wchodzą na skały (wysokość > 1.6). */
   private updateFauna(dt: number): void {
     for (const f of this.fauna) {
+      this.placeBeast(f);
       if (f.dead || f.busy) continue;
       f.wait -= dt;
       if (f.wait > 0) continue;
-      f.wait = 1.5 + Math.random() * 4;
-      const a = Math.random() * Math.PI * 2, r = 6 + Math.random() * 16;
-      const tx = f.home.x + Math.cos(a) * r, ty = f.home.y + Math.sin(a) * r * 0.7;
-      const name = f.sprite.getData('anim') as string;
+      f.wait = 1 + Math.random() * 4;
+      const a = Math.random() * Math.PI * 2, rr = 0.8 + Math.random() * 2.2;
+      let tx = f.hx + Q(Math.cos(a) * rr), tz = f.hz + Q(Math.sin(a) * rr);
+      if (heightQ8(tx, tz) > Q(1.6)) {
+        tx = f.hx;
+        tz = f.hz;
+      }
+      const name = f.sprite.getData('anim') as string, dist = Math.hypot(tx - f.x, tz - f.z) / WQ;
       f.busy = true;
-      f.sprite.setFlipX(tx < f.sprite.x).play(`${name}_walk`);
-      this.tweens.add({ targets: f.sprite, x: tx, y: ty, duration: Math.hypot(tx - f.sprite.x, ty - f.sprite.y) * 90, onComplete: () => {
+      f.sprite.setFlipX(tx < f.x).play(`${name}_walk`);
+      this.tweens.add({ targets: f, x: tx, z: tz, duration: (dist / (0.5 + Math.random() * 0.7)) * 1000, onComplete: () => {
         f.busy = false;
         if (!f.dead) f.sprite.play(`${name}_idle`);
       } });
@@ -513,34 +409,38 @@ export class TravelScene extends Phaser.Scene {
 
   /** Najbliższa bestia szarżuje na drużynę, potem zdarzenie walka / odstraszenie / ucieczka. */
   private startAmbush(): boolean {
-    const m = this.marker;
+    const m = this.marker, P = this.pos;
     const live = this.fauna.filter((f) => !f.dead);
     if (!live.length) return false;
-    const f = live.reduce((a, b) => (Phaser.Math.Distance.Between(a.sprite.x, a.sprite.y, m.x, m.y) <= Phaser.Math.Distance.Between(b.sprite.x, b.sprite.y, m.x, m.y) ? a : b));
-    this.tweens.killTweensOf(f.sprite);
+    const d2 = (f: Beast): number => (f.x - P.x) ** 2 + (f.z - P.z) ** 2;
+    const f = live.reduce((a, b) => (d2(a) <= d2(b) ? a : b));
+    this.tweens.killTweensOf(f);
     f.busy = true;
-    if (Phaser.Math.Distance.Between(f.sprite.x, f.sprite.y, m.x, m.y) > 60) {
+    if (d2(f) > Q(7) ** 2) {
       const a = Math.random() * Math.PI * 2;
-      f.sprite.setPosition(m.x + Math.cos(a) * 44, m.y + Math.sin(a) * 30);
+      f.x = P.x + Q(Math.cos(a) * 6);
+      f.z = P.z + Q(Math.sin(a) * 6);
     }
     this.state = 'event';
     m.play(m.anims.currentAnim!.key.replace('_walk', '_idle'));
     this.info.setText(`Uwaga! Zmutowany ${f.name} szarżuje na drużynę!`).setColor(hex(PAL.bad));
     SoundManager.sfx('growl');
     const name = f.sprite.getData('anim') as string;
-    f.sprite.setFlipX(m.x < f.sprite.x).play(`${name}_walk`);
-    this.tweens.add({ targets: f.sprite, x: m.x + (f.sprite.x < m.x ? -8 : 8), y: m.y, duration: 700, onComplete: () => {
+    f.sprite.setFlipX(P.x < f.x).play(`${name}_walk`);
+    this.tweens.add({ targets: f, x: P.x + (f.x < P.x ? -Q(0.9) : Q(0.9)), z: P.z, duration: 700, onComplete: () => {
       SoundManager.sfx('hit');
       this.cameras.main.shake(140, 0.004);
       this.showEvent(faunaAttackEvent(f.name), (choice, degree) => {
         if (choice === 0 && degree >= 2) {
           f.dead = true;
           f.sprite.anims.stop();
-          this.tweens.add({ targets: f.sprite, angle: f.sprite.flipX ? 90 : -90, alpha: 0.5, duration: 300 });
+          this.tweens.add({ targets: f.sprite, angle: f.sprite.flipX ? 90 : -90, duration: 300 });
+          this.tweens.add({ targets: f, alpha: 0.5, duration: 300 });
         } else {
-          const ax = f.sprite.x + (f.sprite.x < m.x ? -80 : 80), ay = f.sprite.y + (Math.random() - 0.5) * 60;
-          f.sprite.setFlipX(ax < f.sprite.x);
-          this.tweens.add({ targets: f.sprite, x: ax, y: ay, alpha: 0, duration: 1600, onComplete: () => (f.dead = true) });
+          // ucieczka od drużyny (Oldgame: flee 4 s z prędkością 5 jednostek/s), znika w oddali
+          const dx = f.x - P.x, dz = f.z - P.z, l = Math.hypot(dx, dz) || 1;
+          f.sprite.setFlipX(dx < 0);
+          this.tweens.add({ targets: f, x: f.x + (dx / l) * Q(9), z: f.z + (dz / l) * Q(9), alpha: 0, duration: 1600, onComplete: () => (f.dead = true) });
         }
       });
     } });

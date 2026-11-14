@@ -20,6 +20,22 @@ export const idiv = (a: number, b: number): number => (a / b) | 0;
 
 export const clampInt = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
+/** Pierwiastek całkowity floor(sqrt(n)) dla 0 <= n < 2^31 (metoda bitowa, bez FPU). */
+export function isqrt(n: number): number {
+  if (n <= 0) return 0;
+  let r = 0;
+  let bit = 1 << 30;
+  while (bit > n) bit >>>= 2;
+  while (bit) {
+    if (n >= r + bit) {
+      n -= r + bit;
+      r = (r >>> 1) + bit;
+    } else r >>>= 1;
+    bit >>>= 2;
+  }
+  return r;
+}
+
 // ------------------------------------------------------------------ tablice (w C: static const int16_t[])
 
 /** Sinus w Q14 dla 256 kroków kąta (pełny obrót = 256). Liczony raz; w C wklejony jako tablica. */

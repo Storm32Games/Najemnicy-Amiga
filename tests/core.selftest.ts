@@ -15,6 +15,10 @@ import {
   easeOut3, icos, isin, titleMenu,
   ApproachCurve, MoteField, Q8, angQ8, blinkAlphaQ8, flameKQ12, glowAlphaQ8, nextPow2, phaseAt, potTiles, progressQ12, secToQ8, tilesBytes16, wave,
 } from '../src/core/frontend/index.ts';
+import {
+  CITY, GATE, HOME, PLAZAS, SECTORS, WQ, buildRoute, contractSpots, heightGrid, heightQ8, inCity, regionHeightF, routePointAt, routeTicks,
+} from '../src/core/campaign/region.ts';
+import { isqrt } from '../src/core/frontend/index.ts';
 import type { AbilityDef, AbilityId, Character, ClassId, EnemyId, Contract, Biome } from '../src/core/index.ts';
 
 let fails = 0;
@@ -521,6 +525,37 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
   ok(nextPow2(224) === 256 && nextPow2(14) === 16 && nextPow2(256) === 256, 'nextPow2');
   ok(tl.length === 4 && tl.every((t) => t.texW <= 256 && t.texH <= 256 && t.w <= t.texW && t.h <= t.texH && (t.texW & (t.texW - 1)) === 0 && (t.texH & (t.texH - 1)) === 0), 'pot tiles');
   ok(tl.reduce((a, t) => a + t.w * t.h, 0) === 480 * 270 && tilesBytes16(tl) === (256 * 256 * 2 + 256 * 16 * 2) * 2, 'pot tiles cover + bytes');
+}
+
+// ---- region kampanii: teren z wysokościami, sektory, trasy (port worldterrain.js / worldmap.js)
+{
+  ok([0, 1, 15, 16, 17, 99, 100, 65535, 65536, 2147395600].every((n) => isqrt(n) === Math.floor(Math.sqrt(n))), 'isqrt');
+  const H = (x: number, z: number): number => heightQ8(Math.round(x * WQ), Math.round(z * WQ)) / WQ;
+  ok(heightGrid().length === 145 * 97, 'height grid size');
+  ok(H(-13, -13) > 4 && Math.abs(H(2.5, 2)) < 0.2 && H(19.5, -6) < -1 && H(25, 2) > 1.5 && Math.abs(H(-17, 8)) < 0.3, 'terrain: mountains / flat city / crater / mesa / home');
+  let maxErr = 0;
+  for (let i = 0; i < 400; i++) { const x = -30 + (i % 20) * 3.1, z = -20 + Math.floor(i / 20) * 2.1; maxErr = Math.max(maxErr, Math.abs(H(x, z) - regionHeightF(x, z))); }
+  ok(maxErr < 0.6, `baked height ~ float terrain (max err ${maxErr.toFixed(2)})`);
+  ok(inCity(CITY) && !inCity(HOME) && !inCity(GATE), 'inCity');
+  // trasy: do miasta przez bramę, poza miastem nigdy przez ruiny, czas jak w Oldgame
+  let gateOk = true, avoid = true, ends = true, mono = true, ticksOk = true;
+  for (const s of SECTORS)
+    s.spots.forEach((sp, i) => {
+      const r = buildRoute(sp, s.id, i);
+      for (let k = 1; k < r.n; k++) if (r.cum[k] < r.cum[k - 1]) mono = false;
+      const a = routePointAt(r, 0), b = routePointAt(r, r.len);
+      if (a.x !== HOME.x || a.z !== HOME.z || Math.abs(b.z - sp.z) > 8 || Math.abs(b.x - sp.x) > WQ / 2) ends = false;
+      if (s.id === 'ruins') {
+        let near = false;
+        for (let k = 0; k < r.n; k++) if (Math.abs(r.x[k] - GATE.x) < WQ / 4 && Math.abs(r.z[k] - GATE.z) < WQ / 4) near = true;
+        if (!near || r.trackFrom <= 0) gateOk = false;
+      } else for (let k = 0; k < r.n; k++) if (inCity({ x: r.x[k], z: r.z[k] })) avoid = false;
+      const t = routeTicks(r);
+      if (t < 300 || Math.abs(t - Math.max(300, Math.round((r.len / WQ / 4.2) * 50))) > 2) ticksOk = false;
+    });
+  ok(gateOk && avoid && ends && mono && ticksOk, 'routes: gate / avoid city / endpoints / monotonic / ticks');
+  const sp = contractSpots([{ id: 'a', biome: 'ruins' }, { id: 'b', biome: 'ruins' }, { id: 'c', biome: 'bunker' }]);
+  ok(sp.get('a') === PLAZAS[0] && sp.get('b') === PLAZAS[1] && sp.get('c') === SECTORS[3].spots[0], 'contract spots');
 }
 
 console.log(`\n${checks} checks, ${fails} failures`);
