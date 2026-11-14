@@ -26,12 +26,39 @@ function pickZoom(): number {
   const r = Settings.startRes;
   return r === 'auto' ? autoZoom() : r;
 }
-/** Piksele płótna na piksel projektowy (stałe przez całą sesję). */
-export const ZOOM = pickZoom();
+/**
+ * Piksele płótna na piksel projektowy. Żywe wiązanie (`let`): zmienia je tylko applyZoom() (Opcje, poza misją);
+ * kod czytający ZOOM / SX0 / SY0 przy każdym użyciu widzi nową wartość.
+ */
+export let ZOOM = pickZoom();
 
 /** Przesunięcie obiektów ze scrollFactor(0) przy kamerze z zoomem wokół środka: pozycja ekranu (x, y) -> (x + SX0, y + SY0). */
-export const SX0 = (BASE_W / 2) * (ZOOM - 1);
-export const SY0 = (BASE_H / 2) * (ZOOM - 1);
+export let SX0 = (BASE_W / 2) * (ZOOM - 1);
+export let SY0 = (BASE_H / 2) * (ZOOM - 1);
+
+/** Zdarzenie sceny emitowane po zmianie ZOOM: (nowy, stary). Scena z własną kamerą może je obsłużyć sama. */
+export const ZOOM_EVENT = 'kit-zoom';
+
+/** Czy rozdzielczość da się zmienić bez restartu (misja ma własną kamerę i nakładkę ekranową liczoną przy starcie). */
+export const canApplyZoomLive = (game: Phaser.Game): boolean => !game.scene.isActive('WorldScene') && !game.scene.isActive('UIScene');
+
+/**
+ * Zmiana rozdzielczości na żywo (Phaser ScaleManager.setGameSize): płótno BASE * z, kamery scen statycznych
+ * (fitCamera) dostają nowy zoom. Scena nasłuchująca ZOOM_EVENT ustawia swoje kamery sama.
+ */
+export function applyZoom(game: Phaser.Game, z: number): void {
+  if (z === ZOOM) return;
+  const old = ZOOM;
+  ZOOM = z;
+  SX0 = (BASE_W / 2) * (ZOOM - 1);
+  SY0 = (BASE_H / 2) * (ZOOM - 1);
+  game.scale.setGameSize(BASE_W * z, BASE_H * z);
+  // rozmiary pełnoekranowych kamer aktualizuje CameraManager (zdarzenie RESIZE); tu tylko zoom aktywnych scen
+  for (const s of game.scene.getScenes(true)) {
+    if (s.events.listenerCount(ZOOM_EVENT)) s.events.emit(ZOOM_EVENT, z, old);
+    else if (s.cameras.main && Math.abs(s.cameras.main.zoom - old) < 1e-6) fitCamera(s);
+  }
+}
 
 export const FONT = '"Menlo", "Consolas", "DejaVu Sans Mono", "Courier New", monospace';
 

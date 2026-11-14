@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BASE_H, BASE_W, ZOOM } from './ui/Kit';
+import { BASE_H, BASE_W, ZOOM, ZOOM_EVENT } from './ui/Kit';
 import { Settings, type SettingsValues } from './ui/Settings';
 
 // Efekty retro nad całą grą (odpowiednik przebiegu post-process z Oldgame/src/gfx/post.js):
@@ -7,7 +7,6 @@ import { Settings, type SettingsValues } from './ui/Settings';
 // a włącza/wyłącza się w Opcjach (Settings.scanlines / grain / dither).
 // Rysuje w pikselach płótna (kamera bez zoomu), więc linie i ziarno są drobne przy każdej rozdzielczości.
 
-const CW = BASE_W * ZOOM, CH = BASE_H * ZOOM;
 
 export class FxScene extends Phaser.Scene {
   private scan!: Phaser.GameObjects.TileSprite;
@@ -23,9 +22,19 @@ export class FxScene extends Phaser.Scene {
   create(): void {
     this.input.enabled = false;
     this.makeTextures();
+    const CW = BASE_W * ZOOM, CH = BASE_H * ZOOM;
     this.scan = this.add.tileSprite(0, 0, CW, CH, 'fx_scan').setOrigin(0);
     this.grain = this.add.tileSprite(0, 0, CW, CH, 'fx_grain').setOrigin(0).setBlendMode(Phaser.BlendModes.SCREEN);
     this.dither = this.add.tileSprite(0, 0, CW, CH, 'fx_bayer').setOrigin(0).setTileScale(ZOOM, ZOOM);
+    // zmiana rozdzielczości na żywo (Opcje): warstwy w pikselach płótna dostają nowy rozmiar
+    this.events.on(ZOOM_EVENT, () => {
+      if (this.textures.exists('fx_scan')) this.textures.remove('fx_scan');
+      this.makeTextures();
+      const w = BASE_W * ZOOM, h = BASE_H * ZOOM;
+      this.scan.setTexture('fx_scan').setSize(w, h);
+      this.grain.setSize(w, h);
+      this.dither.setSize(w, h).setTileScale(ZOOM, ZOOM);
+    });
     this.apply(Settings.values);
     this.off = Settings.onChange((v) => this.apply(v));
     // nowe sceny startujące później w tej klatce lądowałyby nad nami - pilnujemy wierzchu

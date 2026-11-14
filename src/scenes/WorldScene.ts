@@ -40,16 +40,66 @@ import { LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, 
 // ------------------------------------------------------------------ rzut izometryczny (tylko warstwa renderowania)
 
 const TILE_W = 32;
+/** Barwy zmutowanej fauny (Oldgame/src/scenes/mission.js:153-154). */
+const FAUNA_SKINS = ['#8a6a4a', '#5a5a62', '#7a8a4a', '#9a4a5a', '#4a7a8a', '#b89a5a', '#6a4a8a', '#c8c0b0'];
+const FAUNA_EYES = ['#ff3a2a', '#ffe040', '#40ffc0', '#ff60ff', '#8fff40'];
+const hashStr = (t: string): number => {
+  let h = 2166136261;
+  for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
 const TILE_H = 16;
+/**
+ * Obrót widoku (Q/E co 90°, Oldgame/src/scenes/mission.js:644) - wyłącznie warstwa renderowania.
+ * Logika zostaje w (gx, gy); pole siatki -> pole widoku (vx, vy) obrotem wokół środka mapy W x H,
+ * a dopiero widok trafia do rzutu izo. Głębia i maski sąsiedztwa grafik liczone są w widoku.
+ */
+const VIEW = { r: 0, w: 32, h: 32 };
+/** Pole siatki -> pole widoku (liniowe, działa też dla współrzędnych ułamkowych "pola"). */
+const toView = (gx: number, gy: number): [number, number] => {
+  switch (VIEW.r) {
+    case 1: return [VIEW.h - 1 - gy, gx];
+    case 2: return [VIEW.w - 1 - gx, VIEW.h - 1 - gy];
+    case 3: return [gy, VIEW.w - 1 - gx];
+    default: return [gx, gy];
+  }
+};
+/** Pole widoku -> pole siatki. */
+const fromView = (vx: number, vy: number): GridPos => {
+  switch (VIEW.r) {
+    case 1: return { gx: vy, gy: VIEW.h - 1 - vx };
+    case 2: return { gx: VIEW.w - 1 - vx, gy: VIEW.h - 1 - vy };
+    case 3: return { gx: VIEW.w - 1 - vy, gy: vx };
+    default: return { gx: vx, gy: vy };
+  }
+};
+/** Wektor siatki -> wektor widoku. */
+const viewDir = (dx: number, dy: number): [number, number] =>
+  VIEW.r === 1 ? [-dy, dx] : VIEW.r === 2 ? [-dx, -dy] : VIEW.r === 3 ? [dy, -dx] : [dx, dy];
+/** Sąsiad pola (gx, gy) przesunięty o (vdx, vdy) w przestrzeni WIDOKU - zwraca pole siatki. */
+const viewNb = (gx: number, gy: number, vdx: number, vdy: number): GridPos => {
+  const [dx, dy] = VIEW.r === 1 ? [vdy, -vdx] : VIEW.r === 2 ? [-vdx, -vdy] : VIEW.r === 3 ? [-vdy, vdx] : [vdx, vdy];
+  return { gx: gx + dx, gy: gy + dy };
+};
+/** Wymiary mapy w widoku (W x H zamienione przy obrocie o 90° / 270°). */
+const viewSize = (): { w: number; h: number } => (VIEW.r % 2 ? { w: VIEW.h, h: VIEW.w } : { w: VIEW.w, h: VIEW.h });
 /** Górny wierzchołek rombu pola (gx, gy) w świecie. */
-const isoX = (gx: number, gy: number): number => (gx - gy) * (TILE_W / 2);
-const isoY = (gx: number, gy: number): number => (gx + gy) * (TILE_H / 2);
+const isoX = (gx: number, gy: number): number => {
+  const [vx, vy] = toView(gx, gy);
+  return (vx - vy) * (TILE_W / 2);
+};
+const isoY = (gx: number, gy: number): number => {
+  const [vx, vy] = toView(gx, gy);
+  return (vx + vy) * (TILE_H / 2);
+};
 /** Środek pola - tu stoją stopy postaci. */
 const tileCenter = (p: GridPos): { x: number; y: number } => ({ x: isoX(p.gx, p.gy), y: isoY(p.gx, p.gy) + TILE_H / 2 });
+/** Punkt ciągłej przestrzeni siatki (np. róg pola) -> świat. */
+const gridPoint = (x: number, y: number): { x: number; y: number } => tileCenter({ gx: x - 0.5, gy: y - 0.5 });
 /** Odwrotność rzutu: punkt świata -> pole siatki. */
 const worldToGrid = (wx: number, wy: number): GridPos => {
   const a = wx / (TILE_W / 2), b = wy / (TILE_H / 2);
-  return { gx: Math.floor((b + a) / 2), gy: Math.floor((b - a) / 2) };
+  return fromView(Math.floor((b + a) / 2), Math.floor((b - a) / 2));
 };
 
 // ------------------------------------------------------------------ warstwy głębi
@@ -62,14 +112,17 @@ const D_GROUND_GLOW = 4;
 const D_CURSOR = 5;
 const D_PATH = 6;
 const D_UNIT_SHADOW = 7;
-/** Obiekty sortowane po gx+gy: D_OBJ + suma * 4 + warstwa. */
+/** Obiekty sortowane po vx+vy (suma w widoku): D_OBJ + suma * 4 + warstwa. */
 const D_OBJ = 10;
 const L_PROP = 1;
 const L_UNIT = 2;
 const L_FX = 3;
 const D_TEXT = 9000;
 const D_SCREEN = 9500;
-const objDepth = (gx: number, gy: number, layer: number): number => D_OBJ + (gx + gy) * 4 + layer;
+const objDepth = (gx: number, gy: number, layer: number): number => {
+  const [vx, vy] = toView(gx, gy);
+  return D_OBJ + (vx + vy) * 4 + layer;
+};
 
 // ------------------------------------------------------------------ rozgrywka
 
@@ -115,6 +168,8 @@ interface Unit {
   /** Pozycja na ekranie (nadąża za actor.gx/gy w trakcie animacji). */
   pos: GridPos;
   facing: Facing;
+  /** Ostatni kierunek patrzenia w siatce (do odświeżenia odbicia po obrocie widoku). */
+  dir?: GridPos;
   name: string;
   actor: Actor;
 }
@@ -325,6 +380,9 @@ export class WorldScene extends Phaser.Scene {
     this.hud.setObjectives(contract.title ?? 'Zlecenie', this.mission.objectives().map((l) => ({ text: l.text, done: l.done, go: l.go, dim: l.tone === 'dim' })));
 
     this.art = new ArtBook(this);
+    VIEW.r = 0;
+    VIEW.w = this.map.width;
+    VIEW.h = this.map.height;
     this.cameras.main.setBackgroundColor(BIOME_STYLE[this.biome].bg);
     this.createSharedTextures();
     this.buildWorld();
@@ -360,7 +418,12 @@ export class WorldScene extends Phaser.Scene {
       }
       if (!this.hud.canAct || pointer.button !== 0 || this.hud.prompt) return;
       const cell = this.pointerCell();
-      if (!this.inMap(cell.gx, cell.gy) || this.cells[this.idx(cell.gx, cell.gy)].state === 0) return;
+      if (!this.inMap(cell.gx, cell.gy)) return;
+      if (this.cells[this.idx(cell.gx, cell.gy)].state === 0) {
+        // Oldgame mission.js:636-637: nieodkryty teren - komunikat i ruch w tamtą stronę (w eksploracji)
+        if (this.hud.inCombat) return;
+        this.hud.pushLog('Nieodkryty teren.');
+      }
       if (this.hud.inCombat) void this.combatClick(cell);
       else void this.exploreClick(cell);
     });
@@ -378,6 +441,8 @@ export class WorldScene extends Phaser.Scene {
       if (e.key === '+' || e.key === '=') this.zoomBy(1.25);
       else if (e.key === '-' || e.key === '_') this.zoomBy(1 / 1.25);
       else if (e.key === '0') this.setZoom(1);
+      else if (e.key === 'q' || e.key === 'Q') this.rotateView(-1);
+      else if (e.key === 'e' || e.key === 'E') this.rotateView(1);
     });
 
     // Polecenia z HUD-u (UIScene) -> logika
@@ -578,6 +643,7 @@ export class WorldScene extends Phaser.Scene {
 
     // --- podłoga, skarpy na krawędziach, okluzja przy wysokich przeszkodach
     const high = (gx: number, gy: number) => this.inMap(gx, gy) && m.grid.kind(gx, gy) === CellKind.HIGH;
+    const vs = viewSize();
     for (let gy = 0; gy < H; gy++)
       for (let gx = 0; gx < W; gx++) {
         const type = m.floor[this.idx(gx, gy)];
@@ -591,8 +657,9 @@ export class WorldScene extends Phaser.Scene {
         const mine = FLOOR_SPILL[type] ?? 0;
         const spill = new Map<string, number>();
         ([[-1, 0, 1], [0, -1, 2], [1, 0, 4], [0, 1, 8]] as const).forEach(([dx, dy, bit]) => {
-          if (!this.inMap(gx + dx, gy + dy)) return;
-          const other = m.floor[this.idx(gx + dx, gy + dy)];
+          const n = viewNb(gx, gy, dx, dy); // krawędzie grafiki są w przestrzeni widoku
+          if (!this.inMap(n.gx, n.gy)) return;
+          const other = m.floor[this.idx(n.gx, n.gy)];
           if ((FLOOR_SPILL[other] ?? 0) > mine) spill.set(other, (spill.get(other) ?? 0) | bit);
         });
         [...spill.entries()]
@@ -604,20 +671,25 @@ export class WorldScene extends Phaser.Scene {
             this.place(gx, gy, k, 16, 0, D_GROUND);
           });
 
-        if (gy === H - 1) {
+        const [vx, vy] = toView(gx, gy);
+        if (vy === vs.h - 1) {
           const k = `edge_l_${this.biome}`;
           this.art.get(k, () => ({ pc: paintEdge('l', this.biome), ax: 16, ay: 0 }));
           this.place(gx, gy, k, 16, 0, D_EDGE);
         }
-        if (gx === W - 1) {
+        if (vx === vs.w - 1) {
           const k = `edge_r_${this.biome}`;
           this.art.get(k, () => ({ pc: paintEdge('r', this.biome), ax: 16, ay: 0 }));
           this.place(gx, gy, k, 16, 0, D_EDGE);
         }
 
         if (!high(gx, gy)) {
-          let mask = (high(gx - 1, gy) ? 1 : 0) | (high(gx, gy - 1) ? 2 : 0) | (high(gx + 1, gy) ? 4 : 0) | (high(gx, gy + 1) ? 8 : 0);
-          if (!(mask & 3) && high(gx - 1, gy - 1)) mask |= 16;
+          const hv = (dx: number, dy: number) => {
+            const n = viewNb(gx, gy, dx, dy);
+            return high(n.gx, n.gy);
+          };
+          let mask = (hv(-1, 0) ? 1 : 0) | (hv(0, -1) ? 2 : 0) | (hv(1, 0) ? 4 : 0) | (hv(0, 1) ? 8 : 0);
+          if (!(mask & 3) && hv(-1, -1)) mask |= 16;
           if (mask) {
             const k = `ao_${mask}`;
             this.art.get(k, () => ({ pc: paintAO(mask), ax: 16, ay: 0 }));
@@ -652,13 +724,16 @@ export class WorldScene extends Phaser.Scene {
     m.buildings.forEach((b, bi) => {
       for (let y = b.gy; y < b.gy + b.d; y++) for (let x = b.gx; x < b.gx + b.w; x++) if (this.inMap(x, y)) buildingAt[this.idx(x, y)] = bi;
     });
-    const sameB = (x: number, y: number, bi: number) => this.inMap(x, y) && buildingAt[this.idx(x, y)] === bi;
+    const sameB = (x: number, y: number, bi: number, vdx: number, vdy: number) => {
+      const n = viewNb(x, y, vdx, vdy); // ściany bloku wg sąsiadów w widoku
+      return this.inMap(n.gx, n.gy) && buildingAt[this.idx(n.gx, n.gy)] === bi;
+    };
     m.buildings.forEach((b, bi) => {
       const color = style.facade[b.seed % style.facade.length];
       for (let y = b.gy; y < b.gy + b.d; y++)
         for (let x = b.gx; x < b.gx + b.w; x++) {
           if (!this.inMap(x, y)) continue;
-          const open = (sameB(x, y + 1, bi) ? 0 : 1) | (sameB(x + 1, y, bi) ? 0 : 2) | (sameB(x - 1, y, bi) ? 0 : 4) | (sameB(x, y - 1, bi) ? 0 : 8);
+          const open = (sameB(x, y, bi, 0, 1) ? 0 : 1) | (sameB(x, y, bi, 1, 0) ? 0 : 2) | (sameB(x, y, bi, -1, 0) ? 0 : 4) | (sameB(x, y, bi, 0, -1) ? 0 : 8);
           const seed = b.seed * 131 + x * 31 + y * 17;
           const k = `bld_${b.h}_${open}_${color.toString(16)}_${seed}`;
           const info = this.art.get(k, () => paintBlock('building', b.h, open, color, seed));
@@ -667,9 +742,9 @@ export class WorldScene extends Phaser.Scene {
     });
     const solid = new Uint8Array(W * H);
     for (const s of m.solids) solid[this.idx(s.gx, s.gy)] = 1;
-    const isSolid = (x: number, y: number) => !this.inMap(x, y) || solid[this.idx(x, y)] === 1;
+    const isSolid = (p: GridPos) => !this.inMap(p.gx, p.gy) || solid[this.idx(p.gx, p.gy)] === 1;
     for (const s of m.solids) {
-      const open = (isSolid(s.gx, s.gy + 1) ? 0 : 1) | (isSolid(s.gx + 1, s.gy) ? 0 : 2);
+      const open = (isSolid(viewNb(s.gx, s.gy, 0, 1)) ? 0 : 1) | (isSolid(viewNb(s.gx, s.gy, 1, 0)) ? 0 : 2);
       const variant = Math.floor(hash2(s.gx, s.gy, 3) * 4);
       const k = `bunker_${open}_${variant}`;
       const info = this.art.get(k, () => paintBlock('bunker', 0, open, style.wall, variant * 977 + 5));
@@ -683,21 +758,28 @@ export class WorldScene extends Phaser.Scene {
     for (const p of m.props) propAt.set(this.idx(p.gx, p.gy), p.type);
     for (const d of m.decor) propAt.set(this.idx(d.gx, d.gy), d.type);
     const isWall = (x: number, y: number) => this.inMap(x, y) && wallLike.has(propAt.get(this.idx(x, y)) ?? 'crate');
+    /** Ściana obok w przestrzeni widoku (łączenia grafik muszą iść wg ekranu, nie siatki). */
+    const wallV = (x: number, y: number, vdx: number, vdy: number) => {
+      const n = viewNb(x, y, vdx, vdy);
+      return isWall(n.gx, n.gy);
+    };
 
     const drawProp = (p: MapProp) => {
       const { gx, gy, type } = p;
       if (type === 'wall' || type === 'wall_broken') {
-        const conn = (isWall(gx - 1, gy) ? 1 : 0) | (isWall(gx + 1, gy) ? 2 : 0) | (isWall(gx, gy - 1) ? 4 : 0) | (isWall(gx, gy + 1) ? 8 : 0);
+        const conn = (wallV(gx, gy, -1, 0) ? 1 : 0) | (wallV(gx, gy, 1, 0) ? 2 : 0) | (wallV(gx, gy, 0, -1) ? 4 : 0) | (wallV(gx, gy, 0, 1) ? 8 : 0);
         const broken = type === 'wall_broken';
         const v = p.seed % 3;
-        const k = `wall_${this.biome}_${conn}_${broken ? 1 : 0}_${v}`;
-        const info = this.art.get(k, () => paintWall(conn || (p.rot % 2 ? 12 : 3), broken, style.wall, this.biome, v * 71 + conn));
+        const shape = conn || ((p.rot + VIEW.r) % 2 ? 12 : 3); // samotny segment: wg orientacji w widoku
+        const k = `wall_${this.biome}_${conn}_${shape}_${broken ? 1 : 0}_${v}`;
+        const info = this.art.get(k, () => paintWall(shape, broken, style.wall, this.biome, v * 71 + conn));
         const img = this.place(gx, gy, k, info.ax, info.ay, objDepth(gx, gy, L_PROP));
         if (!broken) this.addTall(gx, gy, img, info.ay);
         return;
       }
       const v = p.seed % (type === 'car' || type === 'scrap_pile' ? 7 : 3);
-      const rot = type === 'door' ? (isWall(gx - 1, gy) || isWall(gx + 1, gy) ? 0 : 1) : p.rot;
+      // orientacja w widoku: przy obrocie o 90° / 270° oś rekwizytu zamienia się
+      const rot = type === 'door' ? (wallV(gx, gy, -1, 0) || wallV(gx, gy, 1, 0) ? 0 : 1) : p.rot + VIEW.r;
       const k = `prop_${type}_${rot % 2}_${v}_${this.biome}`;
       const info = this.art.get(k, () => paintProp(type, rot, v * 1009 + 1, this.biome));
       const flat = type === 'skeleton';
@@ -772,12 +854,14 @@ export class WorldScene extends Phaser.Scene {
       const tx = cx - 0.5, ty = cy - 0.5;
       const depth = objDepth(Math.floor(cx), Math.floor(cy), L_PROP);
       posts.push(this.add.image(isoX(tx, ty) - post.ax, isoY(tx, ty) - post.ay, post.key).setOrigin(0, 0).setDepth(depth));
-      const top = { x: isoX(cx, cy), y: isoY(cx, cy) - 19 };
+      const gp = gridPoint(cx, cy);
+      const top = { x: gp.x, y: gp.y - 19 };
       caps.push(this.add.image(top.x, top.y, 'fx_px').setScale(1.5).setTint(0x9dff8a).setDepth(depth + 0.5));
       caps.push(this.add.image(top.x, top.y, 'fx_halo').setBlendMode(Phaser.BlendModes.ADD).setTint(0x8fff7a).setAlpha(0.6).setScale(0.6).setDepth(depth + 0.5));
     }
     const cx = (e.x0 + e.x1) / 2 + 0.5, cy = (e.y0 + e.y1) / 2 + 0.5;
-    const beacon = this.add.container(isoX(cx, cy), isoY(cx, cy)).setDepth(D_TEXT - 10).setVisible(false);
+    const bp = gridPoint(cx, cy);
+    const beacon = this.add.container(bp.x, bp.y).setDepth(D_TEXT - 10).setVisible(false);
     const column = this.add.image(0, 0, 'fx_px').setOrigin(0.5, 1).setScale(2, 40).setTint(0x8fff7a).setAlpha(0.22).setBlendMode(Phaser.BlendModes.ADD);
     const key = 'txt_EWAKUACJA';
     if (!this.textures.exists(key)) this.art.get(key, () => ({ pc: paintText('EWAKUACJA'), ax: 0, ay: 0 }));
@@ -851,6 +935,7 @@ export class WorldScene extends Phaser.Scene {
       let key: string;
       let look: UnitLook;
       let sheet: (() => ReturnType<typeof paintUnitSheet>) | undefined;
+      let faunaScale = 1;
       if (a.side === 'pc') {
         key = `pc_${a.ch.recruitId ?? a.ch.id}`;
         look = this.job ? unitLookOf(a.ch) : (DEMO_LOOKS[a.ch.classId as ClassId] ?? LOOK_SOLDIER);
@@ -863,12 +948,22 @@ export class WorldScene extends Phaser.Scene {
           // wygląd z szablonu wroga (iso/UnitLooks: broń z ataku, maski, robot, Kostucha; bestie - własny gatunek)
           key = `en_${a.ch.templateId}`;
           const el = enemyUnitLook(a.ch.templateId, lk);
-          if (isCreatureLook(el)) sheet = () => enemySheet(a.ch.templateId!, lk);
-          else look = el;
+          if (isCreatureLook(el)) {
+            // Oldgame mission.js:151-158: zmutowana fauna - losowa barwa skóry / ślepi i rozmiar (75%, kosmetyka)
+            const h = hashStr(a.id + this.mission.contract.id);
+            if (h % 100 < 75) {
+              const si = (h >>> 8) % FAUNA_SKINS.length, ai = (h >>> 16) % FAUNA_EYES.length;
+              const ml = { ...lk, skin: FAUNA_SKINS[si], accent: FAUNA_EYES[ai] };
+              key = `en_${a.ch.templateId}_m${si}_${ai}`;
+              faunaScale = 0.92 + (((h >>> 4) % 1000) / 1000) * 0.24;
+              sheet = () => enemySheet(a.ch.templateId!, ml);
+            } else sheet = () => enemySheet(a.ch.templateId!, lk);
+          } else look = el;
         }
       }
       const u = this.makeUnit(key, look, a, sheet);
       if (a.side === 'enemy' && (a.ch.look as Partial<EnemyLook>).scale) u.sprite.setScale(Math.min(1.5, Math.max(0.8, (a.ch.look as Partial<EnemyLook>).scale ?? 1)));
+      if (faunaScale !== 1) u.sprite.setScale(u.sprite.scaleX * faunaScale);
       if (a.side === 'enemy') {
         this.face(u, { gx: entry.gx - a.gx, gy: entry.gy - a.gy });
         this.idle(u);
@@ -908,13 +1003,15 @@ export class WorldScene extends Phaser.Scene {
   /** Kierunek ruchu siatki -> kierunek sprite'a (przód/tył + odbicie). */
   private face(u: Unit, d: GridPos): void {
     if (d.gx === 0 && d.gy === 0) return;
-    const alongX = Math.abs(d.gx) >= Math.abs(d.gy);
+    u.dir = { gx: d.gx, gy: d.gy };
+    const [vx, vy] = viewDir(d.gx, d.gy); // kierunek w widoku (po obrocie kamery)
+    const alongX = Math.abs(vx) >= Math.abs(vy);
     if (alongX) {
-      u.facing = d.gx > 0 ? 'f' : 'b'; // +gx = SE (przodem), -gx = NW (tyłem, odbity)
-      u.sprite.setFlipX(d.gx < 0);
+      u.facing = vx > 0 ? 'f' : 'b'; // +vx = SE (przodem), -vx = NW (tyłem, odbity)
+      u.sprite.setFlipX(vx < 0);
     } else {
-      u.facing = d.gy > 0 ? 'f' : 'b'; // +gy = SW (przodem, odbity), -gy = NE (tyłem)
-      u.sprite.setFlipX(d.gy > 0);
+      u.facing = vy > 0 ? 'f' : 'b'; // +vy = SW (przodem, odbity), -vy = NE (tyłem)
+      u.sprite.setFlipX(vy > 0);
     }
   }
 
@@ -1001,7 +1098,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private setZoom(z: number): void {
-    this.camZoom = Math.max(0.5, Math.min(2, z));
+    this.camZoom = Math.max(0.4, Math.min(2.5, z)); // Oldgame: 0.3-2.4
     const cam = this.cameras.main;
     cam.setZoom(ZOOM * this.camZoom);
     // kontener ekranowy: świat = środek + (px * ZOOM - środek) / zoom kamery
@@ -1018,11 +1115,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private setupCamera(): void {
-    const { width: W, height: H } = this.map;
     const cam = this.cameras.main;
-    const left = isoX(0, H) - 48, right = isoX(W, 0) + 48;
-    const top = -96, bottom = isoY(W, H) + 48;
-    cam.setBounds(left, top, right - left, bottom - top);
+    this.setCameraBounds();
     cam.setZoom(ZOOM);
     cam.setRoundPixels(true);
     this.following = false;
@@ -1031,6 +1125,133 @@ export class WorldScene extends Phaser.Scene {
 
     const kb = this.input.keyboard;
     if (kb) this.panKeys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>;
+  }
+
+  /**
+   * Q/E: obrót widoku o 90° (Oldgame/src/scenes/mission.js:644) - żeby zajrzeć za budynki i ściany.
+   * Statyczny świat budowany jest od nowa dla nowego obrotu (tekstury z ArtBook są w pamięci), postacie
+   * i znaczniki przestawiane; stan misji, mgła i skrzynie zostają. Kamera wraca na ten sam punkt siatki.
+   */
+  private rotateView(dir: 1 | -1): void {
+    if (this.over || !this.cells.length) return;
+    // w trakcie animacji ruchu tweeny mają cele w starym rzucie - obracamy dopiero w spoczynku
+    for (const u of this.units.values()) if (this.tweens.isTweening(u.sprite)) return;
+    const cam = this.cameras.main;
+    const W = this.map.width;
+
+    // punkt siatki (ciągły) w środku ekranu
+    const mid = cam.midPoint;
+    const a = mid.x / (TILE_W / 2), b = mid.y / (TILE_H / 2);
+    const pvx = (b + a) / 2, pvy = (b - a) / 2;
+    const [cgx, cgy] =
+      VIEW.r === 1 ? [pvy, VIEW.h - pvx] : VIEW.r === 2 ? [VIEW.w - pvx, VIEW.h - pvy] : VIEW.r === 3 ? [VIEW.w - pvy, pvx] : [pvx, pvy];
+
+    // stan zależny od rozgrywki, który trzeba odtworzyć po przebudowie
+    const saved = this.cells.map((c) => ({ state: c.state, reveal: c.reveal }));
+    const crateState = new Map<number, { key: string; sparkle: boolean }>();
+    for (const [i, c] of this.crates) crateState.set(i, { key: c.img.texture.key, sparkle: !!c.sparkle });
+    const finds = new Set(this.sparkles.keys());
+    const hadObj = !!this.objMarker;
+
+    for (const c of this.cells) for (const img of c.imgs) img.destroy();
+    for (const l of this.glows) l.img.destroy();
+    if (this.extract) {
+      for (const o of [...this.extract.caps, ...this.extract.posts]) o.destroy();
+      this.extract.beacon.destroy();
+    }
+    this.cells = [];
+    this.tall = [];
+    this.glows = [];
+    this.sparkles = new Map();
+    this.crates = new Map();
+    this.objMarker = null;
+    this.extract = null;
+
+    VIEW.r = (VIEW.r + dir + 4) % 4;
+    this.buildWorld();
+
+    // skrzynie (otwarte / bez błysku), znaleziska, zabrany cel
+    for (const [i, c] of this.crates) {
+      const st = crateState.get(i);
+      if (!st) continue;
+      if (!st.sparkle && c.sparkle) {
+        this.dropCellImg(i, c.sparkle);
+        c.sparkle = null;
+      }
+      if (st.key !== c.img.texture.key && st.key === 'loot_crate_open') {
+        const info = this.art.get('loot_crate_open', paintLootCrateOpen);
+        const gx = i % W, gy = Math.floor(i / W);
+        c.img.setTexture(info.key).setPosition(isoX(gx, gy) - info.ax, isoY(gx, gy) - info.ay);
+      }
+    }
+    for (const [i, sp] of [...this.sparkles]) {
+      if (finds.has(i)) continue;
+      this.dropCellImg(i, sp);
+      this.sparkles.delete(i);
+    }
+    for (const i of finds) if (!this.sparkles.has(i)) this.sparkles.set(i, this.addSparkle(i % W, Math.floor(i / W), -2));
+    if (!hadObj && this.objMarker) {
+      const om = this.objMarker as { imgs: Phaser.GameObjects.Image[]; light: LightView | null };
+      const oc = this.map.objCell;
+      if (oc) for (const img of om.imgs) this.dropCellImg(this.idx(oc.gx, oc.gy), img);
+      if (om.light) {
+        om.light.img.destroy();
+        this.glows.splice(this.glows.indexOf(om.light), 1);
+      }
+      this.objMarker = null;
+    }
+
+    // mgła: przywrócenie stanu pól
+    const memory = BIOME_STYLE[this.biome].memory;
+    this.cells.forEach((cell, i) => {
+      cell.state = saved[i].state;
+      cell.reveal = saved[i].reveal;
+      const tint = cell.state === 2 ? TINT_VISIBLE : memory;
+      for (const img of cell.imgs) {
+        img.setVisible(cell.state !== 0).setAlpha(cell.reveal);
+        if (img.blendMode !== Phaser.BlendModes.ADD) img.setTint(tint);
+      }
+    });
+
+    // postacie: pozycja, głębia, kierunek patrzenia w nowym widoku
+    for (const u of this.units.values()) {
+      const c = tileCenter(u.pos);
+      u.sprite.setPosition(c.x, c.y).setDepth(objDepth(u.pos.gx, u.pos.gy, L_UNIT));
+      u.shadow.setPosition(c.x, c.y);
+      const before = u.facing;
+      this.face(u, u.dir ?? { gx: 1, gy: 0 });
+      if (u.facing === before) continue;
+      const cur = u.sprite.anims.currentAnim?.key;
+      const pre = `${u.name}_${before}_`;
+      if (u.sprite.anims.isPlaying && cur?.startsWith(pre)) {
+        const next = `${u.name}_${u.facing}_${cur.slice(pre.length)}`;
+        if (this.anims.exists(next)) u.sprite.play(next, true);
+      } else {
+        const fr = String(u.sprite.frame.name);
+        const alt = `${u.facing}${fr.slice(1)}`;
+        if (fr.startsWith(before) && u.sprite.texture.has(alt)) u.sprite.setFrame(alt);
+      }
+    }
+
+    this.setCameraBounds();
+    if (this.following) cam.centerOn(this.focus.sprite.x, this.focus.sprite.y - 8);
+    else {
+      const p = gridPoint(cgx, cgy);
+      cam.centerOn(p.x, p.y);
+    }
+    cam.resetFX();
+    cam.fadeIn(160, 0, 0, 0);
+    this.refreshOverlay();
+    this.refreshPathPreview();
+    SoundManager.sfx('click', { vol: 0.3 });
+  }
+
+  /** Granice kamery w przestrzeni widoku (po obrocie W i H mogą się zamienić). */
+  private setCameraBounds(): void {
+    const { w: W, h: H } = viewSize();
+    const left = -H * (TILE_W / 2) - 48, right = W * (TILE_W / 2) + 48;
+    const top = -96, bottom = (W + H) * (TILE_H / 2) + 48;
+    this.cameras.main.setBounds(left, top, right - left, bottom - top);
   }
 
   /** WASD / strzałki przesuwają kamerę; ruch gracza ponownie ją przypina. */
@@ -1145,8 +1366,9 @@ export class WorldScene extends Phaser.Scene {
     const psum = pu + pv, pdiff = pu - pv;
     const k = Math.min(1, dt * 10);
     for (const t of this.tall) {
-      const d = t.gx + t.gy - psum;
-      const occludes = d > 0.5 && d < t.reach && Math.abs(t.gx - t.gy - pdiff) < 1.6;
+      const [tvx, tvy] = toView(t.gx, t.gy); // pu/pv liczone z ekranu = współrzędne widoku
+      const d = tvx + tvy - psum;
+      const occludes = d > 0.5 && d < t.reach && Math.abs(tvx - tvy - pdiff) < 1.6;
       const target = occludes ? 0.38 : 1;
       if (Math.abs(t.fade - target) < 0.01 && !this.revealing.has(this.idx(t.gx, t.gy))) continue;
       t.fade += (target - t.fade) * k;
@@ -1162,7 +1384,9 @@ export class WorldScene extends Phaser.Scene {
     if (!sel || this.over || !this.hud.canAct || this.hud.inCombat) return;
     const who = this.visibleActorAt(cell);
     if (who?.side === 'pc') {
-      void this.selectMember(who);
+      // Oldgame hud.js:247: klik na wybranego najemnika otwiera kartę postaci
+      if (who === sel) this.hud.toggleInventory(true);
+      else void this.selectMember(who);
       return;
     }
     const th = this.mission.thingAt(cell.gx, cell.gy);
@@ -1171,9 +1395,10 @@ export class WorldScene extends Phaser.Scene {
     this.clearPathPreview();
     this.hud.setHover(null);
     if (who?.side === 'enemy' && who.group) {
-      // zasadzka: nieświadoma grupa - drużyna działa pierwsza, wrogowie odsłonięci do swojej tury
-      this.hud.pushLog(`${sel.ch.name} otwiera ogień z ukrycia!`, 'amber');
-      this.mission.startCombat(who.group, true);
+      // atak z ukrycia: test Skradania decyduje, czy to zasadzka (drużyna pierwsza, wrogowie odsłonięci)
+      this.hud.pushLog(`${sel.ch.name} próbuje zaatakować z ukrycia...`, 'amber');
+      const roll = this.mission.ambushAttack(sel, who.group);
+      await this.dice(roll, 'Skradanie', sel);
     } else {
       const r = this.mission.exploreMove(sel, cell, { group: this.hud.groupMove });
       if (!r.ok) {
@@ -1221,7 +1446,8 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     if (cell.gx !== sel.gx || cell.gy !== sel.gy) {
-      const r = this.mission.exploreMove(sel, cell, { group: this.hud.groupMove });
+      // Oldgame mission.js:507: do obiektu podchodzi tylko wybrany najemnik
+      const r = this.mission.exploreMove(sel, cell, { group: false });
       if (r.ok) {
         this.refollow();
         this.updateFogOfWar();
@@ -2151,6 +2377,12 @@ export class WorldScene extends Phaser.Scene {
       this.scene.restart();
       return;
     }
+    if (result.result === 'fail') {
+      // Oldgame mission.js:565-568: wybicie drużyny = od razu ekran końca drogi (bez rozliczenia i zapisu)
+      const fallen = result.casualties.length ? result.casualties : this.mission.pcs.map((a) => a.ch.name);
+      this.scene.start('GameOverScene', { fallen });
+      return;
+    }
     this.scene.start('DebriefScene', { result, contract: this.job });
   }
 
@@ -2389,10 +2621,14 @@ export class WorldScene extends Phaser.Scene {
       const Rt = { x: T.x + TILE_W / 2, y: T.y + TILE_H / 2 }, B = { x: T.x, y: T.y + TILE_H }, L = { x: T.x - TILE_W / 2, y: T.y + TILE_H / 2 };
       g.fillStyle(fill, alpha).beginPath().moveTo(T.x, T.y).lineTo(Rt.x, Rt.y).lineTo(B.x, B.y).lineTo(L.x, L.y).closePath().fillPath();
       g.lineStyle(1, edge, 0.75);
-      if (nb(p.gx, p.gy - 1) !== p.n) g.lineBetween(T.x, T.y, Rt.x, Rt.y);
-      if (nb(p.gx + 1, p.gy) !== p.n) g.lineBetween(Rt.x, Rt.y, B.x, B.y);
-      if (nb(p.gx, p.gy + 1) !== p.n) g.lineBetween(B.x, B.y, L.x, L.y);
-      if (nb(p.gx - 1, p.gy) !== p.n) g.lineBetween(L.x, L.y, T.x, T.y);
+      const nv = (vdx: number, vdy: number) => {
+        const q = viewNb(p.gx, p.gy, vdx, vdy); // krawędzie rombu na ekranie = sąsiedzi w widoku
+        return nb(q.gx, q.gy);
+      };
+      if (nv(0, -1) !== p.n) g.lineBetween(T.x, T.y, Rt.x, Rt.y);
+      if (nv(1, 0) !== p.n) g.lineBetween(Rt.x, Rt.y, B.x, B.y);
+      if (nv(0, 1) !== p.n) g.lineBetween(B.x, B.y, L.x, L.y);
+      if (nv(-1, 0) !== p.n) g.lineBetween(L.x, L.y, T.x, T.y);
     }
   }
 
