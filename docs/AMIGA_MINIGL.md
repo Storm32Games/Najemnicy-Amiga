@@ -1,5 +1,9 @@
 # Port na A1200 + PiStorm Lite 32 (miniGL) — ekrany startowe
 
+> **Status (2026-11-14): port wstrzymany.** Skupiamy się na wersji przeglądarkowej. Stan pracy nad portem
+> zachowany na gałęzi `backup/amiga-minigl` (commit `74ba0af`). Nowy kod nie musi trzymać się ograniczeń
+> z tego dokumentu; profil `?profile=amiga` zostaje, ale nie jest utrzymywany.
+
 Cel: logo, intro i menu główne działają w przeglądarce tak, jak będą działać w porcie C99 na Amidze,
 żeby port był przepisaniem, a nie projektowaniem od nowa.
 

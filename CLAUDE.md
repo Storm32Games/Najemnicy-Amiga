@@ -5,6 +5,11 @@
 ## Overview
 We are migrating an existing pure-JavaScript isometric post-apocalyptic turn-based RPG from Three.js (`Oldgame/`) to **Phaser 3 + TypeScript + Vite**. All graphics and audio in the original game are procedurally generated in code.
 
+## Status: Amiga port paused (browser version first)
+- The A1200 + PiStorm Lite 32 (miniGL) port is **paused**. Backup of that state: branch `backup/amiga-minigl` (commit `74ba0af`); notes in `docs/AMIGA_MINIGL.md`.
+- Focus is the **browser version**. New code does not need to follow miniGL limits (textures <= 256 px, integer-only math, 50 Hz ticks, no FPU). Existing fixed-point code in `src/core/frontend/` and `src/core/campaign/region.ts` stays as is; don't rewrite it just to remove that.
+- The `?profile=amiga` profile is kept but not maintained.
+
 ## Tech Stack & Environment
 - **Language:** TypeScript (strict mode).
 - **Engine:** Phaser 3 (WebGL/Canvas renderer, NO physics engine needed - pure grid logic).
@@ -12,7 +17,7 @@ We are migrating an existing pure-JavaScript isometric post-apocalyptic turn-bas
 - **Audio:** Pure Web Audio API synthesizer (`src/audio/SoundManager.ts`) migrated directly from `Oldgame/`.
 
 ## Architecture & Separation of Concerns (CRITICAL)
-1. **`src/core/` (Pure Game Logic - Amiga C99 Port Ready):**
+1. **`src/core/` (Pure Game Logic):**
    - Must contain ZERO Phaser, DOM, or Three.js dependencies.
    - Handles 2D grid coordinates (`gx, gy`), A* pathfinding, turn state machine (`EXPLORATION`, `PLAYER_TURN`, `ENEMY_TURN`, `DIALOGUE`, `INVENTORY`), Action Points (AP), combat math, loot tables, and Line of Sight (Bresenham).
 2. **`src/audio/` (Procedural Sound):**
