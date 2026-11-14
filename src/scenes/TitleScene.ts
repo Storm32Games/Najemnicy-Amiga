@@ -94,7 +94,7 @@ export class TitleScene extends Phaser.Scene {
       return b;
     });
     this.paintFocus();
-    label(this, 6, BASE_H - 6, 'STORM 32 · Pathfinder 2e w świecie po zagładzie', { size: 6, color: PAL.dim }).setOrigin(0, 1).setDepth(10);
+    label(this, 6, BASE_H - 6, 'STORM 32 · v1.0 · Pathfinder 2e w świecie po zagładzie', { size: 6, color: PAL.dim }).setOrigin(0, 1).setDepth(10);
 
     const kb = this.input.keyboard;
     const nav = (dir: -1 | 1) => () => {

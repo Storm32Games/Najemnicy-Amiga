@@ -47,8 +47,16 @@ export class IntroScene extends Phaser.Scene {
   private next!: UiButton;
   private boomed = false;
 
+  /** Plansza startowa (1..N) ze skrótu ?scene=IntroScene&slide=N (Oldgame/src/scenes/intro.js:208). */
+  private startSlide = 0;
+
   constructor() {
     super('IntroScene');
+  }
+
+  init(data: { slide?: number }): void {
+    const n = Math.floor(Number(data?.slide) || 0);
+    this.startSlide = n >= 1 && n <= INTRO_SLIDES.length ? n - 1 : 0;
   }
 
   create(): void {
@@ -72,7 +80,11 @@ export class IntroScene extends Phaser.Scene {
     kb?.on('keydown-ESC', () => this.finish());
     for (const k of ['ENTER', 'SPACE', 'RIGHT']) kb?.on(`keydown-${k}`, () => this.advance());
 
-    this.show(0);
+    const first = this.startSlide;
+    this.startSlide = 0;
+    this.flow.index = first;
+    this.show(first);
+    if (first) this.tw?.finish();
     SoundManager.music('intro');
   }
 

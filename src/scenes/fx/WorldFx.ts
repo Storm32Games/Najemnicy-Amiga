@@ -187,6 +187,7 @@ export class WorldFx {
     const dur = Math.max(70, Math.min(170, len * 0.9));
     const st = { k: 0 };
     return new Promise<void>((resolve) => {
+      let done = false;
       this.scene.tweens.add({
         targets: st, k: 1 + tail, duration: dur * (1 + tail), ease: 'Linear',
         onUpdate: () => {
@@ -199,7 +200,6 @@ export class WorldFx {
         },
         onComplete: () => { g.destroy(); gl.destroy(); if (!done) resolve(); },
       });
-      let done = false;
     });
   }
 
