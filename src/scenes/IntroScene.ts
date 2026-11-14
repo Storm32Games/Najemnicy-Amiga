@@ -3,17 +3,29 @@ import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { RECRUITS } from '../core/data/recruits';
 import { INTRO_SLIDES, type IntroSlideId } from '../core/data/story';
-import { IntroAction, IntroFlow, TickClock } from '../core/frontend';
+import {
+  ApproachCurve, IntRng, IntroAction, IntroFlow, Q12, Q8, TickClock, ang, angQ8, icos, idiv, isin, lerpQ12, phaseAt, progressQ12, secToQ8, wave,
+} from '../core/frontend';
 import { addUnit, raiderLook, unitLookOf } from './iso/UnitLooks';
 import {
   BASE_H, BASE_W, type Ctx2D, Motes, PAL, type Stops, Typewriter, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded,
-  skyGradient, skyline,
+  skyGradient, skyline, tiledImage,
 } from './ui/Kit';
 
 // Wprowadzenie do świata (port Oldgame/src/scenes/intro.js): 6 animowanych plansz + narracja pisana "na maszynie".
 // Dioramy Three.js zastąpione pixel-artowymi scenkami 2D: tło malowane raz na płótnie, ruchome elementy jako obiekty.
+//
+// Animacje liczone jak w porcie na A1200 (core/frontend/fx.ts): czas planszy w Q8 ticków 50 Hz (`tq`), fale z SIN_LUT,
+// postęp / narastanie w Q12. Na piksele zamieniamy dopiero przy rysowaniu (`/ Q8`, `/ Q12`). Tła są statyczną grafiką
+// (w porcie: obrazki), więc ich malowanie może zostać na płótnie 2D; w profilu Amiga idą jako kafle <= 256 px.
 
-type Updater = (t: number, dt: number) => void;
+/** `tq` - czas planszy w Q8 ticków, `dt` - czas klatki w sekundach (dla Motes). */
+type Updater = (tq: number, dt: number) => void;
+
+/** Ticki Q8 na sekundę (do przeliczania stałych "na sekundę"). */
+const SEC = secToQ8(1);
+/** round(a / b) dla b > 0, na liczbach całkowitych. */
+const rdiv = (a: number, b: number): number => (a >= 0 ? idiv(a + (b >> 1), b) : -idiv(-a + (b >> 1), b));
 
 const D_FLASH = 20;
 const D_UI = 30;
@@ -22,9 +34,12 @@ export class IntroScene extends Phaser.Scene {
   /** Przebieg plansz (core/frontend/flow.ts): pisanie -> czekanie -> wygaszenie, w tickach 50 Hz. */
   private flow = new IntroFlow(INTRO_SLIDES.length);
   private clock = new TickClock();
-  private t = 0;
+  /** Czas bieżącej planszy (animacje). */
+  private anim = new TickClock();
   private slideObjects: Phaser.GameObjects.GameObject[] = [];
   private updaters: Updater[] = [];
+  /** Tekstury tła bieżącej planszy (z kaflami) - zwalniane przy zmianie planszy, jak w porcie z ograniczoną pamięcią tekstur. */
+  private bgKeys: string[] = [];
   private tw: Typewriter | null = null;
   private text!: PixelText;
   private dots!: PixelText;
@@ -64,15 +79,17 @@ export class IntroScene extends Phaser.Scene {
   private show(n: number): void {
     for (const o of this.slideObjects) o.destroy();
     this.slideObjects = [];
+    for (const k of this.bgKeys) if (this.textures.exists(k)) this.textures.remove(k);
+    this.bgKeys = [];
     this.updaters = [];
-    this.t = 0;
+    this.anim.reset();
     this.boomed = false;
     this.flash.setAlpha(0);
 
     const before = new Set(this.children.list);
     this.build(INTRO_SLIDES[n].id);
     this.slideObjects = this.children.list.filter((o) => !before.has(o));
-    for (const u of this.updaters) u(0, 0.016);
+    for (const u of this.updaters) u(0, 0);
 
     this.tw = new Typewriter(this.text, INTRO_SLIDES[n].text, 34);
     this.dots.setText(INTRO_SLIDES.map((_, k) => (k === n ? '◆' : '◇')).join('  '));
@@ -111,17 +128,20 @@ export class IntroScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     const dt = Math.min(delta / 1000, 0.1);
-    this.t += dt;
+    this.anim.advance(delta, 10);
     this.tw?.update(dt);
-    for (const u of this.updaters) u(this.t, dt);
+    for (const u of this.updaters) u(this.anim.timeQ8, dt);
     if (this.data.get('leaving')) return;
     for (let n = this.clock.advance(delta); n > 0 && !this.data.get('leaving'); n--) this.act(this.flow.tick(this.tw?.done ?? true));
   }
 
   // ================================================================== plansze
 
-  private bg(key: string, draw: (g: Ctx2D, w: number, h: number) => void): Phaser.GameObjects.Image {
-    return this.add.image(0, 0, canvasTexture(this, key, BASE_W, BASE_H, draw)).setOrigin(0).setDepth(0);
+  /** Tło planszy (malowane raz); (ox, oy) - punkt zaczepienia skali. */
+  private bg(key: string, draw: (g: Ctx2D, w: number, h: number) => void, ox = 0, oy = 0): Phaser.GameObjects.Container {
+    const box = tiledImage(this, canvasTexture(this, key, BASE_W, BASE_H, draw), 0, 0, ox, oy).setDepth(0);
+    this.bgKeys.push(key, ...box.list.map((o) => (o as Phaser.GameObjects.Image).texture.key).filter((k) => k !== key));
+    return box;
   }
 
   private build(id: IntroSlideId): void {
@@ -144,43 +164,48 @@ export class IntroScene extends Phaser.Scene {
       skyline(g, w, seeded(12), { n: 26, base: 202, hMin: 10, hMax: 46, color: '#1d1512', lit: '#ffb84a', wMin: 10, wMax: 26 });
       dunes(g, w, h, 200, 2, '#3a2a20', 4);
     });
-    const BOOM = 2.6, cx = 262, gy = 198;
+    const BOOM = secToQ8(2.6), FLIGHT = secToQ8(2.2), TRAIL = 66; // 0.016 w Q12
+    const cx = 262, gy = 198;
+    const grow = new ApproachCurve(0.45);
+    const W_SPIN = angQ8(0.1);
     const cloud = this.add.graphics().setDepth(2);
     const missiles = [0, 1, 2].map((i) => ({
-      sx: 420 - i * 70, sy: -20 - i * 20, ex: 180 + i * 62, ey: 190, d: 0.12 + i * 0.09,
+      sx: 420 - i * 70, sy: -20 - i * 20, ex: 180 + i * 62, ey: 190, d: secToQ8(0.12 + i * 0.09),
       head: this.add.rectangle(0, 0, 2, 3, 0xffeecc).setDepth(3),
       trail: Array.from({ length: 14 }, (_, j) => this.add.rectangle(0, 0, 2, 2, j < 4 ? 0xffc060 : 0x8a7a70).setDepth(3)),
     }));
-    this.updaters.push((t) => {
+    this.updaters.push((tq) => {
       for (const m of missiles) {
-        const u = Math.min(1, Math.max(0, (t - m.d) / 2.2));
-        const vis = u > 0 && u < 1 && t < BOOM;
-        const pos = (uu: number): [number, number] => [m.sx + (m.ex - m.sx) * uu, m.sy + (m.ey - m.sy) * uu];
-        m.head.setVisible(vis).setPosition(...pos(u));
+        const u = progressQ12(tq, m.d, FLIGHT);
+        const vis = u > 0 && u < Q12 && tq < BOOM;
+        m.head.setVisible(vis).setPosition(lerpQ12(m.sx, m.ex, u), lerpQ12(m.sy, m.ey, u));
         m.trail.forEach((b, j) => {
-          const uu = u - (j + 1) * 0.016;
+          const uu = u - (j + 1) * TRAIL;
           b.setVisible(vis && uu > 0);
-          if (b.visible) b.setPosition(...pos(uu)).setAlpha(1 - j / 16);
+          if (b.visible) b.setPosition(lerpQ12(m.sx, m.ex, uu), lerpQ12(m.sy, m.ey, uu)).setAlpha(1 - j / 16);
         });
       }
-      const k = Math.max(0, t - BOOM), grow = 1 - Math.exp(-k * 0.45);
+      const k = tq - BOOM, g = grow.at(k); // g: 0..4096
       cloud.clear();
-      if (t > BOOM) {
-        const h = 120 * grow;
-        const sw = 8 + grow * 8;
-        cloud.fillStyle(0xc43d1a, 1).fillRect(cx - sw / 2, gy - h, sw, h);
-        cloud.fillStyle(0x8a2a14, 1).fillRect(cx + sw / 2 - 3, gy - h, 3, h);
-        const r = 14 + 38 * grow;
+      if (k > 0) {
+        const h = (120 * g) >> 12;
+        const sw = 8 + ((8 * g) >> 12);
+        cloud.fillStyle(0xc43d1a, 1).fillRect(cx - (sw >> 1), gy - h, sw, h);
+        cloud.fillStyle(0x8a2a14, 1).fillRect(cx + (sw >> 1) - 3, gy - h, 3, h);
+        const r = 14 + ((38 * g) >> 12);
+        const spin = phaseAt(k, W_SPIN);
+        const ew = idiv((20 * Q12 + 26 * g) * 13, 10 * Q12), eh = 14 + ((14 * g) >> 12);
         for (let i = 0; i < 7; i++) {
-          const a = (i / 7) * Math.PI * 2 + k * 0.1;
-          cloud.fillStyle(i % 2 ? 0xff8a30 : 0xc43d1a, 1).fillEllipse(cx + Math.cos(a) * r, gy - h + 4 + Math.sin(a * 2) * 3, (20 + 26 * grow) * 1.3, 14 + 14 * grow);
+          const a = idiv(i * 256, 7) + spin;
+          cloud.fillStyle(i % 2 ? 0xff8a30 : 0xc43d1a, 1).fillEllipse(cx + ((icos(a) * r) >> 14), gy - h + 4 + ((isin(a * 2) * 3) >> 14), ew, eh);
         }
-        cloud.fillStyle(0x5a4a44, 1).fillEllipse(cx, gy - h - 6 * grow, 44 + 62 * grow, 18 + 16 * grow);
-        cloud.fillStyle(0xffc860, 1).fillEllipse(cx, gy - 1, 30 + 60 * grow, 5);
-        if (k < 3) cloud.lineStyle(2, 0xffe0a0, Math.max(0, 0.9 - k * 0.3)).strokeEllipse(cx, gy - 2, 20 + k * 220, 4 + k * 26);
+        cloud.fillStyle(0x5a4a44, 1).fillEllipse(cx, gy - h - ((6 * g) >> 12), 44 + ((62 * g) >> 12), 18 + ((16 * g) >> 12));
+        cloud.fillStyle(0xffc860, 1).fillEllipse(cx, gy - 1, 30 + ((60 * g) >> 12), 5);
+        // fala uderzeniowa przez 3 s: krycie 0.9 - 0.3/s, rozmiar rośnie liniowo
+        if (k < 3 * SEC) cloud.lineStyle(2, 0xffe0a0, Math.max(0, 230 - idiv(k * 77, SEC)) / Q8).strokeEllipse(cx, gy - 2, 20 + idiv(k * 220, SEC), 4 + idiv(k * 26, SEC));
       }
-      this.flash.setAlpha(t > BOOM ? Math.max(0, 1 - (t - BOOM) * 1.1) : 0);
-      if (t > BOOM && !this.boomed) {
+      this.flash.setAlpha(k > 0 ? Math.max(0, Q8 - idiv(k * 282, SEC)) / Q8 : 0); // 1 - 1.1/s
+      if (k > 0 && !this.boomed) {
         this.boomed = true;
         SoundManager.sfx('explosion');
         this.cameras.main.shake(1400, 0.004);
@@ -237,23 +262,24 @@ export class IntroScene extends Phaser.Scene {
         g.fillStyle = '#1c1814';
         g.fillRect(Math.round(VX + (X * F) / z - cw / 2), Math.round(VY + (2.2 * F) / z - chh * 0.45), cw, 1);
       }
-    });
-    const rnd = seeded(22);
+    }, VX, VY);
+    const rnd = seeded(22); // rozstawienie (statyczne)
+    const ph = new IntRng(22); // fazy migania (logika)
     const eyes = Array.from({ length: 7 }, (_, i) => {
       const side = rnd() > 0.5 ? 1 : -1, z = 2 + i * 1.1 + rnd();
       const x = VX + (side * (3 + rnd() * 2.5) * F) / z, y = VY + ((1.4 - rnd() * 1.2) * F) / z;
       const col = i % 2 ? 0xff3a20 : 0xb8ff40;
       const gap = Math.max(2, Math.round(8 / z));
-      return { a: this.add.rectangle(x - gap / 2, y, 1, 1, col).setDepth(2), b: this.add.rectangle(x + gap / 2, y, 1, 1, col).setDepth(2), ph: rnd() * 10 };
+      return { a: this.add.rectangle(x - gap / 2, y, 1, 1, col).setDepth(2), b: this.add.rectangle(x + gap / 2, y, 1, 1, col).setDepth(2), ph: ph.below(256) };
     });
     const ash = new Motes(this, 140, { x: 0, y: 0, w: BASE_W, h: BASE_H }, 0xb0c0a0, 3, 9, 2, 0.6);
-    img.setOrigin(VX / BASE_W, VY / BASE_H).setPosition(VX, VY);
-    this.updaters.push((t, dt) => {
-      // powolny marsz w głąb ulicy
-      img.setScale(1 + Math.min(t, 14) * 0.012);
-      img.x = VX + Math.sin(t * 0.25) * 3;
+    const W_SWAY = angQ8(0.25), W_EYE = angQ8(1.5), W_BLINK = angQ8(7), ZOOM_END = 14 * SEC;
+    this.updaters.push((tq, dt) => {
+      // powolny marsz w głąb ulicy: skala 1 + 0.012/s (do 14 s), kołysanie ±3 px
+      img.setScale((Q12 + idiv(Math.min(tq, ZOOM_END) * 49, SEC)) / Q12);
+      img.x = VX + (wave(tq, W_SWAY) * 3) / 16384;
       for (const e of eyes) {
-        const vis = Math.sin(t * 1.5 + e.ph) > -0.7 && Math.sin(t * 7 + e.ph) > -0.95;
+        const vis = wave(tq, W_EYE, e.ph) > -11469 && wave(tq, W_BLINK, e.ph) > -15565; // sin > -0.7 i > -0.95
         e.a.setVisible(vis);
         e.b.setVisible(vis);
       }
@@ -297,20 +323,21 @@ export class IntroScene extends Phaser.Scene {
     const SKULL = ['..#####..', '.#######.', '.#.###.#.', '.#######.', '..##.##..', '..#####..', '...#.#...'];
     const fire = campfire(this, 240, 184, 2, 4);
     const members = [0, 1, 2, 3, 4].map((i) => {
-      const a = (i / 5) * Math.PI * 2 + 0.3;
-      const s = addUnit(this, 240 + Math.cos(a) * 62, 188 + Math.sin(a) * 11, `intro_raider${i}`, raiderLook(i), 'idle', 2);
-      s.setFlipX(Math.cos(a) > 0).setDepth(Math.sin(a) < 0 ? 3 : 5);
+      const a = idiv(i * 256, 5) + ang(0.3), c = icos(a), sn = isin(a);
+      const s = addUnit(this, 240 + ((c * 62) >> 14), 188 + ((sn * 11) >> 14), `intro_raider${i}`, raiderLook(i), 'idle', 2);
+      s.setFlipX(c > 0).setDepth(sn < 0 ? 3 : 5);
       return s;
     });
     const sparks = new Motes(this, 30, { x: 222, y: 108, w: 36, h: 70 }, 0xffa040, 1, -22, 3, 0.9, 6);
-    this.updaters.push((t, dt) => {
-      fire(t);
+    const W_FLICK = angQ8(11), W_FLAG = angQ8(4);
+    this.updaters.push((tq, dt) => {
+      fire(tq / SEC);
       sparks.update(dt);
-      const flick = 0.82 + 0.18 * Math.sin(t * 11);
-      for (const m of members) m.setTint(Phaser.Display.Color.GetColor(255 * flick, 190 * flick, 150 * flick));
+      const flick = 210 + ((wave(tq, W_FLICK) * 46) >> 14); // 0.82 ± 0.18 w Q8
+      for (const m of members) m.setTint(Phaser.Display.Color.GetColor((255 * flick) >> 8, (190 * flick) >> 8, (150 * flick) >> 8));
       flag.clear();
       for (let x = 0; x < 34; x++) {
-        const dy = Math.round(Math.sin(t * 4 + x * 0.35) * 2.2 * (x / 34));
+        const dy = rdiv(wave(tq, W_FLAG, (x * 57) >> 2) * 22 * x, 16384 * 10 * 34); // sin(4t + 0.35x) * 2.2 * x/34
         flag.fillStyle(x % 5 === 4 ? 0x4a0c0c : 0x5a1010, 1).fillRect(152 + x, 100 + dy, 1, 22);
         const sx = x - 12;
         if (sx >= 0 && sx < 9) SKULL.forEach((row, sy) => row[sx] === '#' && flag.fillStyle(0xe8dcc0, 1).fillRect(152 + x, 106 + sy + dy, 1, 1));
@@ -343,12 +370,13 @@ export class IntroScene extends Phaser.Scene {
       sprite: kind === 'p' ? addUnit(this, 0, BASE_Y, 'intro_nomad', unitLookOf(look), 'walk', 1.5).setDepth(4) : null,
     }));
     const dust = new Motes(this, 110, { x: 0, y: 120, w: BASE_W, h: 110 }, 0xf0c080, 16, 1, 5, 0.5);
-    this.updaters.push((t, dt) => {
-      const lead = 180 + t * 9;
+    const W_BOB = angQ8(3), W_LEG = angQ8(4);
+    this.updaters.push((tq, dt) => {
+      const leadQ8 = 180 * Q8 + idiv(tq * 9, 50); // 9 px/s
       beasts.clear();
       for (const wk of walkers) {
-        const x = lead - wk.off;
-        const bob = Math.abs(Math.sin(t * 3 + wk.ph)) * 1.2;
+        const x = (leadQ8 - wk.off * Q8) / Q8;
+        const bob = (Math.abs(wave(tq, W_BOB, ang(wk.ph))) * 307) / (16384 * Q8); // |sin| * 1.2 px
         if (wk.sprite) {
           wk.sprite.setPosition(x, BASE_Y - bob);
           continue;
@@ -357,7 +385,7 @@ export class IntroScene extends Phaser.Scene {
         beasts.fillStyle(0x4a3220, 1);
         for (let k = 0; k < 4; k++) {
           const lx = x - 10 + (k < 2 ? 0 : 17) + (k % 2) * 3;
-          beasts.fillRect(lx + Math.sin(t * 4 + k * 1.6) * 2, y - 12, 2, 12);
+          beasts.fillRect(lx + (wave(tq, W_LEG, ang(k * 1.6)) >> 5) / Q8, y - 12, 2, 12);
         }
         beasts.fillStyle(0x6a4a30, 1).fillRect(x - 12, y - 22, 26, 11); // tułów
         beasts.fillStyle(0x5a3a22, 1).fillRect(x - 6, y - 27, 10, 6); // garb
@@ -422,10 +450,11 @@ export class IntroScene extends Phaser.Scene {
       s.setDepth(5 + (i % 2)).setFlipX(i > 2);
     });
     const smoke = new Motes(this, 36, { x: 136, y: 122, w: 32, h: 70 }, 0x9a9aa0, 3, -9, 5, 0.4, 3);
-    this.updaters.push((t, dt) => {
-      for (const f of fires) f(t);
+    const W_LAMP = angQ8(2);
+    this.updaters.push((tq, dt) => {
+      for (const f of fires) f(tq / SEC);
       smoke.update(dt);
-      lamps.forEach((l, i) => l.setAlpha(0.14 + 0.04 * Math.sin(t * 2 + i * 2)));
+      lamps.forEach((l, i) => l.setAlpha((36 + ((wave(tq, W_LAMP, ang(i * 2)) * 10) >> 14)) / Q8)); // 0.14 ± 0.04
     });
   }
 

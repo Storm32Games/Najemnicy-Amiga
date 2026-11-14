@@ -13,6 +13,7 @@ import { itemTargeting, previewStrike } from '../src/core/SkirmishRules.ts';
 import {
   EASE_OUT3_LUT, IntRng, IntroAction, IntroFlow, LOGO_GH, LOGO_GW, LOGO_MAX_DUR, LogoCubes, LogoEvent, LogoShow, Q12, TickClock, TypeProgress,
   easeOut3, icos, isin, titleMenu,
+  ApproachCurve, MoteField, Q8, angQ8, blinkAlphaQ8, flameKQ12, glowAlphaQ8, nextPow2, phaseAt, potTiles, progressQ12, secToQ8, tilesBytes16, wave,
 } from '../src/core/frontend/index.ts';
 import type { AbilityDef, AbilityId, Character, ClassId, EnemyId, Contract, Biome } from '../src/core/index.ts';
 
@@ -485,6 +486,41 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
   ms.items[0].enabled = false;
   ms.move(-1);
   ok(ms.focused?.id === 'credits' && !ms.setFocus(0), 'menu skips disabled');
+}
+
+// ---------- animacje ekranów (core/frontend/fx.ts)
+{
+  // fala: sin(w t) z tablicy w pobliżu Math.sin (rozdzielczość kąta 1/256 obrotu)
+  const W = angQ8(3);
+  let maxErr = 0;
+  for (let t = 0; t < 600 * 256; t += 997) maxErr = Math.max(maxErr, Math.abs(wave(t, W) / 16384 - Math.sin((3 * t) / secToQ8(1))));
+  ok(maxErr < 0.03, `wave ~ Math.sin (err ${maxErr.toFixed(4)})`);
+  ok(phaseAt(0x7fffff00, angQ8(23)) >= 0 && phaseAt(0x7fffff00, angQ8(23)) < 256, 'phase wraps without overflow');
+  const ac = new ApproachCurve(0.45);
+  let acErr = 0;
+  for (let s = 0; s < 25; s += 0.37) acErr = Math.max(acErr, Math.abs(ac.at(secToQ8(s)) / Q12 - (1 - Math.exp(-0.45 * s))));
+  ok(ac.at(-5) === 0 && acErr < 0.01, 'approach curve ~ 1-exp');
+  ok(progressQ12(0, 100, 5120) === 0 && progressQ12(100 + 2560, 100, 5120) === 2048 && progressQ12(1e6, 100, 5120) === Q12, 'progress Q12');
+  let fk = true;
+  for (let t = 0; t < 20000; t += 37) for (let i = 0; i < 4; i++) { const k = flameKQ12(t, i); if (k < 1400 || k > 4700) fk = false; }
+  const gl = [0, 1000, 5000].map(glowAlphaQ8);
+  ok(fk && gl.every((a) => a >= 20 && a <= 46), 'campfire curves in range');
+  // pył: deterministyczny, zawsze w prostokącie
+  const box = { x: 10, y: 20, w: 100, h: 50 };
+  const m1 = new MoteField(60, box, 18, -9, 7), m2 = new MoteField(60, box, 18, -9, 7);
+  let inside = true;
+  for (let k = 0; k < 2000; k++) {
+    m1.step();
+    m2.step();
+    for (let i = 0; i < m1.n; i++) if (m1.x[i] < 10 * Q8 || m1.x[i] >= 110 * Q8 || m1.y[i] < 20 * Q8 || m1.y[i] >= 70 * Q8) inside = false;
+  }
+  ok(inside && m1.x.every((v, i) => v === m2.x[i]) && m1.y.every((v, i) => v === m2.y[i]), 'motes wrap + deterministic');
+  ok(blinkAlphaQ8(0) === 256 && blinkAlphaQ8(6) === 115 && blinkAlphaQ8(100) === 256 && blinkAlphaQ8(242) === 256, 'blink alpha');
+  // kafle tekstur pod miniGL: 480x270 -> 4 kafle, tekstury potęgi dwójki <= 256
+  const tl = potTiles(480, 270);
+  ok(nextPow2(224) === 256 && nextPow2(14) === 16 && nextPow2(256) === 256, 'nextPow2');
+  ok(tl.length === 4 && tl.every((t) => t.texW <= 256 && t.texH <= 256 && t.w <= t.texW && t.h <= t.texH && (t.texW & (t.texW - 1)) === 0 && (t.texH & (t.texH - 1)) === 0), 'pot tiles');
+  ok(tl.reduce((a, t) => a + t.w * t.h, 0) === 480 * 270 && tilesBytes16(tl) === (256 * 256 * 2 + 256 * 16 * 2) * 2, 'pot tiles cover + bytes');
 }
 
 console.log(`\n${checks} checks, ${fails} failures`);

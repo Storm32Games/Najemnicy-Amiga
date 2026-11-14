@@ -4,3 +4,4 @@ export * from './fixed.ts';
 export * from './logo.ts';
 export * from './flow.ts';
 export * from './menu.ts';
+export * from './fx.ts';

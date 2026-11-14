@@ -21,6 +21,7 @@ Cel: logo, intro i menu główne działają w przeglądarce tak, jak będą dzia
 | `logo.ts` | `LogoCubes` (struktura tablic, sortowanie przez zliczanie po ticku lądowania), `LogoShow` (zdarzenia STEP/REVEAL/DONE) | tablice `int16_t x[MAX]…`, maska bitowa |
 | `flow.ts` | `TypeProgress` (maszyna do pisania), `IntroFlow` (pisanie → czekanie → wygaszenie → plansza) | `struct` + `enum` |
 | `menu.ts` | `MenuModel`, `titleMenu()` — fokus i nawigacja z zawijaniem, pomijanie nieaktywnych | tablica `struct { id; enabled; }` + `int focus` |
+| `fx.ts` | fale `wave`/`phaseAt` (kąt = `(tq8 * w) >> 16`, przepełnienie uint32 nieszkodliwe), `ApproachCurve` (1−e^(−rt) z tablicy), `progressQ12`/`lerpQ12`, ognisko (`flameKQ12`…), pył `MoteField`, `blinkAlphaQ8`, kafle `potTiles` | tablice + `uint32_t` |
 
 Testy: `node tests/core.selftest.ts` (sekcja „ekrany startowe”), m.in. `IntRng` = `makeRng`, determinizm logo,
 zgodność `forEachFlying` z pełnym przejściem, przebieg intro i menu.
@@ -35,9 +36,22 @@ zgodność `forEachFlying` z pełnym przejściem, przebieg intro i menu.
   Pętla kończy się wcześniej (kostki posortowane po lądowaniu, lot ≤ `LOGO_MAX_DUR`).
 - Profil Amiga pomija przenikanie do pełnego JPG-a (tekstura > 256 px).
 
-**Intro / menu** — tła malowane raz na płótnie 480×270. W porcie: siatka tekstur ≤ 256 px
-(np. 256+224 × 256+14) albo statyczny bitplane/chunky pod warstwą GL. Ruchome elementy (cząstki, ogniska,
-postacie) to małe quady.
+**Intro / menu** — wszystkie animacje (rakiety, grzyb atomowy, fala uderzeniowa, błysk, marsz ulicą, ślepia,
+flaga, migotanie ogniska, karawana, latarnie, kołysanie logo, błysk podtytułu, pył i iskry w `Motes`) liczone są
+w tickach przez `fx.ts`; scena tylko dzieli przez Q8/Q12 przy rysowaniu. Rozstawienie statycznych elementów
+i malowanie teł zostaje w scenie — to grafika, w porcie: gotowe obrazki.
+
+Tła i duże napisy idą przez `tiledImage()` (Kit): w profilu Amiga kafle ≤ 256 px w teksturach potęgi dwójki,
+tak jak załaduje je miniGL. Budżet (16 bpp):
+
+| Obraz | Kafle | Pamięć tekstur |
+|---|---|---|
+| tło 480×270 (tytuł, każda plansza intro) | 256×256, 256×256 (224 użyte), 256×16, 256×16 | 272 KB |
+| logo tytułu (> 256 px szer.) | 2 | zależnie od szerokości |
+| logo STORM 32 (kostki) | 256×128 | 64 KB |
+
+Ekran tytułowy w profilu Amiga: 7 tekstur. Źródłowe płótno jest usuwane po pocięciu na kafle, a plansze intro
+zwalniają tło poprzedniej planszy — naraz w pamięci są tylko 4 kafle tła.
 
 **Efekty retro** (`FxScene.ts`) — trzy pełnoekranowe warstwy z alfą. W profilu Amiga wyłączone: bez shaderów
 i przy limicie wypełniania to najdroższa rzecz na klatce.
@@ -49,8 +63,9 @@ logo bez dużej tekstury JPG. `?profile=pc` wymusza zwykły tryb.
 
 ## Następne kroki
 
-1. Sceny intro: animacje plansz (`Math.sin`, ułamkowe `t`) przenieść na `isin` + ticki.
-2. Tła: dzielenie na kafle ≤ 256 px już w wersji webowej (w profilu Amiga), żeby zmierzyć liczbę tekstur.
-3. `src/core` poza ekranami startowymi: domyślne `Math.random` → wspólny ziarnisty RNG, koszty Dijkstry
+1. ~~Animacje plansz intro na `isin` + ticki~~ — zrobione (`fx.ts`).
+2. ~~Kafle ≤ 256 px dla teł w profilu Amiga~~ — zrobione (`tiledImage`, `potTiles`).
+3. Tła: wypiec do obrazków (np. IFF/PNG z paletą) zamiast malowania w kodzie — w porcie nie będzie Canvas 2D.
+4. `src/core` poza ekranami startowymi: domyślne `Math.random` → wspólny ziarnisty RNG, koszty Dijkstry
    w półkrokach całkowitych (1→2, przekątna 1.5→3), `Math.hypot` → porównania kwadratów odległości.
-4. Dźwięk: syntezę Web Audio wyrenderować do 8-bitowych sampli dla Paula/AHI.
+5. Dźwięk: syntezę Web Audio wyrenderować do 8-bitowych sampli dla Paula/AHI.

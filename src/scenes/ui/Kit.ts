@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { SoundManager } from '../../audio/SoundManager';
 import { Settings } from './Settings';
-import { TickClock, TypeProgress } from '../../core/frontend';
+import { FLAME_TONGUES, MoteField, Q12, Q8, TickClock, TypeProgress, flameKQ12, flameSwayQ8, glowAlphaQ8, potTiles, secToQ8 } from '../../core/frontend';
 import { PixelText, pixelText } from './BitmapFont';
 
 export { PixelText } from './BitmapFont';
@@ -261,6 +261,32 @@ export function canvasTexture(scene: Phaser.Scene, key: string, w: number, h: nu
   return key;
 }
 
+/**
+ * Obraz z tekstury płótna jako kontener. W profilu Amiga dzielony na kafle <= 256 px w teksturach potęgi dwójki
+ * (core/frontend potTiles) - tak jak musi go załadować miniGL; poza nim jeden obraz. (ox, oy) = punkt zaczepienia
+ * w pikselach obrazu: kontener stoi w (x, y), a skala / obrót działają wokół tego punktu.
+ */
+export function tiledImage(scene: Phaser.Scene, key: string, x = 0, y = 0, ox = 0, oy = 0): Phaser.GameObjects.Container {
+  const box = scene.add.container(x + ox, y + oy);
+  const src = scene.textures.get(key).getSourceImage() as HTMLCanvasElement | HTMLImageElement;
+  if (!Settings.startAmiga) {
+    box.add(scene.add.image(-ox, -oy, key).setOrigin(0));
+    return box;
+  }
+  potTiles(src.width, src.height).forEach((t, i) => {
+    const k = `${key}@${i}`;
+    if (scene.textures.exists(k)) scene.textures.remove(k);
+    const tex = scene.textures.createCanvas(k, t.texW, t.texH);
+    if (!tex) return;
+    tex.getContext().drawImage(src, t.x, t.y, t.w, t.h, 0, 0, t.w, t.h);
+    tex.refresh();
+    box.add(scene.add.image(t.x - ox, t.y - oy, k).setOrigin(0).setCrop(0, 0, t.w, t.h));
+  });
+  // źródło (> 256 px) nie jest już potrzebne - w porcie też go nie ma, zostają tylko kafle
+  scene.textures.remove(key);
+  return box;
+}
+
 /** Pasmowany (pixel-artowy) gradient nieba. */
 export function skyGradient(g: Ctx2D, w: number, h: number, stops: Stops, band = 3): void {
   const grad = g.createLinearGradient(0, 0, 0, h);
@@ -321,55 +347,45 @@ export function dunes(g: Ctx2D, w: number, h: number, y0: number, amp: number, c
   }
 }
 
-export interface Mote {
-  img: Phaser.GameObjects.Rectangle;
-  vx: number;
-  vy: number;
-  ph: number;
-}
-
-/** Drobiny (pył / popiół / iskry) zawijane w prostokącie. */
+/** Pył / popiół / iskry: ruch liczy core/frontend MoteField (Q8 pikseli, tick 50 Hz), tu tylko prostokąty 1x1. */
 export class Motes {
-  private readonly items: Mote[] = [];
-  private readonly box: { x: number; y: number; w: number; h: number };
+  private readonly field: MoteField;
+  private readonly dots: Phaser.GameObjects.Rectangle[] = [];
+  private readonly clock = new TickClock();
 
   constructor(scene: Phaser.Scene, n: number, box: { x: number; y: number; w: number; h: number }, color: number, vx: number, vy: number, seed: number, alpha = 0.5, depth = 5) {
-    this.box = box;
-    const r = seeded(seed);
-    for (let i = 0; i < n; i++) {
-      const img = scene.add.rectangle(box.x + r() * box.w, box.y + r() * box.h, 1, 1, color, alpha * (0.4 + r() * 0.6)).setDepth(depth);
-      this.items.push({ img, vx: vx * (0.5 + r()), vy: vy * (0.5 + r()), ph: r() * 10 });
-    }
+    this.field = new MoteField(n, box, vx, vy, seed, alpha);
+    for (let i = 0; i < n; i++) this.dots.push(scene.add.rectangle(0, 0, 1, 1, color, this.field.alpha[i] / Q8).setDepth(depth));
+    this.place();
   }
 
+  private place(): void {
+    const f = this.field;
+    for (let i = 0; i < f.n; i++) this.dots[i].setPosition(f.x[i] >> 8, f.y[i] >> 8);
+  }
+
+  /** `dt` w sekundach (czas klatki). */
   update(dt: number): void {
-    const b = this.box;
-    for (const m of this.items) {
-      m.ph += dt;
-      m.img.x += (m.vx + Math.sin(m.ph * 0.8) * 3) * dt;
-      m.img.y += (m.vy + Math.cos(m.ph * 1.1) * 2) * dt;
-      if (m.img.x > b.x + b.w) m.img.x -= b.w;
-      if (m.img.x < b.x) m.img.x += b.w;
-      if (m.img.y > b.y + b.h) m.img.y -= b.h;
-      if (m.img.y < b.y) m.img.y += b.h;
-    }
+    let n = this.clock.advance(dt * 1000);
+    if (!n) return;
+    while (n--) this.field.step();
+    this.place();
   }
 }
 
-/** Ognisko: migoczące płomienie z prostokątów + poświata. Zwraca funkcję aktualizującą. */
+/** Ognisko: migoczące płomienie z prostokątów + poświata. Zwraca funkcję aktualizującą (t w sekundach). Krzywe: core/frontend/fx.ts. */
 export function campfire(scene: Phaser.Scene, x: number, y: number, size = 1, depth = 4): (t: number) => void {
   const glow = scene.add.ellipse(x, y - 2 * size, 46 * size, 22 * size, 0xff8a30, 0.16).setDepth(depth - 1);
-  const logs = scene.add.rectangle(x, y, 9 * size, 2 * size, 0x3a2410).setDepth(depth);
+  scene.add.rectangle(x, y, 9 * size, 2 * size, 0x3a2410).setDepth(depth);
   const cols = [0xc43d1a, 0xff8a30, 0xffc860, 0xfff0a0];
-  const tongues = cols.map((c, i) => scene.add.rectangle(x, y, (7 - i * 1.6) * size, 4 * size, c).setOrigin(0.5, 1).setDepth(depth));
+  const tongues = cols.map((c, i) => scene.add.rectangle(x, y - 1, (7 - i * 1.6) * size, 4 * size, c).setOrigin(0.5, 1).setDepth(depth));
   return (t: number) => {
-    tongues.forEach((r, i) => {
-      const k = 0.75 + 0.25 * Math.sin(t * (9 + i * 3) + i * 1.7) + 0.12 * Math.sin(t * 23 + i);
-      r.setSize((7 - i * 1.6) * size, Math.max(1, (9 - i * 2) * size * k));
-      r.x = x + Math.sin(t * (6 + i) + i) * 0.6 * size;
-      r.y = y - 1;
-    });
-    glow.setAlpha(0.13 + 0.05 * Math.sin(t * 11));
-    logs.setVisible(true);
+    const tq8 = secToQ8(t);
+    for (let i = 0; i < FLAME_TONGUES; i++) {
+      const k = flameKQ12(tq8, i) / Q12;
+      tongues[i].setSize((7 - i * 1.6) * size, Math.max(1, (9 - i * 2) * size * k));
+      tongues[i].x = x + (flameSwayQ8(tq8, i) * size) / Q8;
+    }
+    glow.setAlpha(glowAlphaQ8(tq8) / Q8);
   };
 }

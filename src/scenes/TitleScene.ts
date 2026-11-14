@@ -3,16 +3,22 @@ import { SoundManager } from '../audio/SoundManager';
 import { campaign } from '../core/campaign/session';
 import { RECRUITS } from '../core/data/recruits';
 import { CREDITS, GAME_SUBTITLE, GAME_TITLE } from '../core/data/story';
-import { type MenuModel, type TitleMenuId, titleMenu } from '../core/frontend';
+import { type MenuModel, Q8, TickClock, type TitleMenuId, angQ8, blinkAlphaQ8, icos, phaseAt, secToQ8, titleMenu } from '../core/frontend';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline, tiledImage } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
 import { Save, modalOpen, openOptions, toast } from './ui/Widgets';
 
 // Ekran tytułowy (port Oldgame/src/scenes/title.js): pikselowe logo nad pustkowiem o zmierzchu + menu.
 
+const SEC = secToQ8(1);
+const W_LOGO = angQ8(Math.PI / 2); // okres 4 s
+
 export class TitleScene extends Phaser.Scene {
-  private t = 0;
+  /** Czas ekranu w tickach 50 Hz (animacje z core/frontend/fx.ts). */
+  private clock = new TickClock();
+  private logo: Phaser.GameObjects.Container | null = null;
+  private sub: Phaser.GameObjects.Container | null = null;
   private fire: (t: number) => void = () => {};
   private dust: Motes | null = null;
   private credits: Phaser.GameObjects.Container | null = null;
@@ -25,7 +31,7 @@ export class TitleScene extends Phaser.Scene {
 
   create(): void {
     enter(this);
-    this.t = 0;
+    this.clock.reset();
     this.credits = null;
 
     canvasTexture(this, 'title_bg', BASE_W, BASE_H, (g, w, h) => {
@@ -59,16 +65,19 @@ export class TitleScene extends Phaser.Scene {
         g.stroke();
       }
     });
-    this.add.image(0, 0, 'title_bg').setOrigin(0);
+    tiledImage(this, 'title_bg');
     this.fire = campfire(this, 150, 230, 1.6, 4);
     [RECRUITS[1], RECRUITS[0]].forEach((r, i) => addUnit(this, 178 + i * 30, 232 + i * 3, `rec_${r.id}`, unitLookOf(r), 'idle', 2).setDepth(5).setFlipX(true));
     this.dust = new Motes(this, 150, { x: 0, y: 90, w: BASE_W, h: 150 }, 0xf0c080, 18, 1, 8, 0.5, 6);
 
     // logo
-    const logo = this.add.image(BASE_W / 2, 50, titleTexture(this, 'title_logo', GAME_TITLE, 5, { top: '#ffe08a', bottom: '#c0501e', spacing: 2 })).setDepth(10);
-    const sub = this.add.image(BASE_W / 2, 86, titleTexture(this, 'title_sub', GAME_SUBTITLE, 2, { top: '#c8e08a', bottom: '#4f8a2a', spacing: 2 })).setDepth(10);
-    this.tweens.add({ targets: logo, y: 47, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    this.tweens.add({ targets: sub, alpha: 0.45, duration: 90, yoyo: true, repeat: -1, repeatDelay: 4600, hold: 60 });
+    // logo ma > 256 px szerokości - w profilu Amiga idzie jako kafle; zaczepione w środku, jak wcześniej obraz
+    const centered = (key: string, y: number): Phaser.GameObjects.Container => {
+      const src = this.textures.get(key).getSourceImage();
+      return tiledImage(this, key, BASE_W / 2 - src.width / 2, y - src.height / 2, src.width / 2, src.height / 2).setDepth(10);
+    };
+    this.logo = centered(titleTexture(this, 'title_logo', GAME_TITLE, 5, { top: '#ffe08a', bottom: '#c0501e', spacing: 2 }), 50);
+    this.sub = centered(titleTexture(this, 'title_sub', GAME_SUBTITLE, 2, { top: '#c8e08a', bottom: '#4f8a2a', spacing: 2 }), 86);
 
     // menu: model z core/frontend/menu.ts (fokus + nawigacja góra/dół/ogień jak joystickiem), scena tylko rysuje
     this.menu = titleMenu(Save.exists());
@@ -162,8 +171,12 @@ export class TitleScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     const dt = Math.min(delta / 1000, 0.1);
-    this.t += dt;
-    this.fire(this.t);
+    this.clock.advance(delta, 10);
+    const tq = this.clock.timeQ8;
+    this.fire(tq / SEC);
     this.dust?.update(dt);
+    // logo: 50 -> 47 -> 50 px w 4 s (cosinus z tablicy), podtytuł: krótkie przygaszenie co ~4.8 s
+    this.logo?.setY(50 - (3 * (16384 - icos(phaseAt(tq, W_LOGO)))) / 32768);
+    this.sub?.setAlpha(blinkAlphaQ8(tq >> 8) / Q8);
   }
 }
