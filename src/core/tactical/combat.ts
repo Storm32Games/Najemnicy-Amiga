@@ -455,7 +455,8 @@ export class Combat {
 
   // ---------- zdolności
   abilityCost(ab: AbilityDef): number {
-    return ab.actions === 'reaction' ? 0 : ab.actions;
+    // Reakcje nie są dostępne jako akcja w turze (Oldgame combat.js:158: koszt 99).
+    return ab.actions === 'reaction' ? 99 : ab.actions;
   }
 
   /** Cele w zasięgu (i na linii strzału) dla zdolności na wroga / sojusznika. */
