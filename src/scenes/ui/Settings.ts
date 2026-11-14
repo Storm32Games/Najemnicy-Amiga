@@ -1,4 +1,4 @@
-// Opcje gracza (port Oldgame/src/core/settings.js): rozdzielczość, efekty retro. Głośność i wyciszenie trzyma SoundManager.
+// Opcje gracza (port Oldgame/src/core/settings.js): rozdzielczość, efekty retro, profil Amiga. Głośność i wyciszenie trzyma SoundManager.
 // Zapis w localStorage pod tym samym kluczem co w Oldgame - osobno od zapisu gry. `?res=auto|2..6` w URL nadpisuje (bez zapisu).
 // Moduł bez zależności od Kit.ts (Kit czyta stąd rozdzielczość przy starcie).
 
@@ -13,9 +13,14 @@ export interface SettingsValues {
   scanlines: boolean;
   grain: boolean;
   dither: boolean;
+  /**
+   * Profil sprzętowy A1200 + PiStorm (miniGL): logika i rysowanie w 50 Hz (PAL), bez pełnoekranowych nakładek
+   * z mieszaniem alfa (linie / ziarno / raster), bez tekstur większych niż 256x256 w logo. Podgląd budżetu docelowego.
+   */
+  amiga: boolean;
 }
 
-const DEFAULTS: SettingsValues = { res: 'auto', scanlines: true, grain: true, dither: true };
+const DEFAULTS: SettingsValues = { res: 'auto', scanlines: true, grain: true, dither: true, amiga: false };
 
 const validRes = (v: unknown): v is ResSetting => v === 'auto' || (typeof v === 'number' && [2, 3, 4, 5, 6].includes(v));
 
@@ -47,6 +52,13 @@ export const Settings = {
       if (validRes(n)) return n;
     }
     return this.values.res;
+  },
+  /** Profil Amiga, z którym wystartowała sesja (`?profile=amiga|pc` w URL nadpisuje; zmiana wymaga restartu). */
+  get startAmiga(): boolean {
+    const q = new URLSearchParams(window.location.search).get('profile');
+    if (q === 'amiga') return true;
+    if (q === 'pc') return false;
+    return this.values.amiga;
   },
   set<K extends keyof SettingsValues>(k: K, v: SettingsValues[K]): void {
     this.values = { ...this.values, [k]: v };

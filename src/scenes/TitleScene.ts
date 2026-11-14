@@ -3,8 +3,9 @@ import { SoundManager } from '../audio/SoundManager';
 import { campaign } from '../core/campaign/session';
 import { RECRUITS } from '../core/data/recruits';
 import { CREDITS, GAME_SUBTITLE, GAME_TITLE } from '../core/data/story';
+import { type MenuModel, type TitleMenuId, titleMenu } from '../core/frontend';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
 import { Save, modalOpen, openOptions, toast } from './ui/Widgets';
 
@@ -15,6 +16,8 @@ export class TitleScene extends Phaser.Scene {
   private fire: (t: number) => void = () => {};
   private dust: Motes | null = null;
   private credits: Phaser.GameObjects.Container | null = null;
+  private menu: MenuModel<TitleMenuId> = titleMenu(false);
+  private buttons: UiButton[] = [];
 
   constructor() {
     super('TitleScene');
@@ -67,30 +70,76 @@ export class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: logo, y: 47, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: sub, alpha: 0.45, duration: 90, yoyo: true, repeat: -1, repeatDelay: 4600, hold: 60 });
 
-    // menu
-    const mx = BASE_W - 128, my = 158;
-    button(this, mx, my, '▶ Nowa gra', () => {
-      SoundManager.sfx('door');
-      goto(this, 'RecruitScene');
-    }, { primary: true, w: 100, h: 18, size: 9 }).box.setDepth(10);
-    let y = my + 24;
-    const item = (text: string, fn: () => void): void => {
-      button(this, mx, y, text, fn, { w: 100, h: 15 }).box.setDepth(10);
-      y += 19;
-    };
-    if (Save.exists())
-      item('Kontynuuj', () => {
-        if (Save.load() && campaign.state.party.length) goto(this, 'HubScene');
-        else toast(this, 'Nie udało się wczytać zapisu.', 'bad');
-      });
-    item('Opcje', () => void openOptions(this));
-    item('Intro', () => goto(this, 'IntroScene'));
-    item('Autorzy', () => this.toggleCredits());
+    // menu: model z core/frontend/menu.ts (fokus + nawigacja góra/dół/ogień jak joystickiem), scena tylko rysuje
+    this.menu = titleMenu(Save.exists());
+    const mx = BASE_W - 128;
+    let y = 158;
+    this.buttons = this.menu.items.map((it, i) => {
+      const first = it.id === 'new';
+      const b = button(this, mx, y, it.label, () => {
+        this.menu.setFocus(i);
+        this.run(it.id);
+      }, first ? { primary: true, w: 100, h: 18, size: 9, onOver: () => this.focus(i, false) } : { w: 100, h: 15, onOver: () => this.focus(i, false) });
+      b.box.setDepth(10);
+      y += first ? 24 : 19;
+      return b;
+    });
+    this.paintFocus();
     label(this, 6, BASE_H - 6, 'STORM 32 · Pathfinder 2e w świecie po zagładzie', { size: 6, color: PAL.dim }).setOrigin(0, 1).setDepth(10);
 
-    this.input.keyboard?.on('keydown-ENTER', () => !modalOpen(this) && goto(this, 'RecruitScene'));
+    const kb = this.input.keyboard;
+    const nav = (dir: -1 | 1) => () => {
+      if (modalOpen(this) || this.credits || this.data.get('leaving')) return;
+      if (this.menu.move(dir)) this.focus(this.menu.focus, true);
+    };
+    for (const k of ['UP', 'W']) kb?.on(`keydown-${k}`, nav(-1));
+    for (const k of ['DOWN', 'S']) kb?.on(`keydown-${k}`, nav(1));
+    const fire = (): void => {
+      if (modalOpen(this) || this.data.get('leaving')) return;
+      if (this.credits) return this.toggleCredits();
+      const id = this.menu.activate();
+      if (id) {
+        SoundManager.sfx('click');
+        this.run(id);
+      }
+    };
+    kb?.on('keydown-ENTER', fire);
+    kb?.on('keydown-SPACE', fire);
+    kb?.on('keydown-ESC', () => this.credits && !modalOpen(this) && this.toggleCredits());
     SoundManager.music('title');
     SoundManager.ambience('wind');
+  }
+
+  private focus(i: number, sound: boolean): void {
+    this.menu.setFocus(i);
+    this.paintFocus();
+    if (sound) SoundManager.sfx('hover');
+  }
+
+  private paintFocus(): void {
+    this.buttons.forEach((b, i) => b.setFocus(i === this.menu.focus));
+  }
+
+  private run(id: TitleMenuId): void {
+    switch (id) {
+      case 'new':
+        SoundManager.sfx('door');
+        goto(this, 'RecruitScene');
+        return;
+      case 'continue':
+        if (Save.load() && campaign.state.party.length) goto(this, 'HubScene');
+        else toast(this, 'Nie udało się wczytać zapisu.', 'bad');
+        return;
+      case 'options':
+        void openOptions(this);
+        return;
+      case 'intro':
+        goto(this, 'IntroScene');
+        return;
+      case 'credits':
+        this.toggleCredits();
+        return;
+    }
   }
 
   private toggleCredits(): void {

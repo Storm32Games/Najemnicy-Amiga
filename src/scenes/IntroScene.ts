@@ -3,6 +3,7 @@ import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { RECRUITS } from '../core/data/recruits';
 import { INTRO_SLIDES, type IntroSlideId } from '../core/data/story';
+import { IntroAction, IntroFlow, TickClock } from '../core/frontend';
 import { addUnit, raiderLook, unitLookOf } from './iso/UnitLooks';
 import {
   BASE_H, BASE_W, type Ctx2D, Motes, PAL, type Stops, Typewriter, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded,
@@ -18,10 +19,10 @@ const D_FLASH = 20;
 const D_UI = 30;
 
 export class IntroScene extends Phaser.Scene {
-  private index = 0;
+  /** Przebieg plansz (core/frontend/flow.ts): pisanie -> czekanie -> wygaszenie, w tickach 50 Hz. */
+  private flow = new IntroFlow(INTRO_SLIDES.length);
+  private clock = new TickClock();
   private t = 0;
-  private waited = 0;
-  private switching = false;
   private slideObjects: Phaser.GameObjects.GameObject[] = [];
   private updaters: Updater[] = [];
   private tw: Typewriter | null = null;
@@ -40,7 +41,8 @@ export class IntroScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(0x000000);
     this.slideObjects = [];
     this.updaters = [];
-    this.switching = false;
+    this.flow = new IntroFlow(INTRO_SLIDES.length);
+    this.clock.reset();
 
     this.flash = this.add.rectangle(0, 0, BASE_W, BASE_H, 0xffffff, 1).setOrigin(0).setAlpha(0).setDepth(D_FLASH);
     panel(this, 38, 204, 404, 54, PAL.edge, 0.87).setDepth(D_UI);
@@ -63,9 +65,7 @@ export class IntroScene extends Phaser.Scene {
     for (const o of this.slideObjects) o.destroy();
     this.slideObjects = [];
     this.updaters = [];
-    this.index = n;
     this.t = 0;
-    this.waited = 0;
     this.boomed = false;
     this.flash.setAlpha(0);
 
@@ -78,29 +78,35 @@ export class IntroScene extends Phaser.Scene {
     this.dots.setText(INTRO_SLIDES.map((_, k) => (k === n ? '◆' : '◇')).join('  '));
   }
 
+  /** Klik / Enter / spacja / strzałka: dopisz tekst albo przejdź dalej. */
   private advance(): void {
-    if (this.switching || this.data.get('leaving')) return;
-    if (this.tw && !this.tw.done) {
-      this.tw.finish();
-      return;
-    }
-    if (this.index + 1 >= INTRO_SLIDES.length) {
-      this.finish();
-      return;
-    }
-    this.switching = true;
-    const cam = this.cameras.main;
-    cam.fadeOut(450, 0, 0, 0);
-    this.time.delayedCall(480, () => {
-      this.show(this.index + 1);
-      cam.fadeIn(650, 0, 0, 0);
-      this.switching = false;
-    });
+    if (this.data.get('leaving')) return;
+    this.act(this.flow.press(this.tw?.done ?? true));
   }
 
+  /** Esc / "Pomiń intro". */
   private finish(): void {
-    if (this.switching) return;
-    goto(this, 'TitleScene');
+    if (this.data.get('leaving')) return;
+    this.act(this.flow.skip());
+  }
+
+  private act(a: IntroAction): void {
+    const cam = this.cameras.main;
+    switch (a) {
+      case IntroAction.SKIP_TEXT:
+        this.tw?.finish();
+        return;
+      case IntroAction.FADE_OUT:
+        cam.fadeOut(450, 0, 0, 0);
+        return;
+      case IntroAction.SHOW:
+        this.show(this.flow.index);
+        cam.fadeIn(650, 0, 0, 0);
+        return;
+      case IntroAction.FINISH:
+        goto(this, 'TitleScene');
+        return;
+    }
   }
 
   update(_time: number, delta: number): void {
@@ -108,10 +114,8 @@ export class IntroScene extends Phaser.Scene {
     this.t += dt;
     this.tw?.update(dt);
     for (const u of this.updaters) u(this.t, dt);
-    if (this.tw?.done && !this.switching && !this.data.get('leaving')) {
-      this.waited += dt;
-      if (this.waited > 4.5) this.advance();
-    }
+    if (this.data.get('leaving')) return;
+    for (let n = this.clock.advance(delta); n > 0 && !this.data.get('leaving'); n--) this.act(this.flow.tick(this.tw?.done ?? true));
   }
 
   // ================================================================== plansze

@@ -10,6 +10,10 @@ import {
 } from '../src/core/index.ts';
 import { HudState, backpackRows, conditionChips, equipmentRows, hpTone, plural, statPairs } from '../src/core/HudState.ts';
 import { itemTargeting, previewStrike } from '../src/core/SkirmishRules.ts';
+import {
+  EASE_OUT3_LUT, IntRng, IntroAction, IntroFlow, LOGO_GH, LOGO_GW, LOGO_MAX_DUR, LogoCubes, LogoEvent, LogoShow, Q12, TickClock, TypeProgress,
+  easeOut3, icos, isin, titleMenu,
+} from '../src/core/frontend/index.ts';
 import type { AbilityDef, AbilityId, Character, ClassId, EnemyId, Contract, Biome } from '../src/core/index.ts';
 
 let fails = 0;
@@ -391,6 +395,96 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
   const blind = previewStrike(pc, foe, { gx: 0, gy: 0 }, { gx: 5, gy: 0 }, 0, false);
   const map2 = previewStrike(pc, foe, { gx: 0, gy: 0 }, { gx: 5, gy: 0 }, 1, true);
   ok(near.ok && near.hit > 0 && near.hit <= 1 && !blind.ok && map2.mod === near.mod - 5, 'strike preview');
+}
+
+// ---------- ekrany startowe (core/frontend): stałoprzecinkowo, ticki 50 Hz
+{
+  ok(isin(0) === 0 && isin(64) === 16384 && isin(128) === 0 && isin(192) === -16384 && icos(0) === 16384 && isin(256 + 64) === 16384, 'sin LUT');
+  ok(easeOut3(0) === 0 && easeOut3(Q12) === Q12 && EASE_OUT3_LUT[32] === Math.round((1 - 0.125) * Q12), 'ease LUT');
+  let mono = true;
+  for (let k = 1; k <= Q12; k++) if (easeOut3(k) < easeOut3(k - 1)) mono = false;
+  ok(mono, 'ease monotonic');
+  // IntRng = mulberry32 z rules/dice: below(n) == floor(makeRng() * n)
+  const ir = new IntRng(1234), fr = makeRng(1234);
+  let same = true;
+  for (let i = 0; i < 1000; i++) if (ir.below(97) !== Math.floor(fr() * 97)) same = false;
+  ok(same, 'IntRng matches makeRng');
+
+  const clk = new TickClock();
+  ok(clk.advance(10) === 0 && clk.advance(10) === 1 && clk.tick === 1 && clk.advance(1000) === 5 && clk.tick === 6, 'tick clock (50 Hz, clamp)');
+  ok(clk.advance(30) === 1 && clk.alphaQ8 === 128, 'tick clock alpha');
+
+  const tp = new TypeProgress(34, 34);
+  tp.step(25);
+  ok(tp.shown === 16 && !tp.done, 'type progress half second'); // 174/256 znaku na tick
+  tp.step(100);
+  ok(tp.done && tp.shown === 34, 'type progress done');
+
+  // logo: syntetyczny obraz (jasny prostokąt na ciemnym tle)
+  const rgb = new Uint8Array(LOGO_GW * LOGO_GH * 3);
+  for (let y = 20; y < 70; y++) for (let x = 30; x < 130; x++) rgb.set([200, 120, 40], (y * LOGO_GW + x) * 3);
+  const cubes = new LogoCubes(rgb);
+  ok(cubes.count === 100 * 50, 'logo cube count');
+  let sorted = true, bounded = true;
+  for (let i = 0; i < cubes.count; i++) {
+    if (i && cubes.land[i] < cubes.land[i - 1]) sorted = false;
+    if (cubes.dur[i] > LOGO_MAX_DUR || cubes.land[i] !== cubes.delay[i] + cubes.dur[i]) bounded = false;
+  }
+  ok(sorted && bounded, 'logo cubes sorted by landing');
+  const again = new LogoCubes(rgb);
+  ok(again.delay.every((v, i) => v === cubes.delay[i]) && again.sx.every((v, i) => v === cubes.sx[i]), 'logo deterministic');
+  const pose = { x: 0, y: 0, s: 0 };
+  let seen = 0, landedAll = 0, flyOk = true;
+  const flags = new Uint8Array(cubes.count);
+  for (let t = 0; t <= 200 * 256; t += 64) {
+    landedAll += cubes.drainLanded(t, (i) => (flags[i] = 1));
+    cubes.forEachFlying(t, pose, (i, p) => {
+      seen++;
+      if (flags[i] || p.s < Q12 || p.s > Q12 + (Q12 * 8) / 5) flyOk = false;
+    });
+  }
+  ok(landedAll === cubes.count && flags.every((f) => f === 1) && seen > 0 && flyOk, 'logo landed once, flying sane');
+  // forEachFlying (z wczesnym przerwaniem) == pełne przejście przez pose()
+  const c2 = new LogoCubes(rgb);
+  let eq = true;
+  for (let t = 0; t <= 160 * 256; t += 333) {
+    c2.drainLanded(t, () => {});
+    let a = 0, b = 0;
+    c2.forEachFlying(t, pose, () => a++);
+    for (let i = 0; i < c2.count; i++) if (c2.pose(i, t, pose)) b++;
+    if (a !== b) eq = false;
+  }
+  ok(eq, 'logo flying early-exit exact');
+  const show = new LogoShow(null);
+  let evs = 0;
+  for (let t = 0; t < 400; t++) evs |= show.update(t);
+  ok(evs === (LogoEvent.REVEAL | LogoEvent.DONE) && show.update(500) === 0, 'logo show events once');
+
+  // intro
+  const fl = new IntroFlow(3, 10, 4);
+  ok(fl.press(false) === IntroAction.SKIP_TEXT && fl.press(true) === IntroAction.FADE_OUT && fl.switching && fl.press(true) === IntroAction.NONE, 'intro press');
+  let a = 0;
+  for (let i = 0; i < 4; i++) a = fl.tick(true);
+  ok(a === IntroAction.SHOW && fl.index === 1 && !fl.switching, 'intro switch');
+  let auto = 0;
+  for (let i = 0; i < 11; i++) auto = fl.tick(true);
+  ok(auto === IntroAction.FADE_OUT, 'intro auto advance');
+  for (let i = 0; i < 4; i++) fl.tick(true);
+  ok(fl.index === 2 && fl.press(true) === IntroAction.FINISH && fl.skip() === IntroAction.FINISH, 'intro finish');
+
+  // menu
+  const m = titleMenu(false);
+  ok(m.focused?.id === 'new' && m.items.length === 4, 'menu without save');
+  m.move(-1);
+  ok(m.focused?.id === 'credits', 'menu wraps up');
+  m.move(1);
+  m.move(1);
+  ok(m.activate() === 'options', 'menu move/activate');
+  const ms = titleMenu(true);
+  ok(ms.focused?.id === 'continue', 'menu focuses continue');
+  ms.items[0].enabled = false;
+  ms.move(-1);
+  ok(ms.focused?.id === 'credits' && !ms.setFocus(0), 'menu skips disabled');
 }
 
 console.log(`\n${checks} checks, ${fails} failures`);

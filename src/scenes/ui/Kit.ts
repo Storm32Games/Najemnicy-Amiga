@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SoundManager } from '../../audio/SoundManager';
 import { Settings } from './Settings';
+import { TickClock, TypeProgress } from '../../core/frontend';
 import { PixelText, pixelText } from './BitmapFont';
 
 export { PixelText } from './BitmapFont';
@@ -115,6 +116,8 @@ export interface UiButton {
   box: Phaser.GameObjects.Container;
   setEnabled(on: boolean): void;
   setLabel(s: string): void;
+  /** Fokus z klawiatury / joysticka - wygląda jak najechanie myszą. */
+  setFocus(on: boolean): void;
 }
 
 export interface ButtonOptions {
@@ -124,6 +127,8 @@ export interface ButtonOptions {
   primary?: boolean;
   danger?: boolean;
   enabled?: boolean;
+  /** Wołane przy najechaniu myszą (np. przeniesienie fokusu menu). */
+  onOver?: () => void;
 }
 
 /** Przycisk w stylu starego .btn. (x, y) = lewy górny róg. */
@@ -141,7 +146,9 @@ export function button(scene: Phaser.Scene, x: number, y: number, text: string, 
   t.setPosition(w / 2, h / 2).setColor(hex(base));
   const box = scene.add.container(x, y, [shadow, bg, t]);
   let enabled = o.enabled ?? true;
-  const paint = (hover: boolean) => {
+  let focused = false;
+  const paint = (over: boolean) => {
+    const hover = over || focused;
     bg.setFillStyle(hover && enabled ? 0x3a2c1e : PAL.panel2, 1).setStrokeStyle(1, hover && enabled ? PAL.edgeHi : edge);
     t.setColor(hex(hover && enabled ? 0xffffff : base));
     box.setAlpha(enabled ? 1 : 0.4);
@@ -149,6 +156,7 @@ export function button(scene: Phaser.Scene, x: number, y: number, text: string, 
   bg.on('pointerover', () => {
     if (enabled) SoundManager.sfx('hover');
     paint(true);
+    o.onOver?.();
   });
   bg.on('pointerout', () => paint(false));
   bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
@@ -166,6 +174,10 @@ export function button(scene: Phaser.Scene, x: number, y: number, text: string, 
     },
     setLabel(s) {
       t.setText(s.toUpperCase());
+    },
+    setFocus(on) {
+      focused = on;
+      paint(false);
     },
   };
 }
@@ -187,41 +199,38 @@ export function enter(scene: Phaser.Scene, ms = 500): void {
   fitCamera(scene).fadeIn(ms, 0, 0, 0);
 }
 
-/** Maszyna do pisania (port Typewriter z Oldgame/src/scenes/meta/common.js). */
+/** Maszyna do pisania (port Typewriter z Oldgame/src/scenes/meta/common.js); tempo liczy core/frontend TypeProgress w tickach 50 Hz. */
 export class Typewriter {
-  private shown = 0;
-  private acc = 0;
   private readonly chars: string[];
   private readonly target: PixelText;
-  private readonly cps: number;
+  private readonly prog: TypeProgress;
+  private readonly clock = new TickClock();
 
   constructor(target: PixelText, text: string, cps = 34) {
     this.target = target;
-    this.cps = cps;
     // zawijamy cały tekst z góry, żeby słowa nie przeskakiwały między wierszami w trakcie pisania
     this.chars = [...target.getWrappedText(text).join('\n')];
+    this.prog = new TypeProgress(this.chars.length, cps);
     target.setText('');
   }
 
   get done(): boolean {
-    return this.shown >= this.chars.length;
+    return this.prog.done;
   }
 
   finish(): void {
-    this.shown = this.chars.length;
+    this.prog.finish();
     this.target.setText(this.chars.join(''));
   }
 
+  /** `dt` w sekundach (czas klatki). */
   update(dt: number): void {
     if (this.done) return;
-    this.acc += dt * this.cps;
-    const n = Math.floor(this.acc);
-    if (n <= 0) return;
-    this.acc -= n;
-    const before = this.shown;
-    this.shown = Math.min(this.chars.length, this.shown + n);
-    this.target.setText(this.chars.slice(0, this.shown).join(''));
-    if (this.chars.slice(before, this.shown).some((c) => c.trim())) SoundManager.sfx('typewriter', { vol: 0.35 });
+    const before = this.prog.shown;
+    if (!this.prog.step(this.clock.advance(dt * 1000))) return;
+    const shown = this.prog.shown;
+    this.target.setText(this.chars.slice(0, shown).join(''));
+    if (this.chars.slice(before, shown).some((c) => c.trim())) SoundManager.sfx('typewriter', { vol: 0.35 });
   }
 }
 

@@ -12,6 +12,7 @@ import { TitleScene } from './scenes/TitleScene';
 import { TravelScene } from './scenes/TravelScene';
 import { UIScene } from './scenes/UIScene';
 import { BASE_H, BASE_W, ZOOM } from './scenes/ui/Kit';
+import { Settings } from './scenes/ui/Settings';
 import { WorldScene } from './scenes/WorldScene';
 
 // Kolejność jak w Oldgame/src/main.js: logo -> intro -> tytuł -> werbunek -> Przystań -> podróż -> misja -> podsumowanie.
@@ -34,6 +35,8 @@ const config: Phaser.Types.Core.GameConfig = {
   backgroundColor: '#000000',
   pixelArt: true,
   roundPixels: true,
+  // Profil Amiga: 50 klatek (PAL VBlank) - tyle, ile dostanie port na A1200 + PiStorm z miniGL.
+  fps: Settings.startAmiga ? { target: 50, limit: 50 } : undefined,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

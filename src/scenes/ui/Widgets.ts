@@ -347,6 +347,7 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     toggle(R, 32, 'Linie skanowania', () => Settings.values.scanlines, (v) => Settings.set('scanlines', v), 'poziome pasy jak na monitorze CRT');
     toggle(R, 54, 'Ziarno filmu', () => Settings.values.grain, (v) => Settings.set('grain', v), 'migoczący szum obrazu');
     toggle(R, 76, 'Dithering', () => Settings.values.dither, (v) => Settings.set('dither', v), 'raster Bayera jak przy ograniczonej palecie');
+    toggle(R, 98, 'Profil Amiga', () => Settings.values.amiga, (v) => Settings.set('amiga', v), 'A1200/PiStorm: 50 Hz, bez nakładek (restart)');
 
     // --- rozdzielczość (dół, pełna szerokość)
     head(L, 136, 'Rozdzielczość obrazu');

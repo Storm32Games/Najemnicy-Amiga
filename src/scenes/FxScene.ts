@@ -43,9 +43,12 @@ export class FxScene extends Phaser.Scene {
   }
 
   private apply(v: SettingsValues): void {
-    this.scan.setVisible(v.scanlines);
-    this.grain.setVisible(v.grain);
-    this.dither.setVisible(v.dither);
+    // Profil Amiga: trzy pełnoekranowe warstwy z mieszaniem alfa to ~3x480x270 pikseli blendingu na klatkę -
+    // miniGL nie ma shaderów ani render-to-texture, a wypełnianie jest najdroższe. Na docelowym sprzęcie ich nie ma.
+    const amiga = Settings.startAmiga;
+    this.scan.setVisible(v.scanlines && !amiga);
+    this.grain.setVisible(v.grain && !amiga);
+    this.dither.setVisible(v.dither && !amiga);
   }
 
   private makeTextures(): void {
