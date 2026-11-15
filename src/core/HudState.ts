@@ -40,6 +40,8 @@ export type HudCommand =
   | { kind: 'retreat' }
   | { kind: 'toggleGroup' }
   | { kind: 'cycleSpeed' }
+  /** Mapa − / Mapa + (przybliżenie kamery; f = mnożnik). */
+  | { kind: 'zoom'; f: number }
   /** Tab: następny najemnik (eksploracja) / wycentruj na aktywnym (walka). */
   | { kind: 'cycleMember' };
 

@@ -78,9 +78,15 @@ const hashStr = (s: string): string => {
 };
 
 /** Klucz tekstury portretu 64x64 (budowany raz na wygląd). */
-export function portraitKey(scene: Phaser.Scene, ch: PortraitSource): string {
-  const key = `por_${hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`)}`;
-  if (!scene.textures.exists(key)) addHiRes(scene, key, portraitCanvas(ch, 64) as HTMLCanvasElement, { w: 32, h: 32 });
+/**
+ * Tekstura portretu o rozmiarze projektowym `size` (domyślnie 32). Portret jest malowany w 2x gęstości projektowej
+ * (32 -> 64 px, 40 -> 80 px), a HiRes dokłada Scale2x do gęstości płótna - bez skalowania na GPU, więc jest ostry.
+ * Wyświetlaj go w tym samym rozmiarze, w jakim został zamówiony.
+ */
+export function portraitKey(scene: Phaser.Scene, ch: PortraitSource, size = 32): string {
+  const id = hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`);
+  const key = size === 32 ? `por_${id}` : `por_${id}_${size}`;
+  if (!scene.textures.exists(key)) addHiRes(scene, key, portraitCanvas(ch, size * 2) as HTMLCanvasElement, { w: size, h: size });
   return key;
 }
 

@@ -23,7 +23,8 @@ import {
 } from '../core/HudState';
 import type { Character } from '../core/rules/types';
 import { TurnPhase } from '../core/TurnManager';
-import { BASE_H, BASE_W, PAL, button as kitButton, fitCamera, label } from './ui/Kit';
+import { BASE_H, BASE_W, PAL, button as kitButton, fitCamera, label, parseColor } from './ui/Kit';
+import { fitText } from './ui/FontGlyphs';
 import { type Window as UiWindow, abilityIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
 
 // HUD misji - port Oldgame/src/mission/hud.js (DOM) do Phasera, w stylu terminala CRT.
@@ -37,21 +38,26 @@ import { type Window as UiWindow, abilityIconImage, modalOpen, openOptions, open
 
 // ------------------------------------------------------------------ paleta / czcionka
 
+// Paleta Oldgame (Oldgame/index.html :root + mission/hud.js) - te same kolory co PAL w ui/Kit.ts.
+// Nazwy zostały po dawnym zielonym terminalu: green = "dobrze/aktywne", greenDim = zwykła rdzawa ramka.
 const C = {
-  bg: 0x050a06,
-  green: 0x33ff66,
-  greenDim: 0x0f5a24,
-  amber: 0xffb000,
-  amberDim: 0x5a3e00,
-  red: 0xff4444,
-  redDim: 0x5a1414,
-  grey: 0x8fa596,
-  greyDim: 0x2a3a2e,
-  white: 0xe8f5e0,
+  bg: 0x120e0b, // tło .m-card / paneli
+  green: PAL.good,
+  greenDim: PAL.edge,
+  amber: PAL.amber,
+  amberDim: 0x4a3417, // tło aktywnego przycisku .m-ab.act
+  red: PAL.bad,
+  redDim: 0x5a1e16,
+  grey: PAL.dim,
+  greyDim: 0x4a3c2c,
+  white: PAL.text,
 } as const;
 
-const TONE: Record<LogTone, number> = { dim: C.grey, good: C.green, bad: C.red, amber: C.amber, hd: C.white };
-const HP_TONE = { good: C.green, amber: C.amber, bad: C.red } as const;
+/** Kolory dziennika w palecie Oldgame (.m-log). */
+const TONE: Record<LogTone, number> = { dim: 0x9c958a, good: PAL.good, bad: PAL.bad, amber: PAL.amber, hd: PAL.text };
+const HP_TONE = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
+/** Kolory paska PW na kartach drużyny (hpCol('pc') z Oldgame/src/mission/hud.js). */
+const HP_FILL = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 
 const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
@@ -59,26 +65,34 @@ const M = 4; // margines od krawędzi
 const LH = 9; // wysokość linii tekstu
 
 // geometria paneli
-const PARTY_W = 124;
-const PARTY_H = 44;
+/** Karta najemnika (port .m-card z Oldgame/src/mission/hud.js): duży portret, imię na dole portretu, pasek PW pod nim. */
+const PC_PT = 40;
+const PARTY_W = PC_PT + 4;
+const PC_HPB = 9;
+const PARTY_H = 2 + PC_PT + 1 + PC_HPB + 2;
+const PC_GAP = 3;
+/** Menu po prawej (port .m-menu): siatka 2 kolumn + szeroki "Odwrót". */
 const BTN_W = 78;
-const BTN_H = 11;
+const BTN_H = 12;
+const BTN_GAP = 2;
+const MENU_ROWS = 5;
 const LOG_W = 196;
 const LOG_LINES = 9;
 const LOG_H = 13 + LOG_LINES * LH + 3;
 const SHEET_W = 186;
-const SHEET_Y = M + PARTY_H + 4;
+const SHEET_X = M + PARTY_W + 4;
 const FOE_W = 44;
 const FOE_H = 17;
 /** Prawa kolumna: siatka przycisków 2 x 4 + panel celów. */
 const RCOL_W = BTN_W * 2 + 4;
 const RCOL_X = BASE_W - M - RCOL_W;
-const OBJ_Y = M + (BTN_H + 2) * 4 + 2;
+const OBJ_Y = M + (BTN_H + BTN_GAP) * MENU_ROWS + 2;
 /** Środek góry: między kartami drużyny a prawą kolumną. */
 const MID_X0 = M + PARTY_W + 4;
 const MID_X1 = RCOL_X - 4;
 const INIT_W = 30;
 const INIT_H = 19;
+const SHEET_Y = M + LH + 1 + INIT_H + 8;
 /** Pasek akcji: dół, między kartami drużyny a dziennikiem. */
 const AB_X = M + PARTY_W + 4;
 const AB_W = BASE_W - M - LOG_W - 4 - AB_X;
@@ -86,13 +100,15 @@ const AB_COLS = 2;
 const AB_BW = Math.floor((AB_W - 2) / AB_COLS);
 const AB_BH = 11;
 
+type BtnVariant = 'normal' | 'primary' | 'danger';
+
 interface Button {
   bg: Phaser.GameObjects.Rectangle;
   text: PixelText;
   enabled: boolean;
   hovered: boolean;
   color: number;
-  set(label: string, enabled: boolean, color?: number): void;
+  set(label: string, enabled: boolean): void;
 }
 
 interface DisplayLine {
@@ -114,7 +130,6 @@ export class UIScene extends Phaser.Scene {
   private foeLayer!: Phaser.GameObjects.Container;
   private roundText!: PixelText;
 
-  private btnEnd!: Button;
   private btnInv!: Button;
   private btnSwap!: Button;
   private btnHelp!: Button;
@@ -122,6 +137,8 @@ export class UIScene extends Phaser.Scene {
   private btnSpeed!: Button;
   private btnRetreat!: Button;
   private btnOptions!: Button;
+  private btnZoomOut!: Button;
+  private btnZoomIn!: Button;
   private objLayer!: Phaser.GameObjects.Container;
   private initLayer!: Phaser.GameObjects.Container;
   private actionLayer!: Phaser.GameObjects.Container;
@@ -185,17 +202,18 @@ export class UIScene extends Phaser.Scene {
     this.foeLayer = this.add.container(0, M + LH + 1);
     this.initLayer = this.add.container(0, M + LH + 1);
 
-    // ---- prawy górny: przyciski (2 kolumny) + cele zlecenia
-    const bx = RCOL_X, bx2 = RCOL_X + BTN_W + 4, row = (i: number): number => M + (BTN_H + 2) * i;
-    this.btnEnd = this.button(bx, row(0), BTN_W, '', () => this.hud.command({ kind: 'endTurn' }));
-    this.btnInv = this.button(bx2, row(0), BTN_W, '', () => this.toggleSheet());
-    this.btnSwap = this.button(bx, row(1), BTN_W, '', () => this.hud.command({ kind: 'swapWeapons' }));
-    this.btnHelp = this.button(bx2, row(1), BTN_W, '', () => this.hud.toggleHelp());
-    this.btnGroup = this.button(bx, row(2), BTN_W, '', () => this.hud.command({ kind: 'toggleGroup' }));
-    this.btnSpeed = this.button(bx2, row(2), BTN_W, '', () => this.hud.command({ kind: 'cycleSpeed' }));
-    this.btnRetreat = this.button(bx, row(3), BTN_W, '', () => this.hud.command({ kind: 'retreat' }));
-    // Opcje w trakcie misji (menu misji w Oldgame/src/mission/hud.js)
-    this.btnOptions = this.button(bx2, row(3), BTN_W, '', () => !modalOpen(this) && void openOptions(this));
+    // ---- prawy górny: menu misji jak w Oldgame/src/mission/hud.js (H.menu: 2 kolumny, "Odwrót" na całą szerokość)
+    //      + ekwipunek / zmiana broni (w Oldgame pod kliknięciem w kartę); "Koniec tury" jest w pasku akcji walki, jak tam.
+    const bx = RCOL_X, bx2 = RCOL_X + BTN_W + 4, row = (i: number): number => M + (BTN_H + BTN_GAP) * i;
+    this.btnHelp = this.button(bx, row(0), BTN_W, '', () => this.hud.toggleHelp());
+    this.btnOptions = this.button(bx2, row(0), BTN_W, '', () => !modalOpen(this) && void openOptions(this));
+    this.btnSpeed = this.button(bx, row(1), BTN_W, '', () => this.hud.command({ kind: 'cycleSpeed' }));
+    this.btnGroup = this.button(bx2, row(1), BTN_W, '', () => this.hud.command({ kind: 'toggleGroup' }));
+    this.btnZoomOut = this.button(bx, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1 / 1.25 }));
+    this.btnZoomIn = this.button(bx2, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }));
+    this.btnInv = this.button(bx, row(3), BTN_W, '', () => this.toggleSheet());
+    this.btnSwap = this.button(bx2, row(3), BTN_W, '', () => this.hud.command({ kind: 'swapWeapons' }));
+    this.btnRetreat = this.button(bx, row(4), RCOL_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger');
     this.objLayer = this.add.container(RCOL_X, OBJ_Y);
     this.actionLayer = this.add.container(0, 0);
 
@@ -204,7 +222,7 @@ export class UIScene extends Phaser.Scene {
     this.hoverText = this.text(M + 3, BASE_H - M - 11, '').setVisible(false);
 
     this.createLog();
-    this.sheet = this.add.container(M, SHEET_Y).setVisible(false);
+    this.sheet = this.add.container(SHEET_X, SHEET_Y).setVisible(false);
 
     // ---- klawiatura (jak w starym HUD: Spacja, I, X, Esc, 1-9)
     // (Oldgame/src/scenes/mission.js:640-651: H, F, G, Tab, Spacja, Esc, 1-9)
@@ -257,8 +275,6 @@ export class UIScene extends Phaser.Scene {
     const off = this.hud.on((c) => this.onHudChange(c));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
 
-    // lekkie migotanie CRT
-    this.tweens.add({ targets: [this.partyLayer, this.logPanel], alpha: { from: 1, to: 0.93 }, duration: 90, yoyo: true, repeat: -1, repeatDelay: 2300 });
 
     this.drawParty();
     this.drawFoes();
@@ -280,6 +296,7 @@ export class UIScene extends Phaser.Scene {
       case 'turn':
         this.drawTurn();
         this.drawParty();
+        this.drawActions();
         if (this.hud.inventoryOpen) this.drawSheet();
         break;
       case 'log':
@@ -323,7 +340,7 @@ export class UIScene extends Phaser.Scene {
   // ================================================================== prymitywy
 
   /** Tekst HUD: czcionka bitmapowa 6x8 z czarnym obrysem; size >= 11 = pogrubienie (bez skalowania). */
-  private text(x: number, y: number, s: string, color: number = C.green, size = 8): PixelText {
+  private text(x: number, y: number, s: string, color: number = PAL.text, size = 8): PixelText {
     return pixelText(this, x, y, s, { color, bold: size >= 11 });
   }
 
@@ -333,14 +350,7 @@ export class UIScene extends Phaser.Scene {
 
   /** Tło panelu, które połyka kliknięcia (żeby nie przechodziły do WorldScene). */
   private panelRect(x: number, y: number, w: number, h: number, stroke: number = C.greenDim): Phaser.GameObjects.Rectangle {
-    return this.add.rectangle(x, y, w, h, C.bg, 0.88).setOrigin(0).setStrokeStyle(1, stroke).setInteractive();
-  }
-
-  private scanlines(w: number, h: number): Phaser.GameObjects.Graphics {
-    const g = this.add.graphics();
-    g.fillStyle(0x000000, 0.3);
-    for (let y = 1; y < h; y += 2) g.fillRect(0, y, w, 1);
-    return g;
+    return this.add.rectangle(x, y, w, h, C.bg, 0.92).setOrigin(0).setStrokeStyle(1, stroke).setInteractive();
   }
 
   private bar(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, ratio: number, color: number, dim: number): void {
@@ -348,29 +358,39 @@ export class UIScene extends Phaser.Scene {
     g.fillStyle(color, 1).fillRect(x, y, Math.round(w * Math.max(0, Math.min(1, ratio))), h);
   }
 
-  private button(x: number, y: number, w: number, label: string, onClick: () => void): Button {
-    const bg = this.add.rectangle(x, y, w, BTN_H, C.bg, 0.92).setOrigin(0).setStrokeStyle(1, C.green).setInteractive({ useHandCursor: true });
-    const text = this.text(x + w / 2, y + 2, label).setOrigin(0.5, 0);
+  /** Przycisk menu w stylu starego .btn (Oldgame/index.html): brązowe tło, rdzawa ramka, twardy cień. */
+  private button(x: number, y: number, w: number, label: string, onClick: () => void, variant: BtnVariant = 'normal'): Button {
+    const edge = variant === 'primary' ? PAL.amber : variant === 'danger' ? PAL.blood : PAL.edge;
+    const ink = variant === 'primary' ? PAL.amber : variant === 'danger' ? PAL.bad : PAL.text;
+    this.add.rectangle(x + 1, y + 1, w, BTN_H, 0x000000, 0.8).setOrigin(0);
+    const bg = this.add.rectangle(x, y, w, BTN_H, PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, edge).setInteractive({ useHandCursor: true });
+    const text = this.text(x + w / 2, y + 2, label, ink).setOrigin(0.5, 0);
     const b: Button = {
-      bg, text, enabled: true, hovered: false, color: C.green,
-      set: (l, enabled, color = C.green) => {
+      bg, text, enabled: true, hovered: false, color: ink,
+      set: (l, enabled) => {
         b.enabled = enabled;
-        b.color = color;
-        // nawiasy "[ ... ]" zastępuje ramka przycisku - czcionka 6x8 potrzebuje tego miejsca na napis
-        text.setText(l.replace(/^\[\s*|\s*\]$/g, ''));
-        const filled = b.hovered && enabled;
-        const dim = color === C.amber ? C.amberDim : color === C.red ? C.redDim : C.greenDim;
-        bg.setStrokeStyle(1, enabled ? color : dim).setFillStyle(filled ? color : C.bg, filled ? 1 : 0.92);
-        this.recolor(text, filled ? C.bg : enabled ? color : dim, !filled);
+        text.setText(fitText(l, w - 4));
+        const hot = b.hovered && enabled;
+        bg.setFillStyle(hot ? 0x3a2c1e : PAL.panel2, 1).setStrokeStyle(1, hot ? PAL.edgeHi : edge);
+        text.setColor(hot ? 0xffffff : ink);
+        bg.setAlpha(enabled ? 1 : 0.55);
+        text.setAlpha(enabled ? 1 : 0.4);
       },
+    };
+    let raw = label;
+    const set = b.set;
+    b.set = (l, enabled) => {
+      raw = l;
+      set(l, enabled);
     };
     bg.on('pointerover', () => {
       b.hovered = true;
-      b.set(text.text, b.enabled, b.color);
+      if (b.enabled) SoundManager.sfx('hover');
+      b.set(raw, b.enabled);
     });
     bg.on('pointerout', () => {
       b.hovered = false;
-      b.set(text.text, b.enabled, b.color);
+      b.set(raw, b.enabled);
     });
     bg.on('pointerdown', () => {
       if (!b.enabled) {
@@ -391,53 +411,80 @@ export class UIScene extends Phaser.Scene {
     L.removeAll(true);
     const hud = this.hud;
     hud.party.forEach((ch, i) => {
-      const y = i * (PARTY_H + 3);
+      const y = i * (PARTY_H + PC_GAP);
       const isCurrent = ch === hud.active;
-      const isActive = isCurrent && hud.phase !== TurnPhase.ENEMY_TURN && ch.hp > 0;
-      const stroke = isActive ? C.amber : C.greenDim;
-      const bg = this.panelRect(0, y, PARTY_W, PARTY_H, stroke);
-      bg.on('pointerdown', () => this.hud.command({ kind: 'selectMember', index: i }));
-      const g = this.add.graphics();
-
-      // "portret": monogram w ramce w kolorze stanu
-      const tone = HP_TONE[hpTone(ch)];
-      g.lineStyle(1, tone, 1).strokeRect(3, y + 3, 16, 16);
-      g.fillStyle(tone, 0.18).fillRect(4, y + 4, 14, 14);
-      const mono = this.add.image(4, y + 4, portraitKey(this, ch)).setOrigin(0).setDisplaySize(14, 14);
-
-      const name = this.text(23, y + 2, cut(ch.name, 18), C.white);
-      const sub = this.text(23, y + 10, cut(classLabel(ch), 22), C.grey);
-
-      // PW
-      const hpLabel = this.text(3, y + 21, 'PW', C.red);
-      this.bar(g, 17, y + 23, 68, 5, hpRatio(ch), tone, C.redDim);
+      const turn = isCurrent && hud.inCombat && hud.phase !== TurnPhase.ENEMY_TURN && ch.hp > 0;
       const st = stateLabel(ch);
-      const hpVal = this.text(88, y + 21, st || `${Math.max(0, ch.hp)}/${ch.maxHp}${ch.tempHp ? '+' + ch.tempHp : ''}`, st ? C.red : tone);
+      const dead = !!ch.conditions.dead;
+      // ramka jak .m-card / .sel / .act / .down
+      const edge = turn || isCurrent ? PAL.amber : ch.hp <= 0 ? PAL.blood : PAL.edge;
+      const shadow = this.add.rectangle(2, y + 2, PARTY_W, PARTY_H, 0x000000, 0.5).setOrigin(0);
+      const bg = this.add.rectangle(0, y, PARTY_W, PARTY_H, 0x120e0b, 0.92).setOrigin(0).setStrokeStyle(2, edge).setInteractive({ useHandCursor: true });
+      bg.on('pointerdown', () => this.hud.command({ kind: 'selectMember', index: i }));
+      bg.on('pointerover', () => this.hud.setHover(this.memberTip(ch)));
+      bg.on('pointerout', () => this.hud.setHover(null));
+      const parts: Phaser.GameObjects.GameObject[] = [shadow, bg];
+      if (turn) parts.push(this.add.rectangle(-1, y - 1, PARTY_W + 2, PARTY_H + 2).setOrigin(0).setStrokeStyle(1, PAL.amber, 0.45));
 
-      // AP (pipsy)
-      const apColor = hud.ap <= 1 ? C.amber : C.green;
-      const apDim = hud.ap <= 1 ? C.amberDim : C.greenDim;
-      const apLabel = this.text(3, y + 30, 'AP', apColor);
-      for (let k = 0; k < hud.maxAp; k++) {
-        g.fillStyle(isCurrent && k < hud.ap ? apColor : apDim, 1).fillRect(17 + k * 6, y + 32, 4, 5);
+      // portret: tekstura w natywnej gęstości (1 teksel = 1 piksel płótna), więc jest ostry
+      const px = 2, py = y + 2;
+      const img = this.add.image(px, py, portraitKey(this, ch, PC_PT)).setOrigin(0);
+      if (ch.hp <= 0) img.setTint(dead ? 0x555555 : 0x8a8a8a);
+      parts.push(img, this.add.rectangle(px, py, PC_PT, PC_PT).setOrigin(0).setStrokeStyle(1, 0x000000));
+
+      // imię na dole portretu (.m-nm)
+      parts.push(this.add.rectangle(px, py + PC_PT - LH, PC_PT, LH, 0x000000, 0.72).setOrigin(0));
+      const nameCol = turn || isCurrent ? PAL.amber : parseColor(ch.nameColor, PAL.text);
+      parts.push(this.text(px + 1, py + PC_PT - LH + 1, fitText(ch.name, PC_PT - 2), nameCol));
+
+      // stan (POLEGŁ / NIEPRZYT.) na środku portretu (.m-pt .st)
+      if (st) {
+        parts.push(this.add.rectangle(px, py + 14, PC_PT, LH + 1, 0x000000, 0.8).setOrigin(0));
+        parts.push(this.text(px + PC_PT / 2, py + 15, fitText(st, PC_PT - 2), PAL.bad).setOrigin(0.5, 0));
       }
-      const apVal = this.text(17 + hud.maxAp * 6 + 2, y + 30, isCurrent && hud.inCombat ? `${hud.ap}/${hud.maxAp}` : '', apColor);
 
-      L.add([bg, g, mono, name, sub, hpLabel, hpVal, apLabel, apVal]);
-
-      // stany (chipy) pod kartą
-      let cx = 0;
-      for (const chip of conditionChips(ch).slice(0, 5)) {
-        const col = chip.bad ? C.red : C.amber;
-        const t = this.text(cx + 2, y + PARTY_H + 1, chip.label, col);
-        const r = this.add.rectangle(cx, y + PARTY_H, t.width + 4, LH, C.bg, 0.9).setOrigin(0).setStrokeStyle(1, col).setInteractive();
+      // górny rząd na portrecie: pipsy akcji w turze + chipy stanów (.m-row)
+      const g = this.add.graphics();
+      parts.push(g);
+      let cx = px + 1;
+      if (turn) {
+        for (let k = 0; k < hud.maxAp; k++) {
+          g.fillStyle(0x000000, 1).fillCircle(cx + 2.5, py + 3.5, 3);
+          g.lineStyle(1, PAL.amber, 1).strokeCircle(cx + 2.5, py + 3.5, 2);
+          if (k < hud.ap) g.fillStyle(PAL.amber, 1).fillCircle(cx + 2.5, py + 3.5, 2);
+          cx += 6;
+        }
+        cx += 1;
+      }
+      const chips = conditionChips(ch);
+      const maxChips = turn ? 1 : 3;
+      chips.slice(0, maxChips).forEach((chip, k) => {
+        const col = chip.bad ? PAL.bad : PAL.amber;
+        const rowY = turn ? py + 8 : py + 1 + k * (LH + 1);
+        const t = this.text(px + 2, rowY + 1, chip.label, col);
+        const r = this.add.rectangle(px + 1, rowY, t.width + 3, LH, 0x000000, 0.7).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
         r.on('pointerover', () => this.hud.setHover(`${chip.name}${chip.value > 1 ? ' ' + chip.value : ''}: ${chip.desc}`));
         r.on('pointerout', () => this.hud.setHover(null));
-        L.add([r, t]);
-        cx += t.width + 6;
-      }
-      L.add(this.scanlines(PARTY_W, PARTY_H).setY(y));
+        parts.push(r, t);
+      });
+
+      // pasek PW z liczbą w środku (.m-hpb)
+      const hy = py + PC_PT + 1;
+      g.fillStyle(0x000000, 1).fillRect(px, hy, PC_PT, PC_HPB);
+      g.fillStyle(HP_FILL[hpTone(ch)], 1).fillRect(px + 1, hy + 1, Math.round((PC_PT - 2) * Math.max(0, Math.min(1, hpRatio(ch)))), PC_HPB - 2);
+      g.lineStyle(1, 0x2a2018, 1).strokeRect(px + 0.5, hy + 0.5, PC_PT - 1, PC_HPB - 1);
+      const hp = `${Math.max(0, ch.hp)}/${ch.maxHp}${ch.tempHp ? '+' + ch.tempHp : ''}`;
+      parts.push(this.text(px + PC_PT / 2, hy, fitText(hp, PC_PT), 0xffffff).setOrigin(0.5, 0));
+
+      L.add(parts);
     });
+  }
+
+  /** Opis najemnika pod kursorem (podpowiedź karty z Oldgame: imię, poziom, KP, percepcja, prędkość, stany). */
+  private memberTip(ch: Character): string {
+    const stats = statPairs(ch).map(([k, v]) => `${k} ${v}`).join(' · ');
+    const conds = conditionChips(ch).map((c) => c.name + (c.value > 1 ? ' ' + c.value : '')).join(', ');
+    return `${ch.name} · ${classLabel(ch)} · ${stats}${conds ? ' · ' + conds : ''}`;
   }
 
   // ================================================================== runda + wrogowie (port H.initBar)
@@ -449,18 +496,18 @@ export class UIScene extends Phaser.Scene {
     const cur = hud.initiative.find((e) => e.current);
     if (!hud.inCombat) this.roundText.setText(cut(`EKSPLORACJA · LIDER: ${name}`, 36));
     else this.roundText.setText(cut(`RUNDA ${hud.round} · ${enemy ? `TURA: ${(cur?.ch.name ?? 'WRÓG').toUpperCase()}` : `TURA: ${name}`}`, 36));
-    this.recolor(this.roundText, enemy ? C.red : hud.inCombat ? C.amber : C.green);
+    this.recolor(this.roundText, enemy ? C.red : C.amber);
 
     const locked = !hud.canAct;
-    const endLabel = enemy ? '[TURA WROGA]' : hud.inCombat ? '[KONIEC TURY]' : '[EKSPLORACJA]';
-    this.btnEnd.set(endLabel, !locked && hud.inCombat, hud.ap <= 1 ? C.amber : C.green);
-    this.btnInv.set(hud.inventoryOpen ? '[ZAMKNIJ  I]' : '[EKWIPUNEK I]', true);
-    this.btnSwap.set('[ZMIEŃ BROŃ X]', !locked && !!hud.active?.equipment.weapon2);
-    this.btnHelp.set('[STEROWANIE H]', true);
-    this.btnGroup.set(hud.groupMove ? '[RUCH: DRUŻ. G]' : '[RUCH: SOLO G]', !hud.inCombat, C.green);
-    this.btnSpeed.set(hud.speed >= 4 ? '[x4 BEZ KOŚCI F]' : `[TEMPO x${hud.speed} F]`, true);
-    this.btnRetreat.set('[ ODWRÓT ]', !locked || (hud.inCombat && !enemy && !hud.busy), C.red);
-    this.btnOptions.set('[ OPCJE ]', true);
+    this.btnHelp.set('STEROWANIE [H]', true);
+    this.btnOptions.set('OPCJE', true);
+    this.btnSpeed.set(hud.speed >= 4 ? 'x4 BEZ KOŚCI [F]' : `TEMPO x${hud.speed} [F]`, true);
+    this.btnGroup.set(hud.groupMove ? 'RUCH: DRUŻ. [G]' : 'RUCH: SOLO [G]', !hud.inCombat);
+    this.btnZoomOut.set('MAPA −', true);
+    this.btnZoomIn.set('MAPA +', true);
+    this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ [I]' : 'EKWIPUNEK [I]', true);
+    this.btnSwap.set('ZMIEŃ BROŃ [X]', !locked && !!hud.active?.equipment.weapon2);
+    this.btnRetreat.set('ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
   }
 
   private drawFoes(): void {
@@ -515,14 +562,14 @@ export class UIScene extends Phaser.Scene {
 
   private initChip(x: number, y: number, e: InitEntry): Phaser.GameObjects.GameObject[] {
     const enemy = e.side === 'enemy';
-    const stroke = e.current ? C.amber : enemy ? C.redDim : C.greenDim;
+    const stroke = e.current ? C.amber : enemy ? PAL.blood : PAL.steel;
     const bg = this.panelRect(x, y, INIT_W, INIT_H, stroke);
     if (e.current) bg.setStrokeStyle(2, C.amber);
     const g = this.add.graphics();
-    const col = e.done ? C.grey : enemy ? C.red : C.green;
+    const col = e.done ? C.grey : enemy ? C.red : C.white;
     const nm = this.text(x + 2, y, cut(e.ch.name, 5), col);
     const ini = this.text(x + INIT_W - 2, y + 8, String(e.init), C.grey, 7).setOrigin(1, 0);
-    this.bar(g, x + 2, y + INIT_H - 4, INIT_W - 4, 2, hpRatio(e.ch), HP_TONE[hpTone(e.ch)], enemy ? C.redDim : C.greenDim);
+    this.bar(g, x + 2, y + INIT_H - 4, INIT_W - 4, 2, hpRatio(e.ch), HP_TONE[hpTone(e.ch)], 0x000000);
     const extra: Phaser.GameObjects.GameObject[] = [];
     if (e.down) extra.push(this.text(x + 2, y + 8, '!', C.red, 7));
     if (e.current) extra.push(this.text(x + INIT_W / 2, y + INIT_H, '▲', C.amber, 7).setOrigin(0.5, 0));
@@ -544,12 +591,13 @@ export class UIScene extends Phaser.Scene {
     const rows = this.hud.objectives;
     if (!rows.length) return;
     const items: Phaser.GameObjects.GameObject[] = [];
-    const title = this.text(3, 1, cut(this.hud.objectiveTitle.toUpperCase() || 'ZLECENIE', 30), C.amber);
-    items.push(title);
-    let y = LH + 3;
+    const title = this.text(3, 1, 'ZLECENIE', PAL.amber);
+    const name = this.text(3, LH + 3, this.hud.objectiveTitle.toUpperCase() || '—', PAL.amber).setWordWrapWidth(RCOL_W - 6);
+    items.push(title, name);
+    let y = LH + 3 + Math.ceil(name.height) + 2;
     for (const r of rows) {
       const box = r.go ? '►' : r.done ? '☑' : '☐';
-      const col = r.go ? C.amber : r.done ? C.green : r.dim ? C.grey : C.white;
+      const col = r.go ? PAL.toxic : r.done ? PAL.good : r.dim ? PAL.dim : PAL.text;
       const t = this.text(4, y, `${box} ${r.text}`, col, 7).setWordWrapWidth(RCOL_W - 8);
       if (r.done && !r.go) t.setAlpha(0.75);
       items.push(t);
@@ -557,9 +605,10 @@ export class UIScene extends Phaser.Scene {
       if (r.go) this.tweens.add({ targets: t, alpha: { from: 1, to: 0.45 }, duration: 500, yoyo: true, repeat: -1 });
     }
     y += 1;
-    const bg = this.panelRect(0, 0, RCOL_W, y, C.greenDim);
-    const line = this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, LH + 1.5, RCOL_W - 2, LH + 1.5);
-    L.add([bg, line, ...items, this.scanlines(RCOL_W, y)]);
+    const shadow = this.add.rectangle(2, 2, RCOL_W, y, 0x000000, 0.5).setOrigin(0);
+    const bg = this.add.rectangle(0, 0, RCOL_W, y, PAL.panel, 0.94).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
+    const line = this.add.graphics().lineStyle(1, PAL.edge, 1).lineBetween(2, LH + 1.5, RCOL_W - 2, LH + 1.5);
+    L.add([shadow, bg, line, ...items]);
   }
 
   // ================================================================== pasek akcji walki (port C.refreshBar / H.abBtn)
@@ -589,8 +638,8 @@ export class UIScene extends Phaser.Scene {
 
   private actionButton(x: number, y: number, w: number, b: ActionButton, key: string): Phaser.GameObjects.GameObject[] {
     const on = b.enabled && this.hud.canAct;
-    const col = b.active ? C.amber : on ? C.green : C.greyDim;
-    const r = this.add.rectangle(x, y, w, AB_BH, b.active ? C.amberDim : C.bg, 0.95).setOrigin(0).setStrokeStyle(1, col).setInteractive({ useHandCursor: on });
+    const col = b.active ? C.amber : on ? PAL.edge : C.greyDim;
+    const r = this.add.rectangle(x, y, w, AB_BH, b.active ? C.amberDim : PAL.panel2, 0.95).setOrigin(0).setStrokeStyle(1, col).setInteractive({ useHandCursor: on });
     const out: Phaser.GameObjects.GameObject[] = [r];
     let tx = x + 2;
     if (key) {
@@ -614,11 +663,11 @@ export class UIScene extends Phaser.Scene {
       out.push(g);
     }
     r.on('pointerover', () => {
-      if (on) r.setFillStyle(col, 0.25);
+      if (on) r.setFillStyle(0x3a2c1e, 1).setStrokeStyle(1, PAL.edgeHi);
       this.hud.setHover(b.tip ?? b.label);
     });
     r.on('pointerout', () => {
-      r.setFillStyle(b.active ? C.amberDim : C.bg, 0.95);
+      r.setFillStyle(b.active ? C.amberDim : PAL.panel2, 0.95).setStrokeStyle(1, col);
       this.hud.setHover(null);
     });
     r.on('pointerdown', () => {
@@ -650,7 +699,7 @@ export class UIScene extends Phaser.Scene {
     const num = this.text(17, 16, '?', C.white, 10).setOrigin(0.5, 0);
     const line = this.text(34, 13, '', C.grey, 7);
     const deg = this.text(34, 23, '', col, 8);
-    box.add([bg, lab, die, num, line, deg, this.scanlines(W, H)]);
+    box.add([bg, lab, die, num, line, deg]);
     box.setAlpha(0);
     this.tweens.add({ targets: box, alpha: 1, duration: 80 });
     const spin = Math.round(r.duration * 0.4);
@@ -749,7 +798,7 @@ export class UIScene extends Phaser.Scene {
     }
     const bg = this.add.rectangle(0, 0, W, y + 4, C.bg, 0.97).setOrigin(0).setStrokeStyle(1, C.amber).setInteractive();
     bg.on('pointerdown', () => this.hud.toggleHelp(false));
-    box.add([bg, ...items, this.scanlines(W, y + 4)]);
+    box.add([bg, ...items]);
     this.helpBox = box;
   }
 
@@ -778,13 +827,13 @@ export class UIScene extends Phaser.Scene {
     const x = BASE_W - M - LOG_W;
     const y = BASE_H - M - LOG_H;
     this.logPanel = this.add.container(x, y);
-    this.logBg = this.panelRect(x, y, LOG_W, LOG_H);
+    this.logBg = this.add.rectangle(x, y, LOG_W, LOG_H, PAL.panel, 0.94).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
     // panelRect jest w scenie (do getBounds w wheel) - wkładamy go jako pierwszy element, ale z pozycją względną
     this.logBg.setPosition(0, 0);
 
-    const head = this.text(3, 1, 'DZIENNIK', C.amber);
-    const line = this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, 11.5, LOG_W - 2, 11.5);
-    this.logColBtn = this.text(LOG_W - 3, 1, '[-]', C.green).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    const head = this.text(3, 1, 'DZIENNIK', PAL.amber);
+    const line = this.add.graphics().lineStyle(1, PAL.edge, 1).lineBetween(2, 11.5, LOG_W - 2, 11.5);
+    this.logColBtn = this.text(LOG_W - 3, 1, '[-]', PAL.dim).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     this.logColBtn.on('pointerdown', () => {
       SoundManager.sfx('click');
       this.logCollapsed = !this.logCollapsed;
@@ -809,7 +858,7 @@ export class UIScene extends Phaser.Scene {
       this.drawLog();
     });
 
-    this.logPanel.add([this.logBg, head, line, this.logColBtn, ...this.logLineTexts, this.logScrollBar, this.scanlines(LOG_W, LOG_H), this.logNewBg, this.logNewBtn]);
+    this.logPanel.add([this.logBg, head, line, this.logColBtn, ...this.logLineTexts, this.logScrollBar, this.logNewBg, this.logNewBtn]);
   }
 
   /** Wszystkie wpisy złamane na linie (z pamięcią podręczną zawijania). */
@@ -875,8 +924,8 @@ export class UIScene extends Phaser.Scene {
       const trackY = 13, trackH = LOG_LINES * LH;
       const thumbH = Math.max(4, Math.round((trackH * LOG_LINES) / all.length));
       const pos = maxScroll ? 1 - this.logScroll / maxScroll : 1;
-      g.fillStyle(C.greenDim, 1).fillRect(LOG_W - 5, trackY, 2, trackH);
-      g.fillStyle(C.green, 1).fillRect(LOG_W - 5, trackY + Math.round((trackH - thumbH) * pos), 2, thumbH);
+      g.fillStyle(PAL.edge, 0.5).fillRect(LOG_W - 5, trackY, 2, trackH);
+      g.fillStyle(PAL.edge, 1).fillRect(LOG_W - 5, trackY + Math.round((trackH - thumbH) * pos), 2, thumbH);
     }
 
     const showNew = !this.logCollapsed && this.logScroll > 0;
@@ -932,12 +981,12 @@ export class UIScene extends Phaser.Scene {
     };
 
     // nagłówek
-    const close = this.text(SHEET_W - 3, y, '[X]', C.green).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    const close = this.text(SHEET_W - 3, y, '[X]', C.grey).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     close.on('pointerdown', () => {
       SoundManager.sfx('click');
       this.hud.toggleInventory(false);
     });
-    items.push(this.text(3, y, cut(ch.name, 22), C.white), close);
+    items.push(this.text(3, y, cut(ch.name, 22), C.amber), close);
     y += LH;
     items.push(this.text(3, y, classLabel(ch), C.grey));
     y += LH + 2;
@@ -945,7 +994,7 @@ export class UIScene extends Phaser.Scene {
     // statystyki 3x2
     statPairs(ch).forEach(([k, v], i) => {
       const cx = 3 + (i % 3) * 61, cy = y + Math.floor(i / 3) * LH;
-      items.push(this.text(cx, cy, k, C.grey), this.text(cx + 30, cy, v, C.green));
+      items.push(this.text(cx, cy, k, C.grey), this.text(cx + 30, cy, v, C.white));
     });
     y += LH * 2 + 3;
 
@@ -974,7 +1023,7 @@ export class UIScene extends Phaser.Scene {
     for (const ab of abilityRows(ch, acts)) {
       const hit = this.add.rectangle(2, y - 1, SHEET_W - 4, LH + 1, C.amber, 0).setOrigin(0).setInteractive();
       const label = ab.name + (ab.uses !== null ? ` (${ab.uses})` : '');
-      const col = ab.off ? C.grey : C.green;
+      const col = ab.off ? C.grey : C.white;
       const cost = ab.cost === null ? 'reakcja' : ab.cost === 0 ? 'darmowa' : '◆'.repeat(Math.min(3, ab.cost));
       items.push(hit, this.text(6, y, cut(label, 28), col), this.text(SHEET_W - 4, y, cost, ab.off ? C.greyDim : C.amber).setOrigin(1, 0));
       hit.on('pointerover', () => {
@@ -995,7 +1044,7 @@ export class UIScene extends Phaser.Scene {
     // nieprzezroczyste tło: karta zasłania karty drużyny pod spodem
     const solid = this.add.rectangle(0, 0, SHEET_W, y, C.bg, 1).setOrigin(0);
     const bg = this.panelRect(0, 0, SHEET_W, y, C.amber);
-    S.add([solid, bg, ...items, this.scanlines(SHEET_W, y)]);
+    S.add([solid, bg, ...items]);
   }
 
   private itemRow(row: InventoryRow, y: number, key: number | null): Phaser.GameObjects.GameObject[] {
@@ -1028,7 +1077,7 @@ export class UIScene extends Phaser.Scene {
     this.banner?.destroy();
     const color = TONE[b.tone];
     const t = this.text(0, 0, b.sub ? `${b.text}\n${b.sub}` : b.text, color, 16).setOrigin(0.5).setAlign('center');
-    const bg = this.add.rectangle(0, 0, t.width + 16, t.height + 6, 0x050a06, 0.75).setStrokeStyle(1, color);
+    const bg = this.add.rectangle(0, 0, t.width + 16, t.height + 6, C.bg, 0.85).setStrokeStyle(1, color);
     // baner bez skalowania (skala != 1 rozjechałaby piksele czcionki z siatką) - tylko wjazd z góry i zanik
     const box = this.add.container(Math.round(BASE_W / 2), Math.round(BASE_H * 0.36) - 6, [bg, t]).setAlpha(0);
     this.banner = box;
