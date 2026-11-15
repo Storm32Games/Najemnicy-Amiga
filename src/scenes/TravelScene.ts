@@ -32,13 +32,15 @@ import { modalOpen, openWindow } from './ui/Widgets';
 const TYPE_COLOR: Record<ObjectiveType, number> = { eliminate: 0xc43d2f, retrieve: 0x7fc46a, rescue: 0x4aa8ff, hunt: 0xf2a93b, boss: 0xff30ff };
 const TONE = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 const Q = (v: number): number => Math.round(v * WQ);
+/** Pozioma oś ekranu w rzucie izometrycznym (x - z): do odwracania postaci w kierunku marszu. */
+const isoU = (p: WPos): number => p.x - p.z;
 /** Punkt świata (Q8) -> ekran z wysokością terenu. */
-const scr = (p: WPos, up = 0): { x: number; y: number } => ({ x: scrX(p.x), y: scrY(Math.round(p.x), Math.round(p.z), up) });
+const scr = (p: WPos, up = 0): { x: number; y: number } => ({ x: scrX(Math.round(p.x), Math.round(p.z)), y: scrY(Math.round(p.x), Math.round(p.z), up) });
 
 /** Przybliżenia mapy (krotność zoomu podstawowego). Mapa jest 2x większa od ekranu: 0.5 = cały region. */
-const Z_LEVELS = [0.5, 1, 2, 3, 4], Z_ALL = 0.5, Z_START = 1, Z_TRAVEL = 2, Z_EVENT = 3;
+const Z_ALL = Math.max(BASE_W / MAP_W, BASE_H / MAP_H), Z_LEVELS = [Z_ALL, 1, 2, 3, 4], Z_START = 1, Z_TRAVEL = 2, Z_EVENT = 3;
 /** Widok startowy: śródmieście z Przystanią przy lewej krawędzi. */
-const START_VIEW = { x: MAP_W * 0.46, y: MAP_H * 0.47, z: Z_START };
+const START_VIEW = { x: MAP_W * 0.45, y: MAP_H * 0.56, z: Z_START };
 /** Opóźnienie automatycznego wymarszu po przyjściu z Przystani ze zleceniem (Oldgame/src/scenes/worldmap.js:74). */
 const AUTO_DEPART_MS = 700;
 const LIST_X = 6, LIST_Y = 18, LIST_W = 124, ROW_H = 29;
@@ -215,7 +217,7 @@ export class TravelScene extends Phaser.Scene {
         label(this, 0, 0, s.name, { size: 7, bold: true, color: s.color }).setOrigin(0.5, 0).setAlpha(0.9),
         label(this, 0, 9, s.sub, { size: 5, color: 0xc9b890 }).setOrigin(0.5, 0),
       ]).setDepth(D_LABEL - 1);
-      this.labels.push({ box: b, wx: scrX(s.label.x), wy: scrY(s.label.x, s.label.z) });
+      this.labels.push({ box: b, wx: Phaser.Math.Clamp(scrX(s.label.x, s.label.z), 70, MAP_W - 70), wy: Phaser.Math.Clamp(scrY(s.label.x, s.label.z), 30, MAP_H - 30) });
     }
     const home = scr(HOME);
     this.labels.push({ box: this.add.container(0, 0, [label(this, 0, 0, 'PRZYSTAŃ', { size: 7, bold: true, color: PAL.amber }).setOrigin(0.5, 0)]).setDepth(D_LABEL), wx: home.x, wy: home.y + 13 });
@@ -408,7 +410,7 @@ export class TravelScene extends Phaser.Scene {
         this.view.y = p.y;
       }
     } else this.pulse?.setVisible(false);
-    if (this.route) this.marker.setFlipX(routePointAt(this.route, Q(1.5)).x < this.pos.x);
+    if (this.route) this.marker.setFlipX(isoU(routePointAt(this.route, Q(1.5))) < isoU(this.pos));
     this.drawList();
     this.drawSide();
   }
@@ -517,7 +519,7 @@ export class TravelScene extends Phaser.Scene {
     for (let i = r.trackFrom; i < r.n; i++) {
       if (r.cum[i] < next) continue;
       next = r.cum[i] + Q(0.9);
-      const x = scrX(r.x[i]), y = scrY(r.x[i], r.z[i]);
+      const x = scrX(r.x[i], r.z[i]), y = scrY(r.x[i], r.z[i]);
       g.fillStyle(0x1a120c, alpha * 0.6).fillRect(x, y + 1, 2, 1);
       g.fillStyle(color, alpha).fillRect(x, y - 1, 2, 2);
     }
@@ -571,7 +573,7 @@ export class TravelScene extends Phaser.Scene {
     const d = Math.floor((this.route.len * this.tick) / this.dur);
     this.pos = routePointAt(this.route, d);
     const ahead = routePointAt(this.route, d + Q(0.6));
-    if (Math.abs(ahead.x - this.pos.x) > 8) this.marker.setFlipX(ahead.x < this.pos.x);
+    if (Math.abs(isoU(ahead) - isoU(this.pos)) > 8) this.marker.setFlipX(isoU(ahead) < isoU(this.pos));
     this.placeMarker();
     this.stepT += dt;
     if (this.stepT > 0.3) {
@@ -742,7 +744,7 @@ export class TravelScene extends Phaser.Scene {
       }
       const name = f.sprite.getData('anim') as string, dist = Math.hypot(tx - f.x, tz - f.z) / WQ;
       f.busy = true;
-      f.sprite.setFlipX(tx < f.x).play(`${name}_walk`);
+      f.sprite.setFlipX(tx - tz < f.x - f.z).play(`${name}_walk`);
       this.tweens.add({ targets: f, x: tx, z: tz, duration: (dist / (0.5 + Math.random() * 0.7)) * 1000, onComplete: () => {
         f.busy = false;
         if (!f.dead) f.sprite.play(`${name}_idle`);
@@ -769,7 +771,7 @@ export class TravelScene extends Phaser.Scene {
     this.msg(`Uwaga! Zmutowany ${f.name} szarżuje na drużynę!`, 'bad');
     SoundManager.sfx('growl');
     const name = f.sprite.getData('anim') as string;
-    f.sprite.setFlipX(P.x < f.x).play(`${name}_walk`);
+    f.sprite.setFlipX(P.x - P.z < f.x - f.z).play(`${name}_walk`);
     this.tweens.add({ targets: f, x: P.x + (f.x < P.x ? -Q(0.9) : Q(0.9)), z: P.z, duration: 700, onComplete: () => {
       SoundManager.sfx('hit');
       this.cameras.main.shake(140, 0.004);
@@ -782,7 +784,7 @@ export class TravelScene extends Phaser.Scene {
         } else {
           // ucieczka od drużyny (Oldgame: flee 4 s z prędkością 5 jednostek/s), znika w oddali
           const dx = f.x - P.x, dz = f.z - P.z, l = Math.hypot(dx, dz) || 1;
-          f.sprite.setFlipX(dx < 0);
+          f.sprite.setFlipX(dx - dz < 0);
           this.tweens.add({ targets: f, x: f.x + (dx / l) * Q(9), z: f.z + (dz / l) * Q(9), alpha: 0, duration: 1600, onComplete: () => (f.dead = true) });
         }
       });
