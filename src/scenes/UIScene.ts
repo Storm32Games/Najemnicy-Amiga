@@ -38,6 +38,8 @@ import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, op
 //   lewy dół:     opis pola/wroga pod kursorem                         <- H.showInfo
 //   prawy dół:    dziennik walki (kółko = przewijanie, zwijany)        <- H.log
 //   panel (I):    karta postaci: statystyki, wyposażenie, plecak       <- H.sheet
+// Menu, pasek rundy, panel akcji i karta postaci mają własną skalę (−/+ w nagłówku albo kółko nad nagłówkiem)
+// i dają się przesuwać za nagłówek; PPM na nagłówku = pozycja i skala domyślna. Portrety drużyny się nie skalują.
 // Cały stan pochodzi z HudState (src/core); polecenia wracają przez hud.command().
 
 // ------------------------------------------------------------------ paleta / czcionka
@@ -89,14 +91,18 @@ const FOE_W = 44;
 const FOE_H = 17;
 /** Prawa kolumna: siatka przycisków 2 x 4 + panel celów. */
 const RCOL_W = BTN_W * 2 + 4;
-const RCOL_X = BASE_W - M - RCOL_W;
-const OBJ_Y = M + (BTN_H + BTN_GAP) * MENU_ROWS + 2;
+/** Nagłówek menu (uchwyt do przesuwania + przyciski skali). */
+const MENU_HEAD = 11;
+const OBJ_Y = MENU_HEAD + (BTN_H + BTN_GAP) * MENU_ROWS + 2;
 /** Środek góry: między kartami drużyny a prawą kolumną. */
 const MID_X0 = M + PARTY_W + 4;
-const MID_X1 = RCOL_X - 4;
+const MID_X1 = BASE_W - M - RCOL_W - 4;
+const TOP_W = MID_X1 - MID_X0;
 const INIT_W = 30;
 const INIT_H = 19;
 const SHEET_Y = M + LH + 1 + INIT_H + 8;
+/** Pasek rundy + wrogowie / inicjatywa (wysokość ze strzałką bieżącej postaci). */
+const TOP_H = LH + 1 + INIT_H + 8;
 /** Pasek akcji: dół, między kartami drużyny a dziennikiem. */
 const AB_X = M + PARTY_W + 4;
 const AB_W = BASE_W - M - LOG_W - 4 - AB_X;
@@ -107,7 +113,9 @@ const AB_BH = 11;
 const WT_H = 13;
 
 type BtnVariant = 'normal' | 'primary' | 'danger';
-type DragTarget = 'log' | 'sheet' | 'actions' | 'logSize' | 'logThumb';
+/** Panele ze skalą i pozycją (bez kart drużyny; dziennik ma własną czcionkę i rozmiar). */
+type PanelId = 'menu' | 'top' | 'actions' | 'sheet';
+type DragTarget = 'log' | PanelId | 'logSize' | 'logThumb';
 
 interface Button {
   bg: Phaser.GameObjects.Rectangle;
@@ -120,8 +128,30 @@ interface Button {
 
 /** Pozycje przesuniętych paneli (null = domyślna); na poziomie modułu, żeby przetrwały kolejne misje. */
 let logPos: { x: number; y: number } | null = null;
-let sheetPos: { x: number; y: number } | null = null;
-let actPos: { x: number; y: number } | null = null;
+const panelPos: Record<PanelId, { x: number; y: number } | null> = { menu: null, top: null, actions: null, sheet: null };
+/** Skala paneli (1 = bazowa); mniejsza skala = mniejsza czcionka, bo panel skaluje się w całości. */
+const panelScale: Record<PanelId, number> = { menu: 1, top: 1, actions: 1, sheet: 1 };
+/**
+ * Dostępne skale paneli: k / ZOOM (1 piksel projektowy = k pikseli płótna), żeby czcionka bitmapowa i ramki
+ * trafiały w siatkę ekranu. Zakres ~0.5x - 1.5x; liczone na bieżąco, bo ZOOM może się zmienić między misjami.
+ */
+function panelScales(): number[] {
+  const out: number[] = [];
+  for (let k = Math.max(1, Math.ceil(ZOOM / 2)); k <= Math.floor(ZOOM * 1.5); k++) out.push(k / ZOOM);
+  return out;
+}
+function nearestScale(list: number[], s: number): number {
+  let best = 0;
+  list.forEach((v, i) => Math.abs(v - s) < Math.abs(list[best]! - s) && (best = i));
+  return best;
+}
+/** Przy zmianie skali przesuniętego panelu trzymamy krawędź bliższą brzegowi ekranu (w środku - środek). */
+function keepAnchor(x: number, w0: number, w1: number, total: number): number {
+  const c = x + w0 / 2;
+  if (c < total / 3) return x;
+  if (c > (total * 2) / 3) return Math.round(x + w0 - w1);
+  return Math.round(c - w1 / 2);
+}
 /** Rozmiar dziennika (zmieniany uchwytem w prawym dolnym rogu). */
 let logSize = { w: LOG_W, h: LOG_H };
 /**
@@ -155,6 +185,14 @@ export class UIScene extends Phaser.Scene {
   private partyLayer!: Phaser.GameObjects.Container;
   private foeLayer!: Phaser.GameObjects.Container;
   private roundText!: PixelText;
+  private topPanel!: Phaser.GameObjects.Container;
+  private topGrip!: Phaser.GameObjects.Rectangle;
+  private topScaleBtns: PixelText[] = [];
+  private menuPanel!: Phaser.GameObjects.Container;
+  private menuH = OBJ_Y;
+  private actH = 0;
+  private sheetH = 0;
+  private hoverBox!: Phaser.GameObjects.Container;
 
   private btnInv!: Button;
   private btnHelp!: Button;
@@ -240,30 +278,46 @@ export class UIScene extends Phaser.Scene {
     this.partyLayer = this.add.container(M, M);
 
     // ---- środek góra: runda + wrogowie / inicjatywa
-    this.roundText = this.text((MID_X0 + MID_X1) / 2, M, '').setOrigin(0.5, 0);
-    this.foeLayer = this.add.container(0, M + LH + 1);
-    this.initLayer = this.add.container(0, M + LH + 1);
+    //      (warstwy wrogów liczą x w układzie ekranu, stąd przesunięcie o -MID_X0 w panelu)
+    this.topPanel = this.add.container(MID_X0, M);
+    this.roundText = this.text(TOP_W / 2, 0, '').setOrigin(0.5, 0);
+    this.foeLayer = this.add.container(-MID_X0, LH + 1);
+    this.initLayer = this.add.container(-MID_X0, LH + 1);
+    this.topGrip = this.dragHandle('top', 10, LH);
+    this.topScaleBtns = this.scaleButtons('top', 0, 0);
+    this.topPanel.add([this.foeLayer, this.initLayer, this.topGrip, this.roundText, ...this.topScaleBtns]);
 
     // ---- prawy górny: menu misji jak w Oldgame/src/mission/hud.js (H.menu: 2 kolumny, "Odwrót" na całą szerokość)
     //      + ekwipunek; bronie wybiera się w panelu akcji; "Koniec tury" jest w pasku akcji walki, jak tam.
-    const bx = RCOL_X, bx2 = RCOL_X + BTN_W + 4, row = (i: number): number => M + (BTN_H + BTN_GAP) * i;
-    this.btnHelp = this.button(bx, row(0), BTN_W, '', () => this.hud.toggleHelp());
-    this.btnOptions = this.button(bx2, row(0), BTN_W, '', () => !modalOpen(this) && void openOptions(this));
-    this.btnSpeed = this.button(bx, row(1), BTN_W, '', () => this.hud.command({ kind: 'cycleSpeed' }));
-    this.btnGroup = this.button(bx2, row(1), BTN_W, '', () => this.hud.command({ kind: 'toggleGroup' }));
-    this.btnZoomOut = this.button(bx, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1 / 1.25 }));
-    this.btnZoomIn = this.button(bx2, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }));
-    this.btnInv = this.button(bx, row(3), RCOL_W, '', () => this.toggleSheet());
-    this.btnRetreat = this.button(bx, row(4), RCOL_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger');
-    this.objLayer = this.add.container(RCOL_X, OBJ_Y);
+    //      Całe menu (nagłówek, przyciski, cele) to jeden panel: skalowany i przesuwany za nagłówek.
+    const MP = (this.menuPanel = this.add.container(0, 0));
+    MP.add([
+      this.panelRect(0, 0, RCOL_W, MENU_HEAD - 1),
+      this.dragHandle('menu', RCOL_W - 22, MENU_HEAD - 1),
+      this.text(3, 1, 'MENU', PAL.dim),
+      ...this.scaleButtons('menu', RCOL_W - 3, 1),
+    ]);
+    const bx = 0, bx2 = BTN_W + 4, row = (i: number): number => MENU_HEAD + (BTN_H + BTN_GAP) * i;
+    this.btnHelp = this.button(bx, row(0), BTN_W, '', () => this.hud.toggleHelp(), 'normal', MP);
+    this.btnOptions = this.button(bx2, row(0), BTN_W, '', () => !modalOpen(this) && void openOptions(this), 'normal', MP);
+    this.btnSpeed = this.button(bx, row(1), BTN_W, '', () => this.hud.command({ kind: 'cycleSpeed' }), 'normal', MP);
+    this.btnGroup = this.button(bx2, row(1), BTN_W, '', () => this.hud.command({ kind: 'toggleGroup' }), 'normal', MP);
+    this.btnZoomOut = this.button(bx, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1 / 1.25 }), 'normal', MP);
+    this.btnZoomIn = this.button(bx2, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }), 'normal', MP);
+    this.btnInv = this.button(bx, row(3), RCOL_W, '', () => this.toggleSheet(), 'normal', MP);
+    this.btnRetreat = this.button(bx, row(4), RCOL_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger', MP);
+    this.objLayer = this.add.container(0, OBJ_Y);
+    MP.add(this.objLayer);
     this.actionLayer = this.add.container(0, 0);
 
     // ---- lewy dół: opis pod kursorem
-    this.hoverBg = this.panelRect(M, BASE_H - M - 12, 10, 12).setVisible(false);
-    this.hoverText = this.text(M + 3, BASE_H - M - 11, '').setVisible(false);
+    //      (skala jak panel akcji - leży tuż pod nim; zaczepiony lewym dolnym rogiem)
+    this.hoverBg = this.panelRect(0, -12, 10, 12).setVisible(false);
+    this.hoverText = this.text(3, -11, '').setVisible(false);
+    this.hoverBox = this.add.container(M, BASE_H - M, [this.hoverBg, this.hoverText]);
 
     this.createLog();
-    this.sheet = this.add.container(sheetPos?.x ?? SHEET_X, sheetPos?.y ?? SHEET_Y).setVisible(false);
+    this.sheet = this.add.container(SHEET_X, SHEET_Y).setVisible(false);
 
     // ---- przeciąganie paneli (dziennik, ekwipunek) za nagłówek
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onDragMove(p));
@@ -334,6 +388,7 @@ export class UIScene extends Phaser.Scene {
 
     this.drawParty();
     this.drawFoes();
+    this.placePanel('top');
     this.drawTurn();
     this.drawLog();
     this.drawHover();
@@ -417,12 +472,13 @@ export class UIScene extends Phaser.Scene {
   }
 
   /** Przycisk menu w stylu starego .btn (Oldgame/index.html): brązowe tło, rdzawa ramka, twardy cień. */
-  private button(x: number, y: number, w: number, label: string, onClick: () => void, variant: BtnVariant = 'normal'): Button {
+  private button(x: number, y: number, w: number, label: string, onClick: () => void, variant: BtnVariant = 'normal', parent?: Phaser.GameObjects.Container): Button {
     const edge = variant === 'primary' ? PAL.amber : variant === 'danger' ? PAL.blood : PAL.edge;
     const ink = variant === 'primary' ? PAL.amber : variant === 'danger' ? PAL.bad : PAL.text;
-    this.add.rectangle(x + 1, y + 1, w, BTN_H, 0x000000, 0.8).setOrigin(0);
+    const shadow = this.add.rectangle(x + 1, y + 1, w, BTN_H, 0x000000, 0.8).setOrigin(0);
     const bg = this.add.rectangle(x, y, w, BTN_H, PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, edge).setInteractive({ useHandCursor: true });
     const text = this.text(x + w / 2, y + 2, label, ink).setOrigin(0.5, 0);
+    parent?.add([shadow, bg, text]);
     const b: Button = {
       bg, text, enabled: true, hovered: false, color: ink,
       set: (l, enabled) => {
@@ -555,6 +611,13 @@ export class UIScene extends Phaser.Scene {
     if (!hud.inCombat) this.roundText.setText(cut(`EKSPLORACJA · LIDER: ${name}`, 36));
     else this.roundText.setText(cut(`RUNDA ${hud.round} · ${enemy ? `TURA: ${(cur?.ch.name ?? 'WRÓG').toUpperCase()}` : `TURA: ${name}`}`, 36));
     this.recolor(this.roundText, enemy ? C.red : C.amber);
+    // uchwyt paska rundy = sam napis; −/+ zaraz za nim
+    const tw = Math.ceil(this.roundText.width);
+    const gx = Math.round(TOP_W / 2 - tw / 2) - 2;
+    this.topGrip.setPosition(gx, 0).setSize(tw + 4, LH);
+    this.topGrip.input?.hitArea.setSize(tw + 4, LH);
+    this.topScaleBtns[0]?.setX(gx + tw + 4 + 7);
+    this.topScaleBtns[1]?.setX(gx + tw + 4 + 16);
 
     const locked = !hud.canAct;
     this.btnHelp.set('STEROWANIE [H]', true);
@@ -646,7 +709,11 @@ export class UIScene extends Phaser.Scene {
     const L = this.objLayer;
     L.removeAll(true);
     const rows = this.hud.objectives;
-    if (!rows.length) return;
+    this.menuH = OBJ_Y - 2;
+    if (!rows.length) {
+      this.placePanel('menu');
+      return;
+    }
     const items: Phaser.GameObjects.GameObject[] = [];
     const title = this.text(3, 1, 'ZLECENIE', PAL.amber);
     const name = this.text(3, LH + 3, this.hud.objectiveTitle.toUpperCase() || '—', PAL.amber).setWordWrapWidth(RCOL_W - 6);
@@ -666,6 +733,8 @@ export class UIScene extends Phaser.Scene {
     const bg = this.add.rectangle(0, 0, RCOL_W, y, PAL.panel, 0.94).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
     const line = this.add.graphics().lineStyle(1, PAL.edge, 1).lineBetween(2, LH + 1.5, RCOL_W - 2, LH + 1.5);
     L.add([shadow, bg, line, ...items]);
+    this.menuH = OBJ_Y + y;
+    this.placePanel('menu');
   }
 
   // ================================================================== pasek akcji walki (port C.refreshBar / H.abBtn)
@@ -683,6 +752,7 @@ export class UIScene extends Phaser.Scene {
     const weapons = ch && !ch.attacks ? this.weaponSlots(ch) : [];
     if (!list.length && !weapons.length) {
       L.setVisible(false);
+      this.drawHover();
       return;
     }
     L.setVisible(true);
@@ -702,8 +772,9 @@ export class UIScene extends Phaser.Scene {
       }
       g.lineStyle(1, C.amberDim, 1).lineBetween(2, ay - 1.5, W - 2, ay - 1.5);
     }
-    const grip = this.dragHandle('actions', W - (list.length ? this.hud.maxAp * 6 + 6 : 0), 11);
-    L.add([bg, grip, head, g]);
+    const right = W - (list.length ? this.hud.maxAp * 6 + 6 : 0) - 3;
+    const grip = this.dragHandle('actions', right - 20, 11);
+    L.add([bg, grip, head, g, ...this.scaleButtons('actions', right, 1)]);
     weapons.forEach((slot, i) => {
       const x = 2 + (i % AB_COLS) * AB_BW;
       const y = wy + Math.floor(i / AB_COLS) * (WT_H + 1);
@@ -716,8 +787,8 @@ export class UIScene extends Phaser.Scene {
     });
 
     // pozycja: domyślnie nad dolną krawędzią; przesunięty panel trzyma lewy górny róg
-    if (actPos) L.setPosition(Phaser.Math.Clamp(actPos.x, 30 - W, BASE_W - 30), Phaser.Math.Clamp(actPos.y, 0, BASE_H - 12));
-    else L.setPosition(AB_X, BASE_H - M - 14 - h);
+    this.actH = h;
+    this.placePanel('actions');
   }
 
   /**
@@ -1015,7 +1086,9 @@ export class UIScene extends Phaser.Scene {
     this.hoverBg.setVisible(show);
     this.hoverText.setVisible(show);
     if (!s) return;
-    const maxW = BASE_W - LOG_W - M * 3 - 6;
+    const sc = panelScale.actions;
+    this.hoverBox.setScale(sc);
+    const maxW = Math.floor((BASE_W - LOG_W - M * 3 - 6) / sc);
     this.hoverText.setText(s);
     let txt = s;
     while (this.hoverText.width > maxW && txt.length > 4) {
@@ -1029,10 +1102,18 @@ export class UIScene extends Phaser.Scene {
   // ================================================================== przesuwane panele
 
   /** Niewidoczny uchwyt na nagłówku panelu: LPM + przeciągnięcie = przesuń, PPM = pozycja domyślna. */
-  private dragHandle(target: 'log' | 'sheet' | 'actions', w: number, h: number): Phaser.GameObjects.Rectangle {
+  private dragHandle(target: 'log' | PanelId, w: number, h: number): Phaser.GameObjects.Rectangle {
     const r = this.add.rectangle(0, 0, w, h, C.amber, 0).setOrigin(0).setInteractive({ cursor: 'move' });
-    r.on('pointerover', () => r.setFillStyle(C.amber, 0.08));
-    r.on('pointerout', () => r.setFillStyle(C.amber, 0));
+    r.on('pointerover', () => {
+      r.setFillStyle(C.amber, 0.08);
+      if (target !== 'log') this.hud.setHover(`Przeciągnij: przesuń · kółko / − +: skala ${Math.round(panelScale[target] * 100)}% · PPM: domyślnie`);
+    });
+    r.on('pointerout', () => {
+      r.setFillStyle(C.amber, 0);
+      if (target !== 'log') this.hud.setHover(null);
+    });
+    // kółko nad nagłówkiem panelu = skala (nad dziennikiem kółko przewija - obsługa w create())
+    if (target !== 'log') r.on('wheel', (_p: Phaser.Input.Pointer, _dx: number, dy: number) => dy && this.setPanelScale(target, dy > 0 ? -1 : 1));
     r.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (p.rightButtonDown()) {
         this.drag = null;
@@ -1040,20 +1121,84 @@ export class UIScene extends Phaser.Scene {
           logPos = null;
           logSize = { w: LOG_W, h: LOG_H };
           this.drawLog();
-        } else if (target === 'actions') {
-          actPos = null;
-          this.drawActions();
         } else {
-          sheetPos = null;
-          this.sheet.setPosition(M, SHEET_Y);
+          panelPos[target] = null;
+          panelScale[target] = 1;
+          this.placePanel(target);
         }
         SoundManager.sfx('click');
         return;
       }
-      const box = target === 'log' ? this.logPanel : target === 'actions' ? this.actionLayer : this.sheet;
+      const box = target === 'log' ? this.logPanel : this.panelBox(target);
+      // przeciągany panel na wierzch (żeby po przesunięciu nie chował się pod innym)
+      this.children.bringToTop(box);
       this.drag = { target, dx: p.worldX - box.x, dy: p.worldY - box.y };
     });
     return r;
+  }
+
+  /** Przyciski − / + skali panelu; `right` = prawa krawędź "+". */
+  private scaleButtons(id: PanelId, right: number, y: number): PixelText[] {
+    return [-1, 1].map((dir) => {
+      const b = this.text(dir < 0 ? right - 9 : right, y, dir < 0 ? '−' : '+', PAL.dim).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+      b.on('pointerdown', (p: Phaser.Input.Pointer) => !p.rightButtonDown() && this.setPanelScale(id, dir));
+      b.on('pointerover', () => {
+        b.setColor(C.amber);
+        this.hud.setHover(`${dir < 0 ? 'Zmniejsz' : 'Powiększ'} panel (skala ${Math.round(panelScale[id] * 100)}%) · PPM na nagłówku: domyślnie`);
+      });
+      b.on('pointerout', () => {
+        b.setColor(PAL.dim);
+        this.hud.setHover(null);
+      });
+      return b;
+    });
+  }
+
+  private panelBox(id: PanelId): Phaser.GameObjects.Container {
+    return id === 'menu' ? this.menuPanel : id === 'top' ? this.topPanel : id === 'actions' ? this.actionLayer : this.sheet;
+  }
+
+  /** Rozmiar panelu przed skalowaniem. */
+  private panelSize(id: PanelId): { w: number; h: number } {
+    if (id === 'menu') return { w: RCOL_W, h: this.menuH };
+    if (id === 'top') return { w: TOP_W, h: TOP_H };
+    if (id === 'actions') return { w: AB_W, h: this.actH };
+    return { w: SHEET_W, h: this.sheetH };
+  }
+
+  /** Skala + pozycja panelu: przesunięty trzyma lewy górny róg (w granicach ekranu), inaczej miejsce domyślne. */
+  private placePanel(id: PanelId): void {
+    const box = this.panelBox(id);
+    const s = panelScale[id];
+    const { w, h } = this.panelSize(id);
+    const sw = w * s, sh = h * s;
+    box.setScale(s);
+    const pos = panelPos[id];
+    if (pos) {
+      box.setPosition(Phaser.Math.Clamp(Math.round(pos.x), Math.round(30 - sw), BASE_W - 30), Phaser.Math.Clamp(Math.round(pos.y), 0, Math.round(BASE_H - 12 * s)));
+    } else if (id === 'menu') box.setPosition(Math.round(BASE_W - M - sw), M);
+    else if (id === 'top') box.setPosition(Math.round(MID_X0 + (TOP_W - sw) / 2), M);
+    else if (id === 'actions') box.setPosition(AB_X, Math.round(BASE_H - M - 14 * s - sh));
+    else box.setPosition(SHEET_X, SHEET_Y);
+    if (id === 'actions') this.drawHover();
+  }
+
+  private setPanelScale(id: PanelId, dir: number): void {
+    const list = panelScales();
+    const i = nearestScale(list, panelScale[id]);
+    const n = Phaser.Math.Clamp(i + dir, 0, list.length - 1);
+    if (n === i) {
+      SoundManager.sfx('error', { vol: 0.3 });
+      return;
+    }
+    const box = this.panelBox(id);
+    const { w, h } = this.panelSize(id);
+    const s0 = panelScale[id], s1 = list[n]!;
+    panelScale[id] = s1;
+    if (panelPos[id]) panelPos[id] = { x: keepAnchor(box.x, w * s0, w * s1, BASE_W), y: keepAnchor(box.y, h * s0, h * s1, BASE_H) };
+    SoundManager.sfx('click');
+    this.placePanel(id);
+    this.hud.setHover(`Skala panelu: ${Math.round(s1 * 100)}%`);
   }
 
   private onDragMove(p: Phaser.Input.Pointer): void {
@@ -1088,21 +1233,20 @@ export class UIScene extends Phaser.Scene {
       }
       return;
     }
-    const isLog = d.target === 'log';
-    const isAct = d.target === 'actions';
-    const box = isLog ? this.logPanel : isAct ? this.actionLayer : this.sheet;
+    const id = d.target === 'log' ? null : d.target;
+    const box = id ? this.panelBox(id) : this.logPanel;
     if (!box.visible) {
       this.drag = null;
       return;
     }
-    const w = isLog ? logSize.w : isAct ? AB_W : SHEET_W;
+    const s = id ? panelScale[id] : 1;
+    const w = id ? this.panelSize(id).w * s : logSize.w;
     // panel może wyjechać częściowo poza ekran, ale nagłówek i 30 px szerokości zostają widoczne
-    const x = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), 30 - w, BASE_W - 30);
-    const y = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), 0, BASE_H - 12);
+    const x = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), Math.round(30 - w), BASE_W - 30);
+    const y = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), 0, Math.round(BASE_H - 12 * s));
     box.setPosition(x, y);
-    if (isLog) logPos = { x, y };
-    else if (isAct) actPos = { x, y };
-    else sheetPos = { x, y };
+    if (id) panelPos[id] = { x, y };
+    else logPos = { x, y };
   }
 
   // ================================================================== dziennik (port H.log)
@@ -1399,7 +1543,7 @@ export class UIScene extends Phaser.Scene {
       SoundManager.sfx('click');
       this.hud.toggleInventory(false);
     });
-    items.push(this.text(3, y, cut(ch.name, 22), C.amber), close);
+    items.push(this.text(3, y, cut(ch.name, 22), C.amber), close, ...this.scaleButtons('sheet', SHEET_W - 26, y));
     y += LH;
     items.push(this.text(3, y, classLabel(ch), C.grey));
     y += LH + 2;
@@ -1457,8 +1601,9 @@ export class UIScene extends Phaser.Scene {
     // nieprzezroczyste tło: karta zasłania karty drużyny pod spodem
     const solid = this.add.rectangle(0, 0, SHEET_W, y, C.bg, 1).setOrigin(0);
     const bg = this.panelRect(0, 0, SHEET_W, y, C.amber);
-    S.setPosition(sheetPos?.x ?? SHEET_X, sheetPos?.y ?? SHEET_Y);
-    S.add([solid, bg, this.dragHandle('sheet', SHEET_W - 20, LH * 2 + 2), ...items]);
+    S.add([solid, bg, this.dragHandle('sheet', SHEET_W - 46, LH * 2 + 2), ...items]);
+    this.sheetH = y;
+    this.placePanel('sheet');
   }
 
   private itemRow(row: InventoryRow, y: number, key: number | null): Phaser.GameObjects.GameObject[] {
