@@ -75,4 +75,4 @@ game.canvas.style.imageRendering = 'auto';
 // Odblokowuje WebAudio przy pierwszym kliknięciu/klawiszu; sceny wołają SoundManager.sfx()/music()/ambience().
 SoundManager.attach(game);
 // Tylko w trybie deweloperskim: uchwyt do testów automatycznych / konsoli.
-if (import.meta.env.DEV) (window as unknown as { __game: Phaser.Game }).__game = game;
+if (import.meta.env.DEV) Object.assign(window, { __game: game, __campaign: campaign });

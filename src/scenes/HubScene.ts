@@ -476,11 +476,11 @@ export class HubScene extends Phaser.Scene {
       const y = Y0 + 113 + i * 14, inst = ch.equipment[slot];
       const hit = this.add.rectangle(C2 + 2, y, W2 - 4, 13, 0x000000, 0.3).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive({ useHandCursor: true });
       hit.on('pointerdown', () => this.pickEquip(ch, slot, name));
-      if (inst) this.tip.attach(hit, () => itemTip(inst.id));
+      if (inst) this.tip.attach(hit, () => `${name}\n${itemTip(inst.id)}`);
       this.body.add(hit);
       if (inst) this.body.add(itemIconImage(this, C2 + 3, y + 1, inst.id, 11));
-      this.L(C2 + 16, y + 0.5, name, { size: 4.5, color: PAL.dim });
-      this.L(C2 + 16, y + 5.5, cut(inst ? itemDef(inst.id)?.name ?? inst.id : '— puste —', 24), { size: 6, color: inst ? PAL.text : PAL.dim });
+      // jedna linia na gniazdo: nazwa przedmiotu, a w pustym gnieździe jego rodzaj (rodzaj jest też w podpowiedzi)
+      this.L(C2 + 16, y + 3, inst ? cut(itemDef(inst.id)?.name ?? inst.id, 22) : `— ${name.toLowerCase()} —`, { size: 6, color: inst ? PAL.text : PAL.dim });
     });
     // ---- kolumna 3: zdolności, plecak, skrytka
     const C3 = C2 + W2 + 4, W3 = WW - C3 - 6;
@@ -491,7 +491,7 @@ export class HubScene extends Phaser.Scene {
       const cost = a.actions === 'reaction' ? 'reakcja' : a.actions === 0 ? 'darmowa' : `${a.actions} akc.`;
       const hit = this.add.rectangle(0, 0, w, 8, 0, 0).setOrigin(0).setInteractive();
       this.tip.attach(hit, () => `${a.name} [${cost}]${a.uses ? ` · ${ch.uses[a.id as keyof typeof ch.uses] ?? '?'} użyć` : ''}\n${a.desc}`);
-      row.add([hit, abilityIconImage(this, 0, 0, id, 7), label(this, 9, 0, cut(a.name, 20), { size: 6, color: PAL.toxic }), label(this, w - 1, 0.5, cost, { size: 5, color: PAL.dim }).setOrigin(1, 0)]);
+      row.add([hit, abilityIconImage(this, 0, 0, id, 7), label(this, 9, 0, cut(a.name, 13), { size: 6, color: PAL.toxic }), label(this, w - 1, 0.5, cost, { size: 5, color: PAL.dim }).setOrigin(1, 0)]);
     }, this.body).setItems(ch.abilities);
 
     box(C3, Y0 + 65, W3, 50, 'Plecak');
