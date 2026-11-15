@@ -40,10 +40,10 @@ interface MoodDef {
 
 const MOODS: Record<MoodName, MoodDef> = {
   day: { shade: null, lamp: 0, haze: [0xfff0c0, 0.07], dust: [0xf0dcaa, 40, 0.5], shafts: [0xfff2d0, 0.5] },
-  dusk: { shade: [0x9a86c0, 0xd89a88, 0xffc890, 0xffd8a8], lamp: 0.55, haze: [0xff9a50, 0.05], dust: [0xffc880, 55, 0.55], shafts: [0xffb060, 0.6] },
-  night: { shade: [0x1e2850, 0x2a3866, 0x34467a], lamp: 1.25, haze: null, dust: [0xa8b8d8, 30, 0.35], shafts: null },
-  storm: { shade: [0x8a6a4a, 0xb08a60, 0xc8a070], lamp: 0.8, haze: [0x7a5a30, 0.1], dust: [0xe8c88a, 0, 0.5], shafts: null },
-  toxic: { shade: [0x7a9a4a, 0xa8c070, 0xb8d080], lamp: 0.75, haze: [0x5a8a20, 0.08], dust: [0xb8ff60, 30, 0.6], shafts: [0xd8f080, 0.35] },
+  dusk: { shade: [0xc4acd8, 0xf0bc9c, 0xffd4a0, 0xffe2b4], lamp: 0.55, haze: [0xff9a50, 0.05], dust: [0xffc880, 55, 0.55], shafts: [0xffb060, 0.6] },
+  night: { shade: [0x28345e, 0x344476, 0x3e5088], lamp: 1.25, haze: null, dust: [0xa8b8d8, 30, 0.35], shafts: null },
+  storm: { shade: [0x9c8468, 0xb89a78, 0xc8aa84], lamp: 0.8, haze: [0x7a5a30, 0.1], dust: [0xe8c88a, 0, 0.5], shafts: null },
+  toxic: { shade: [0xa4c474, 0xc4dc8c, 0xd0e69c], lamp: 0.75, haze: [0x5a8a20, 0.08], dust: [0xb8ff60, 30, 0.6], shafts: [0xd8f080, 0.35] },
 };
 
 interface Mote {

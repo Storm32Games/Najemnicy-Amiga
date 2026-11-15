@@ -56,6 +56,8 @@ interface MapLabel {
   wx: number;
   wy: number;
   id?: string;
+  /** Połowa szerokości napisu (liczona przy pierwszym użyciu). */
+  hw?: number;
 }
 
 /** Zmutowana bestia krążąca po mapie regionu - pozycja w świecie (Q8), ekran liczony z rzutu z wysokością. */
@@ -358,10 +360,16 @@ export class TravelScene extends Phaser.Scene {
     this.cameras.main.setZoom(ZOOM * c.z).centerOn(c.x, c.y);
     // napisy przypięte do mapy (warstwa interfejsu): rzut punktu mapy na ekran
     const travel = this.state !== 'idle';
+    const listBottom = LIST_Y + 18 + this.all.length * (ROW_H + 2);
     for (const l of this.labels) {
       let x = BASE_W / 2 + (l.wx - c.x) * c.z;
       const y = BASE_H / 2 + (l.wy - c.y) * c.z;
       if (l.id) x = Phaser.Math.Clamp(x, 40, BASE_W - 40);
+      // lista zleceń (lewy górny róg) nie zasłania napisów: odsuwamy je w prawo od panelu
+      if (!travel && y - (l.id ? 21 : 0) < listBottom && y + 18 > LIST_Y) {
+        const hw = (l.hw ??= l.box.getBounds().width / 2);
+        x = Math.max(x, LIST_X + LIST_W + 5 + hw);
+      }
       const vis = x > -30 && x < BASE_W + 30 && y > (l.id ? 38 : 16) && y < BASE_H + 10;
       const sel = l.id === this.job?.id;
       l.box.setPosition(Math.round(x), Math.round(y)).setVisible(vis);

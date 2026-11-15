@@ -736,7 +736,7 @@ function drawHead(c: Ctx, hx: number, hy: number): void {
       if (front) {
         for (let x = 9; x <= 14; x++) hw(x, hy - 1, 0.7 - (x - 9) * 0.05);
         for (let x = 8; x <= 13; x++) hw(x, hy, 0.6 - (x - 8) * 0.05);
-        for (let y = hy; y <= c.ty + 5; y++) { hw(7, y, 0.35); hw(8, y, 0.5); if (y <= hy + 4) hw(9, y, 0.55); }
+        for (let y = hy; y <= hy + 6; y++) { if (y <= hy + 4) hw(7, y, 0.3); hw(8, y, 0.42); if (y <= hy + 3) hw(9, y, 0.5); }
         // czaszka z płonącymi oczodołami
         for (let y = hy + 1; y <= hy + 5; y++) for (let x = 10; x <= 14; x++) set(x, y, pick(P.bone, 0.66 - (x - 10) * 0.06, X(x), y));
         set(11, hy + 2, INK); set(12, hy + 2, INK); set(14, hy + 2, INK);

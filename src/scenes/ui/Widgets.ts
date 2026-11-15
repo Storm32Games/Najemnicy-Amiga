@@ -387,7 +387,7 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     head(L, 134, 'Rozmiar interfejsu');
     const uiMarks: [number, UiButton][] = [];
     const paintUi = (): void => {
-      for (const [k, b] of uiMarks) b.setLabel((Math.abs(Settings.uiScale - k) < 0.01 ? '● ' : '○ ') + (UI_SIZES.find(([v]) => v === k)?.[1] ?? ''));
+      for (const [k, b] of uiMarks) b.setLabel((Math.abs(Settings.uiScale - k) < 0.01 ? '● ' : '○ ') + (UI_SIZES.find(([v]) => v === k)?.[1] ?? '').replace('Bardzo', 'B.'));
     };
     UI_SIZES.forEach(([k], i) => {
       const b = button(scene, L + i * 77, 144, '', () => {
