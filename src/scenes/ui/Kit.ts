@@ -310,19 +310,23 @@ export function canvasTexture(scene: Phaser.Scene, key: string, w: number, h: nu
  */
 export function tiledImage(scene: Phaser.Scene, key: string, x = 0, y = 0, ox = 0, oy = 0): Phaser.GameObjects.Container {
   const box = scene.add.container(x + ox, y + oy);
-  const src = scene.textures.get(key).getSourceImage() as HTMLCanvasElement | HTMLImageElement;
+  const tex = scene.textures.get(key);
+  const src = tex.getSourceImage() as HTMLCanvasElement | HTMLImageElement;
   if (!Settings.startAmiga) {
     box.add(scene.add.image(-ox, -oy, key).setOrigin(0));
     return box;
   }
+  // obraz źródłowy tekstury hi-res (addHiRes) ma ART tekseli na piksel projektowy - kafle tniemy w tekselach,
+  // a kładziemy w pikselach projektowych (bez tego obraz wychodzi ART razy za duży)
+  const k = src.width / (tex.get().width || src.width);
   potTiles(src.width, src.height).forEach((t, i) => {
-    const k = `${key}@${i}`;
-    if (scene.textures.exists(k)) scene.textures.remove(k);
-    const tex = scene.textures.createCanvas(k, t.texW, t.texH);
-    if (!tex) return;
-    tex.getContext().drawImage(src, t.x, t.y, t.w, t.h, 0, 0, t.w, t.h);
-    tex.refresh();
-    box.add(scene.add.image(t.x - ox, t.y - oy, k).setOrigin(0).setCrop(0, 0, t.w, t.h));
+    const tk = `${key}@${i}`;
+    if (scene.textures.exists(tk)) scene.textures.remove(tk);
+    const tile = scene.textures.createCanvas(tk, t.texW, t.texH);
+    if (!tile) return;
+    tile.getContext().drawImage(src, t.x, t.y, t.w, t.h, 0, 0, t.w, t.h);
+    tile.refresh();
+    box.add(scene.add.image(t.x / k - ox, t.y / k - oy, tk).setOrigin(0).setCrop(0, 0, t.w, t.h).setScale(1 / k));
   });
   // źródło (> 256 px) nie jest już potrzebne - w porcie też go nie ma, zostają tylko kafle
   scene.textures.remove(key);
