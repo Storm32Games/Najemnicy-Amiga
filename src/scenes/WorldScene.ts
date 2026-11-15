@@ -1867,7 +1867,6 @@ export class WorldScene extends Phaser.Scene {
     if (cons.length) add('items', `Przedmioty (${cons.reduce((s, x) => s + x.qty, 0)})`, null, { tip: 'Użyj przedmiotu z plecaka.' });
     const th = this.mission.things.find((x) => !x.done && cheb(a, x) <= 1);
     if (th) add('interact', th.kind === 'crate' ? 'Otwórz skrzynię' : th.kind === 'item' ? 'Zabierz cel' : 'Uwolnij', 1, { tip: 'Interakcja z obiektem obok (1 akcja).' });
-    if (a.ch.equipment.weapon2) add('swap', 'Zmień broń', 1, { tip: 'Zamień broń główną z zapasową [X].' });
     add('delay', 'Odłóż turę', null, { tip: 'Przesuń swoją turę na koniec rundy.' });
     add('end', 'Koniec tury', null, { tip: 'Zakończ turę [Spacja].' });
     this.hud.setActions(a.ch.name, list);
