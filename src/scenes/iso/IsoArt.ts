@@ -4,6 +4,7 @@
 import { textPixels } from '../ui/FontGlyphs';
 import type Phaser from 'phaser';
 import type { Biome, FloorType, PropType } from '../../core/tactical/mapgen';
+import { floraPixels } from '../legacy/flora';
 import {
   type Fill, IsoPen, PixelCanvas, type RGB, TILE_H, TILE_W, bayer, clamp01, diamondSpan, forDiamond, hash2, mix, pick, ramp,
   rng, shade, vnoise,
@@ -66,7 +67,7 @@ function castShadow(pen: IsoPen, u0: number, v0: number, u1: number, v1: number,
 
 export const FLOOR_BASE: Record<FloorType, RGB> = {
   sand: 0xc4a064, asphalt: 0x3b3b40, asphalt_cracked: 0x3e3d42, rubble: 0x6e6a62, concrete: 0x85807a,
-  dirt: 0x6a4a30, toxic: 0x3a3a2c, metal: 0x59626a, tiles: 0xa39a84,
+  dirt: 0x6a4a30, toxic: 0x3a3a2c, grass_dead: 0x8a7c3e, metal: 0x59626a, tiles: 0xa39a84,
 };
 
 export const BIOME_STYLE: Record<Biome, { bg: number; memory: number; wall: RGB; facade: RGB[] }> = {
@@ -152,6 +153,13 @@ export function paintFloor(type: FloorType, variant: number): PixelCanvas {
         L = 0.5 + sp(x, y) * 0.28 + (vnoise(u * 4, v * 4, seed) - 0.5) * 0.16;
         if (variant === 1 && (Math.abs(v - 0.32) < 0.05 || Math.abs(v - 0.68) < 0.05)) L -= 0.2;
         break;
+      case 'grass_dead': {
+        // Oldgame/src/gfx/textures.js: plamy wyschniętej darni + łysiny gołej ziemi
+        const patch = vnoise(u * 3.2, v * 3.2, seed);
+        L = 0.46 + sp(x, y) * 0.22 + (patch - 0.5) * 0.3;
+        if (vnoise(u * 2.4 + 7, v * 2.4, seed + 3) > 0.7 - variant * 0.03) return void pc.set(x, y, pick(ramp(0x6a5030, 5, 0.4), 0.45 + sp(x, y) * 0.4, x, y));
+        break;
+      }
       case 'toxic': {
         L = 0.45 + sp(x, y) * 0.26;
         const d = Math.hypot(u - 0.5, (v - 0.5) * 1.1) + (vnoise(u * 7, v * 7, seed) - 0.5) * 0.14;
@@ -195,6 +203,19 @@ export function paintFloor(type: FloorType, variant: number): PixelCanvas {
       pc.set(x + 1, y + 1, r[1]);
     }
   }
+  if (type === 'grass_dead') {
+    // kępki suchej trawy: 2-3 źdźbła z jaśniejszym czubkiem i cieniem u podstawy
+    const tuft = [0xa89a4a, 0x6a5a2a, 0xc0b060, 0x5a6a2a, 0xb8a858];
+    for (let k = 0; k < 9; k++) {
+      const [x, y] = pen.p(0.14 + R() * 0.72, 0.14 + R() * 0.72);
+      const c = tuft[(R() * tuft.length) | 0];
+      if (!pc.alpha(x, y) || !pc.alpha(x - 1, y) || !pc.alpha(x + 1, y)) continue;
+      pc.set(x, y, shade(c, 0.6));
+      pc.set(x - 1, y - 1, c);
+      pc.set(x + 1, y - 1, shade(c, 0.85));
+      if (R() < 0.6 && pc.alpha(x, y - 2)) pc.set(x, y - 2, shade(c, 1.25));
+    }
+  }
   if (type === 'toxic') {
     for (let k = 0; k < 3; k++) {
       const [x, y] = pen.p(0.4 + R() * 0.2, 0.4 + R() * 0.2);
@@ -226,7 +247,7 @@ function weed(pc: PixelCanvas, pen: IsoPen, R: () => number): void {
 }
 
 /** Materiały "miękkie" rozlewają się na sąsiednie pola (wyższy priorytet przykrywa niższy). */
-export const FLOOR_SPILL: Partial<Record<FloorType, number>> = { sand: 3, dirt: 2, rubble: 1 };
+export const FLOOR_SPILL: Partial<Record<FloorType, number>> = { sand: 3, grass_dead: 2.5, dirt: 2, rubble: 1 };
 
 /**
  * Przejście terenu: tekstura sąsiedniego materiału wchodząca od krawędzi pola, z poszarpanym,
@@ -367,7 +388,6 @@ export function paintWall(conn: number, broken: boolean, color: RGB, biome: Biom
     const brick = biome === 'ruins' || biome === 'wastes';
     const t0 = 0.34, t1 = 0.66;
     const hFull = 22;
-    const hOf = () => (broken ? 7 + Math.floor(R() * 8) : hFull);
     const tex = (face: 0 | 1 | 2, x: number, y: number, s: number, z: number): number => {
       let n = (hash2(x, y, seed) - 0.5) * 0.5;
       if (face === 0) return n + 0.2;
@@ -380,27 +400,65 @@ export function paintWall(conn: number, broken: boolean, color: RGB, biome: Biom
       if (z < 2) n -= 0.5;
       return n;
     };
+    if (broken) {
+      // ---- ruina muru: poszarpany, schodkowy szczyt, odsłonięty rdzeń, pręty zbrojeniowe i gruz u podstawy
+      const core = ramp(brick ? mix(color, 0xd8c8a8, 0.35) : mix(color, 0xb0aca4, 0.4), 6, 0.4); // jaśniejszy przełam
+      const rebar = (u: number, v: number, z: number): void => {
+        const len = 3 + Math.floor(R() * 5), bend = R() < 0.5 ? -1 : 1;
+        const [x, y] = pen.p(u, v, z);
+        for (let i = 1; i <= len; i++) pen.pc.set(x + (i > len - 2 ? bend : 0), y - i, i === len ? 0xc87a48 : i & 1 ? 0x7a3a1c : 0x9a5228);
+      };
+      const chunk = (u0: number, v0: number, u1: number, v1: number, h: number, bar: boolean): void => {
+        pen.shadedBox(u0, v0, u1, v1, 0, h, r, tex, false);
+        // przełam na szczycie: jasny rdzeń z ciemnymi szczerbami
+        pen.flat(u0, v0, u1, v1, h, (x, y) => (hash2(x, y, seed + 5) < 0.22 ? r[0] : pick(core, 0.55 + (hash2(x, y, seed) - 0.5) * 0.5, x, y)));
+        if (bar) rebar((u0 + u1) / 2, (v0 + v1) / 2, h);
+      };
+      // ramię dzielone na 3 odcinki o malejącej / rosnącej wysokości (profil "wyszczerbiony")
+      const arm = (u0: number, v0: number, u1: number, v1: number, rising: boolean): void => {
+        const alongU = u1 - u0 > v1 - v0, n = 3;
+        for (let i = 0; i < n; i++) {
+          const k = rising ? i : n - 1 - i; // 0 = przy końcu muru (najniższy), n-1 = przy środku
+          const h = 3 + k * 4 + Math.floor(R() * 5);
+          if (k === 0 && R() < 0.35) continue; // wyrwa przy końcu
+          const f0 = i / n, f1 = (i + 1) / n;
+          if (alongU) chunk(u0 + (u1 - u0) * f0, v0, u0 + (u1 - u0) * f1, v1, h, R() < 0.3);
+          else chunk(u0, v0 + (v1 - v0) * f0, u1, v0 + (v1 - v0) * f1, h, R() < 0.3);
+        }
+      };
+      castShadow(pen, 0.1, 0.1, 0.9, 0.9, 0.2, 40);
+      // pył i okruchy na ziemi dookoła
+      pen.flat(0.04, 0.04, 0.96, 0.96, 0, (x, y, u, v) => (hash2(x, y, seed + 9) < 0.16 - Math.hypot(u - 0.5, v - 0.5) * 0.2 ? (hash2(x, y, 2) < 0.5 ? core[3] : r[2]) : -1));
+      if (conn & 1) arm(0, t0, t0, t1, true);
+      if (conn & 4) arm(t0, 0, t1, t0, true);
+      chunk(t0, t0, t1, t1, 9 + Math.floor(R() * 10), true);
+      if (conn & 2) arm(t1, t0, 1, t1, false);
+      if (conn & 8) arm(t0, t1, t1, 1, false);
+      // gruz: odłamane bloki (część w kolorze przełamu) rozrzucone przed murem
+      const bits: [number, number, number][] = [];
+      for (let i = 0; i < 9; i++) bits.push([0.06 + R() * 0.84, 0.06 + R() * 0.84, R()]);
+      bits.sort((p, q) => p[0] + p[1] - q[0] - q[1]);
+      for (const [u, v, q] of bits) {
+        if (u > t0 - 0.08 && u < t1 && v > t0 - 0.08 && v < t1) continue;
+        const sz = 0.06 + q * 0.09;
+        pen.shadedBox(u, v, u + sz, v + sz * (0.7 + q * 0.6), 0, 1 + Math.round(q * 2.4), q > 0.55 ? core : r, undefined, false);
+      }
+      return;
+    }
     castShadow(pen, 0, 0, 1, 1, 0.3, 50);
     // kolejność malarza: ramiona z tyłu, środek, ramiona z przodu
     const arm = (u0: number, v0: number, u1: number, v1: number) => {
-      const h = hOf();
-      pen.shadedBox(u0, v0, u1, v1, 0, h, r, tex, false);
+      pen.shadedBox(u0, v0, u1, v1, 0, hFull, r, tex, false);
       // jasna krawędź tylko wzdłuż ściany (bez pionowych szwów między segmentami)
-      if (v1 - v0 < u1 - u0) pen.pc.line(...pen.p(u0, v1, h), ...pen.p(u1, v1, h), r[5]);
-      else pen.pc.line(...pen.p(u1, v0, h), ...pen.p(u1, v1, h), r[4]);
+      if (v1 - v0 < u1 - u0) pen.pc.line(...pen.p(u0, v1, hFull), ...pen.p(u1, v1, hFull), r[5]);
+      else pen.pc.line(...pen.p(u1, v0, hFull), ...pen.p(u1, v1, hFull), r[4]);
     };
     if (conn & 1) arm(0, t0, t0, t1);
     if (conn & 4) arm(t0, 0, t1, t0);
-    pen.shadedBox(t0, t0, t1, t1, 0, broken ? hOf() : hFull, r, tex, conn === 0);
-    if (conn) pen.flat(t0, t0, t1, t1, broken ? 0 : hFull, (x, y) => pick(r, 0.8 + (hash2(x, y, seed) - 0.5) * 0.1, x, y), broken ? 0 : 255);
+    pen.shadedBox(t0, t0, t1, t1, 0, hFull, r, tex, conn === 0);
+    if (conn) pen.flat(t0, t0, t1, t1, hFull, (x, y) => pick(r, 0.8 + (hash2(x, y, seed) - 0.5) * 0.1, x, y));
     if (conn & 2) arm(t1, t0, 1, t1);
     if (conn & 8) arm(t0, t1, t1, 1);
-    if (broken) {
-      for (let i = 0; i < 5; i++) {
-        const u = 0.1 + R() * 0.8, v = 0.1 + R() * 0.8;
-        pen.shadedBox(u, v, u + 0.08 + R() * 0.08, v + 0.08, 0, 1 + R() * 2, r);
-      }
-    }
   });
 }
 
@@ -427,20 +485,107 @@ export function paintProp(type: PropType, rot: number, seed: number, biome: Biom
     const box = axisBox(pen, alongU);
     switch (type) {
       case 'car': {
-        const burnt = R() < 0.25;
+        // wrak samochodu: nadwozie z nadkolami, kabina ze słupkami i (wybitymi) szybami, rdza, zderzak, światła,
+        // koła z felgami / flaki / gołe felgi; warianty: spalony, otwarta maska, przód albo tył do widza
+        const burnt = R() < 0.22;
         const paint = CAR_COLS[(R() * CAR_COLS.length) | 0];
-        const body = burnt ? ramp(0x3a2a20, 6, 0.3) : ramp(mix(paint, 0x6a6458, 0.35), 6, 0.44);
-        const rustTex = (_f: 0 | 1 | 2, x: number, y: number) => (vnoise(x / 3, y / 3, seed) > 0.68 ? -0.45 : (hash2(x, y, seed) - 0.5) * 0.25);
-        alongU ? castShadow(pen, 0.02, 0.24, 0.98, 0.8, 0.3) : castShadow(pen, 0.24, 0.02, 0.8, 0.98, 0.3);
-        const tire = ramp(0x1c1814, 4, 0.2);
-        for (const a of [0.12, 0.72]) for (const b of [0.24, 0.7]) if (!burnt || R() > 0.4) box(a, a + 0.16, b, b + 0.06, 0, 4, tire);
-        box(0.02, 0.98, 0.26, 0.74, 2, 8, body, rustTex);
-        const glass = burnt ? ramp(0x0e0a08, 4, 0.1) : ramp(0x34404c, 5, 0.42);
-        box(0.3, 0.7, 0.29, 0.71, 8, 12, glass, (f, x, y) => (f > 0 && (x + y) % 9 === 0 ? 2 : 0));
-        box(0.32, 0.68, 0.28, 0.72, 12, 13, body, rustTex);
-        const [hx, hy] = alongU ? pen.p(0.98, 0.34, 6) : pen.p(0.34, 0.98, 6);
-        pen.pc.set(hx, hy, burnt ? 0x2a2018 : 0xe8e0c0);
-        pen.pc.set(hx, hy + 1, burnt ? 0x1a1410 : 0x8a8478);
+        const body = burnt ? ramp(0x3a2a20, 6, 0.3) : ramp(mix(paint, 0x6a6458, 0.28), 6, 0.48);
+        const frontNear = R() < 0.55; // widoczny koniec (+oś) to przód
+        const hoodOpen = !burnt && frontNear && R() < 0.35;
+        const smashed = burnt || R() < 0.4;
+        const flatTire = [R() < 0.45, R() < 0.45];
+        const A0 = 0.03, A1 = 0.97, B0 = 0.27, B1 = 0.73;
+        const LEN = (A1 - A0) * 16, WID = (B1 - B0) * 16;
+        const glassR = ramp(0x3a4c5c, 5, 0.5);
+        const rusty = (x: number, y: number): boolean => vnoise(x / 2.6, y / 2.6, seed) > (burnt ? 0.52 : 0.64);
+        const paintAt = (x: number, y: number, lit: number): RGB =>
+          rusty(x, y) ? pick(RUST, lit * 0.8 + (hash2(x, y, seed) - 0.5) * 0.3, x, y) : pick(body, lit + (hash2(x, y, seed) - 0.5) * 0.1, x, y);
+        // bryła z własnymi wypełnieniami: side(t, z) - długi bok (t = 0 tył .. 1 widoczny koniec), end(q, z) - widoczny koniec (q = 0..1 w poprzek)
+        const carBox = (
+          a0: number, a1: number, b0: number, b1: number, z0: number, z1: number,
+          side: (x: number, y: number, t: number, z: number) => RGB, end: (x: number, y: number, q: number, z: number) => RGB, top: (x: number, y: number, t: number) => RGB,
+        ): void => {
+          const len = (a1 - a0) * 16, wid = (b1 - b0) * 16;
+          if (alongU)
+            pen.box(a0, b0, a1, b1, z0, z1, {
+              left: (x, y, sx, z) => side(x, y, sx / len, z),
+              right: (x, y, sx, z) => end(x, y, sx / wid, z),
+              top: (x, y, u) => top(x, y, (u - a0) / (a1 - a0)),
+            });
+          else
+            pen.box(b0, a0, b1, a1, z0, z1, {
+              right: (x, y, sx, z) => side(x, y, 1 - sx / len, z),
+              left: (x, y, sx, z) => end(x, y, sx / wid, z),
+              top: (x, y, _u, v) => top(x, y, (v - a0) / (a1 - a0)),
+            });
+        };
+        const SIDE = alongU ? 0.56 : 0.3, END = alongU ? 0.3 : 0.56; // światło z lewej-góry
+        alongU ? castShadow(pen, A0, B0, A1, B1 + 0.04, 0.3, 80) : castShadow(pen, B0, A0, B1 + 0.04, A1, 0.3, 80);
+        // koła (tylne w cieniu pod nadwoziem, bliższe z felgą); t-pozycje osi
+        const AX = [0.2, 0.8];
+        const tire = ramp(0x1c1814, 4, 0.25), rim = ramp(0x6a6a6a, 4, 0.4);
+        AX.forEach((t, i) => {
+          const a = A0 + (A1 - A0) * t - 0.09;
+          box(a, a + 0.18, B0 - 0.01, B0 + 0.06, 0, 4, tire);
+          if (burnt) box(a + 0.03, a + 0.15, B1 - 0.05, B1 + 0.02, 0, 3, rim); // sama felga
+          else box(a - (flatTire[i] ? 0.02 : 0), a + 0.18 + (flatTire[i] ? 0.02 : 0), B1 - 0.05, B1 + 0.03, 0, flatTire[i] ? 3 : 5, tire);
+        });
+        // dolna część nadwozia z nadkolami
+        carBox(A0, A1, B0, B1, flatTire[0] && flatTire[1] ? 1 : 2, 7,
+          (x, y, t, z) => {
+            for (const c of AX) { const d = Math.abs(t - c) * LEN; if (d < 2.4 && z < 5.2 - d * d * 0.45) return z < 4 ? (burnt ? 0x4a4a48 : d < 1 && z > 1.5 && z < 3.6 ? 0x8a8a84 : 0x100c0a) : 0x0c0908; }
+            if (z < 3) return pick(DARK_METAL, 0.3, x, y); // próg
+            if (z >= 6) return paintAt(x, y, SIDE + 0.22); // linia boczna
+            if (Math.abs(t - 0.38) * LEN < 0.5 || Math.abs(t - 0.63) * LEN < 0.5) return pick(body, SIDE - 0.3, x, y); // szczeliny drzwi
+            return paintAt(x, y, SIDE);
+          },
+          (x, y, q, z) => {
+            if (z < 3.6) return pick(METAL, burnt ? 0.2 : 0.55 - Math.abs(q - 0.5) * 0.3, x, y); // zderzak
+            const edge = Math.min(q, 1 - q) * WID;
+            if (z < 6 && edge < 2.2 && edge > 0.4) return burnt ? 0x1a1410 : frontNear ? (q < 0.5 && smashed ? 0x2a2620 : 0xf0e8c0) : 0xa82818; // reflektory / tylne lampy
+            if (frontNear && z < 6 && edge >= 2.2) return ((x + y) & 1) ? 0x14100e : 0x2a2622; // atrapa chłodnicy
+            if (!frontNear && z < 5 && Math.abs(q - 0.5) * WID < 1.4) return burnt ? 0x2a2018 : 0xd8d0b0; // tablica
+            return paintAt(x, y, END);
+          },
+          (x, y, t) => {
+            if (hoodOpen && t > 0.74) return ((x + y) & 1) ? 0x14100e : pick(DARK_METAL, 0.4 + hash2(x, y, seed) * 0.3, x, y); // komora silnika
+            return paintAt(x, y, 0.78 + (t > 0.97 || t < 0.03 ? 0.12 : 0));
+          });
+        // kabina: słupki, szyby (całe / wybite), dach
+        const C0 = frontNear ? 0.22 : 0.3, C1 = frontNear ? 0.66 : 0.74;
+        const ca0 = A0 + (A1 - A0) * C0, ca1 = A0 + (A1 - A0) * C1, cLen = (ca1 - ca0) * 16;
+        const glassAt = (x: number, y: number, z: number, lit: number, broken: boolean): RGB => {
+          if (burnt) return hash2(x, y, seed + 3) < 0.2 ? 0x2a2018 : 0x0a0808;
+          if (broken) return hash2(x, y, seed + 3) < 0.28 ? glassR[4] : 0x0e0c10; // odłamki w ramie
+          return (x + y * 2 + seed) % 7 === 0 ? glassR[4] : pick(glassR, lit + (z - 9) * 0.08, x, y);
+        };
+        const sideBroken = [smashed && R() < 0.7, smashed && R() < 0.5];
+        carBox(ca0, ca1, B0 + 0.02, B1 - 0.02, 7, 12,
+          (x, y, t, z) => {
+            const sx = t * cLen;
+            if (z > 10.8 || sx < 0.9 || sx > cLen - 0.9 || Math.abs(sx - cLen / 2) < 0.55) return paintAt(x, y, SIDE + (z > 10.8 ? 0.2 : -0.05)); // dach / słupki A-B-C
+            return glassAt(x, y, z, 0.45, sideBroken[sx < cLen / 2 ? 0 : 1]);
+          },
+          (x, y, q, z) => {
+            const e = Math.min(q, 1 - q) * (WID - 0.64);
+            if (z > 10.8 || e < 0.8) return paintAt(x, y, END + (z > 10.8 ? 0.15 : 0));
+            return glassAt(x, y, z, 0.3, smashed);
+          },
+          (x, y, t) => paintAt(x, y, 0.74 + (t < 0.12 ? 0.14 : 0)));
+        if (hoodOpen) {
+          // uniesiona maska oparta o podszybie
+          const h0 = A0 + (A1 - A0) * (C1 + 0.02), h1 = h0 + 0.05;
+          carBox(h0, h1, B0 + 0.02, B1 - 0.02, 7, 12, (x, y) => paintAt(x, y, SIDE), (x, y) => pick(body, END - 0.1 + (hash2(x, y, 4) - 0.5) * 0.1, x, y), (x, y) => paintAt(x, y, 0.85));
+        }
+        // jasna krawędź dachu i maski od strony światła
+        const hi = body[5];
+        if (alongU) pen.pc.line(...pen.p(ca0, B1 - 0.02, 12), ...pen.p(ca1, B1 - 0.02, 12), rusty(...pen.p(ca0, B1, 12)) ? RUST[4] : hi);
+        else pen.pc.line(...pen.p(B1 - 0.02, ca0, 12), ...pen.p(B1 - 0.02, ca1, 12), hi);
+        if (biome === 'wastes') {
+          // nawiany piasek przy kołach
+          const sand = ramp(0xc4a064, 5, 0.4);
+          for (let i = 0; i < 2; i++) { const t = 0.1 + R() * 0.7, a = A0 + (A1 - A0) * t; box(a, a + 0.2, B1 + 0.01, B1 + 0.1, 0, 1 + Math.round(R()), sand); }
+        }
         break;
       }
       case 'bus': {
@@ -674,13 +819,30 @@ export function paintProp(type: PropType, rot: number, seed: number, biome: Biom
         pen.pc.set(x, y + 1, 0xe04030);
         break;
       }
+      case 'flora_saguaro': case 'flora_pear': case 'flora_deadbush': case 'flora_shrooms': case 'flora_flower': case 'flora_reeds':
+      case 'flora_grass': case 'flora_vine': case 'flora_pod': case 'flora_fern': case 'flora_crystal': {
+        // roślinność (Oldgame/src/gfx/flora.js -> legacy/flora.ts): gotowe piksele z własnym obrysem, stoi na środku pola
+        const f = floraPixels(type.slice(6), seed % 3) as { w: number; h: number; data: Uint8ClampedArray; bx: number; by: number };
+        const [cx, cy] = pen.p(0.5, 0.5, 0);
+        let minX = f.w, maxX = 0;
+        for (let y = f.h - 6; y < f.h; y++) for (let x = 0; x < f.w; x++) if (f.data[(y * f.w + x) * 4 + 3] > 0) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
+        const half = Math.max(2, Math.min(9, (maxX - minX) / 2 + 1));
+        pen.pc.ellipse(cx + 1, cy, half + 1, Math.max(1, Math.round(half / 2.4)), (x, y) => (bayer(x, y) < 0.8 ? 0x0a0608 : -1), 70);
+        const flip = (seed >> 2) & 1;
+        for (let y = 0; y < f.h; y++)
+          for (let x = 0; x < f.w; x++) {
+            const i = (y * f.w + (flip ? f.w - 1 - x : x)) * 4;
+            if (f.data[i + 3] > 0) pen.pc.set(cx - f.bx + x, cy - f.by + y + 1, (f.data[i] << 16) | (f.data[i + 1] << 8) | f.data[i + 2]);
+          }
+        break;
+      }
       case 'wall':
       case 'wall_broken':
         // ściany rysuje paintWall (łączenia z sąsiadami); tu tylko awaryjnie
         pen.shadedBox(0.3, 0.3, 0.7, 0.7, 0, 18, ramp(BIOME_STYLE[biome].wall));
         break;
     }
-  }, type !== 'skeleton');
+  }, type !== 'skeleton' && !type.startsWith('flora_'));
 }
 
 /** Skrzynia z łupem (wojskowa) - ważny element rozgrywki, więc kontrastowa. */
