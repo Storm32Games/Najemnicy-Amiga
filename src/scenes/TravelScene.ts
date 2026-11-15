@@ -16,7 +16,7 @@ import { ENEMIES } from '../core/data/enemies';
 import type { EnemyShape } from '../core/data/types';
 import { paintCreatureSheet } from './iso/CreatureArt';
 import { ArtBook } from './iso/IsoArt';
-import { beaconPos, paintRegion, regionFires, scrX, scrY } from './iso/RegionArt';
+import { MAP_H, MAP_W, beaconPos, paintRegion, regionFires, scrX, scrY } from './iso/RegionArt';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, ZOOM, ZOOM_EVENT, type UiButton, button, campfire, cut, enter, goto, label, panel, parseColor, tiledImage } from './ui/Kit';
 import { modalOpen, openWindow } from './ui/Widgets';
@@ -35,8 +35,10 @@ const Q = (v: number): number => Math.round(v * WQ);
 /** Punkt świata (Q8) -> ekran z wysokością terenu. */
 const scr = (p: WPos, up = 0): { x: number; y: number } => ({ x: scrX(p.x), y: scrY(Math.round(p.x), Math.round(p.z), up) });
 
-/** Przybliżenia mapy (krotność zoomu podstawowego): całkowite, więc piksel mapy zawsze ma równy rozmiar. */
-const Z_MIN = 1, Z_MAX = 4, Z_TRAVEL = 2, Z_EVENT = 3;
+/** Przybliżenia mapy (krotność zoomu podstawowego). Mapa jest 2x większa od ekranu: 0.5 = cały region. */
+const Z_LEVELS = [0.5, 1, 2, 3, 4], Z_ALL = 0.5, Z_START = 1, Z_TRAVEL = 2, Z_EVENT = 3;
+/** Widok startowy: śródmieście z Przystanią przy lewej krawędzi. */
+const START_VIEW = { x: MAP_W * 0.46, y: MAP_H * 0.47, z: Z_START };
 /** Opóźnienie automatycznego wymarszu po przyjściu z Przystani ze zleceniem (Oldgame/src/scenes/worldmap.js:74). */
 const AUTO_DEPART_MS = 700;
 const LIST_X = 6, LIST_Y = 18, LIST_W = 124, ROW_H = 29;
@@ -111,8 +113,8 @@ export class TravelScene extends Phaser.Scene {
   // --- kamera mapy: cel (widok gracza) i bieżący stan (płynne dojście)
   private uiCam!: Phaser.Cameras.Scene2D.Camera;
   private uiLayer = false;
-  private view = { x: BASE_W / 2, y: BASE_H / 2, z: 1 };
-  private cur = { x: BASE_W / 2, y: BASE_H / 2, z: 1 };
+  private view = { ...START_VIEW };
+  private cur = { ...START_VIEW };
   private drag: { x: number; y: number; moved: boolean } | null = null;
   private keys: Record<string, Phaser.Input.Keyboard.Key> = {};
 
@@ -154,7 +156,7 @@ export class TravelScene extends Phaser.Scene {
     this.route = null;
     this.autoTimer = null;
     this.clock.reset();
-    this.view = { x: BASE_W / 2, y: BASE_H / 2, z: 1 };
+    this.view = { ...START_VIEW };
     this.cur = { ...this.view };
 
     // kamera interfejsu nad mapą; wszystko, co powstanie przed `uiLayer = true`, widzi tylko kamera mapy
@@ -171,7 +173,7 @@ export class TravelScene extends Phaser.Scene {
     });
 
     // krajobraz z wysokościami (w profilu Amiga: kafle <= 256 px)
-    paintRegion(this, 'travel_map', BASE_W, BASE_H);
+    paintRegion(this, 'travel_map', MAP_W, MAP_H);
     tiledImage(this, 'travel_map');
     for (const f of regionFires()) this.fires.push(campfire(this, f.x, f.y, f.size, 2));
     const bp = beaconPos();
@@ -202,8 +204,8 @@ export class TravelScene extends Phaser.Scene {
     const lead = st.party.find((c) => !c.conditions.dead && c.hp > 0) ?? st.party[0];
     this.pos = { x: HOME.x, z: HOME.z };
     const p0 = scr(this.pos);
-    this.marker = addUnit(this, p0.x, p0.y, `pc_${lead.recruitId ?? lead.id}`, unitLookOf(lead)).setDepth(8);
-    this.dust = new Motes(this, 90, { x: 0, y: 0, w: BASE_W, h: BASE_H }, 0xf0c080, 12, 1, 4, 0.35, 9);
+    this.marker = addUnit(this, p0.x, p0.y, `pc_${lead.recruitId ?? lead.id}`, unitLookOf(lead)).setScale(0.6).setDepth(8);
+    this.dust = new Motes(this, 90, { x: 0, y: 0, w: MAP_W, h: MAP_H }, 0xf0c080, 12, 1, 4, 0.35, 9);
     this.spawnFauna();
 
     // ================= warstwa interfejsu
@@ -279,7 +281,7 @@ export class TravelScene extends Phaser.Scene {
       if (modalOpen(this) || this.state !== 'idle') return;
       const k = e.key.toLowerCase();
       if (k === 'enter') this.depart();
-      else if (k === 'r') this.view = { x: BASE_W / 2, y: BASE_H / 2, z: 1 };
+      else if (k === 'r') this.view = { x: MAP_W / 2, y: MAP_H / 2, z: Z_ALL };
       else if (k === '+' || k === '=') this.zoomBy(1);
       else if (k === '-' || k === '_') this.zoomBy(-1);
     });
@@ -315,7 +317,9 @@ export class TravelScene extends Phaser.Scene {
 
   /** Krok przybliżenia; z kursorem - punkt pod kursorem zostaje w miejscu. */
   private zoomBy(step: number, p?: Phaser.Input.Pointer): void {
-    const z0 = this.view.z, z1 = Phaser.Math.Clamp(z0 + step, Z_MIN, Z_MAX);
+    const z0 = this.view.z;
+    const i0 = Z_LEVELS.findIndex((z) => z >= z0 - 1e-3);
+    const z1 = Z_LEVELS[Phaser.Math.Clamp((i0 < 0 ? Z_LEVELS.length - 1 : i0) + step, 0, Z_LEVELS.length - 1)];
     if (z1 === z0) return;
     if (p) {
       const sx = p.x / ZOOM, sy = p.y / ZOOM;
@@ -330,8 +334,8 @@ export class TravelScene extends Phaser.Scene {
   /** Środek widoku przy danym przybliżeniu nie wychodzi poza mapę. */
   private clampView(v: { x: number; y: number; z: number }): void {
     const hw = BASE_W / (2 * v.z), hh = BASE_H / (2 * v.z);
-    v.x = Phaser.Math.Clamp(v.x, hw, BASE_W - hw);
-    v.y = Phaser.Math.Clamp(v.y, hh, BASE_H - hh);
+    v.x = Phaser.Math.Clamp(v.x, hw, MAP_W - hw);
+    v.y = Phaser.Math.Clamp(v.y, hh, MAP_H - hh);
   }
 
   private updateCamera(dt: number): void {
@@ -366,11 +370,14 @@ export class TravelScene extends Phaser.Scene {
       const y = BASE_H / 2 + (l.wy - c.y) * c.z;
       if (l.id) x = Phaser.Math.Clamp(x, 40, BASE_W - 40);
       // lista zleceń (lewy górny róg) nie zasłania napisów: odsuwamy je w prawo od panelu
+      // (napisy sektorów pod panelem po prostu chowamy - na dużej mapie przesunięte lądowałyby w innym sektorze)
+      let under = false;
       if (!travel && y - (l.id ? 21 : 0) < listBottom && y + 18 > LIST_Y) {
         const hw = (l.hw ??= l.box.getBounds().width / 2);
-        x = Math.max(x, LIST_X + LIST_W + 5 + hw);
+        if (l.id) x = Math.max(x, LIST_X + LIST_W + 5 + hw);
+        else under = x - hw < LIST_X + LIST_W + 4;
       }
-      const vis = x > -30 && x < BASE_W + 30 && y > (l.id ? 38 : 16) && y < BASE_H + 10;
+      const vis = !under && x > -30 && x < BASE_W + 30 && y > (l.id ? 38 : 16) && y < BASE_H + 10;
       const sel = l.id === this.job?.id;
       l.box.setPosition(Math.round(x), Math.round(y)).setVisible(vis);
       if (l.id) l.box.setAlpha(travel ? (sel ? 1 : 0.3) : this.job && !sel ? 0.8 : 1).setDepth(sel ? D_LABEL + 1 : D_LABEL);
@@ -396,7 +403,7 @@ export class TravelScene extends Phaser.Scene {
     if (c && this.pulse) {
       const p = scr(this.spots.get(c.id)!);
       this.pulse.setPosition(p.x, p.y).setStrokeStyle(1, c.story ? 0xff30ff : PAL.amber).setVisible(true);
-      if (centre && this.view.z > 1) {
+      if (centre && this.view.z >= 1) {
         this.view.x = p.x;
         this.view.y = p.y;
       }
@@ -679,7 +686,7 @@ export class TravelScene extends Phaser.Scene {
     new ArtBook(this).sheet(tex, sh.pc, sh.frames);
     this.anims.create({ key: `${name}_idle`, frames: ['f_idle0', 'f_idle1'].map((frame) => ({ key: tex, frame })), frameRate: 1.6, repeat: -1 });
     this.anims.create({ key: `${name}_walk`, frames: [0, 1, 2, 3].map((k) => ({ key: tex, frame: `f_walk${k}` })), frameRate: 11, repeat: -1 });
-    const sp = this.add.sprite(x, y, tex, 'f_idle0').setOrigin(0.5, 0.85).setScale(0.6 * Math.min(1.4, def?.look.scale ?? 1) * (0.8 + Math.random() * 0.4)).setDepth(7);
+    const sp = this.add.sprite(x, y, tex, 'f_idle0').setOrigin(0.5, 0.85).setScale(0.42 * Math.min(1.4, def?.look.scale ?? 1) * (0.8 + Math.random() * 0.4)).setDepth(7);
     sp.setData('anim', name);
     sp.play(`${name}_idle`);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
