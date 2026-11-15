@@ -38,22 +38,24 @@ import { type Window as UiWindow, abilityIconImage, modalOpen, openOptions, open
 
 // ------------------------------------------------------------------ paleta / czcionka
 
+// Paleta Oldgame (Oldgame/index.html :root + mission/hud.js) - te same kolory co PAL w ui/Kit.ts.
+// Nazwy zostały po dawnym zielonym terminalu: green = "dobrze/aktywne", greenDim = zwykła rdzawa ramka.
 const C = {
-  bg: 0x050a06,
-  green: 0x33ff66,
-  greenDim: 0x0f5a24,
-  amber: 0xffb000,
-  amberDim: 0x5a3e00,
-  red: 0xff4444,
-  redDim: 0x5a1414,
-  grey: 0x8fa596,
-  greyDim: 0x2a3a2e,
-  white: 0xe8f5e0,
+  bg: 0x120e0b, // tło .m-card / paneli
+  green: PAL.good,
+  greenDim: PAL.edge,
+  amber: PAL.amber,
+  amberDim: 0x4a3417, // tło aktywnego przycisku .m-ab.act
+  red: PAL.bad,
+  redDim: 0x5a1e16,
+  grey: PAL.dim,
+  greyDim: 0x4a3c2c,
+  white: PAL.text,
 } as const;
 
 /** Kolory dziennika w palecie Oldgame (.m-log). */
 const TONE: Record<LogTone, number> = { dim: 0x9c958a, good: PAL.good, bad: PAL.bad, amber: PAL.amber, hd: PAL.text };
-const HP_TONE = { good: C.green, amber: C.amber, bad: C.red } as const;
+const HP_TONE = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 /** Kolory paska PW na kartach drużyny (hpCol('pc') z Oldgame/src/mission/hud.js). */
 const HP_FILL = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 
@@ -338,7 +340,7 @@ export class UIScene extends Phaser.Scene {
   // ================================================================== prymitywy
 
   /** Tekst HUD: czcionka bitmapowa 6x8 z czarnym obrysem; size >= 11 = pogrubienie (bez skalowania). */
-  private text(x: number, y: number, s: string, color: number = C.green, size = 8): PixelText {
+  private text(x: number, y: number, s: string, color: number = PAL.text, size = 8): PixelText {
     return pixelText(this, x, y, s, { color, bold: size >= 11 });
   }
 
@@ -348,14 +350,7 @@ export class UIScene extends Phaser.Scene {
 
   /** Tło panelu, które połyka kliknięcia (żeby nie przechodziły do WorldScene). */
   private panelRect(x: number, y: number, w: number, h: number, stroke: number = C.greenDim): Phaser.GameObjects.Rectangle {
-    return this.add.rectangle(x, y, w, h, C.bg, 0.88).setOrigin(0).setStrokeStyle(1, stroke).setInteractive();
-  }
-
-  private scanlines(w: number, h: number): Phaser.GameObjects.Graphics {
-    const g = this.add.graphics();
-    g.fillStyle(0x000000, 0.3);
-    for (let y = 1; y < h; y += 2) g.fillRect(0, y, w, 1);
-    return g;
+    return this.add.rectangle(x, y, w, h, C.bg, 0.92).setOrigin(0).setStrokeStyle(1, stroke).setInteractive();
   }
 
   private bar(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, ratio: number, color: number, dim: number): void {
@@ -501,7 +496,7 @@ export class UIScene extends Phaser.Scene {
     const cur = hud.initiative.find((e) => e.current);
     if (!hud.inCombat) this.roundText.setText(cut(`EKSPLORACJA · LIDER: ${name}`, 36));
     else this.roundText.setText(cut(`RUNDA ${hud.round} · ${enemy ? `TURA: ${(cur?.ch.name ?? 'WRÓG').toUpperCase()}` : `TURA: ${name}`}`, 36));
-    this.recolor(this.roundText, enemy ? C.red : hud.inCombat ? C.amber : C.green);
+    this.recolor(this.roundText, enemy ? C.red : C.amber);
 
     const locked = !hud.canAct;
     this.btnHelp.set('STEROWANIE [H]', true);
@@ -567,14 +562,14 @@ export class UIScene extends Phaser.Scene {
 
   private initChip(x: number, y: number, e: InitEntry): Phaser.GameObjects.GameObject[] {
     const enemy = e.side === 'enemy';
-    const stroke = e.current ? C.amber : enemy ? C.redDim : C.greenDim;
+    const stroke = e.current ? C.amber : enemy ? PAL.blood : PAL.steel;
     const bg = this.panelRect(x, y, INIT_W, INIT_H, stroke);
     if (e.current) bg.setStrokeStyle(2, C.amber);
     const g = this.add.graphics();
-    const col = e.done ? C.grey : enemy ? C.red : C.green;
+    const col = e.done ? C.grey : enemy ? C.red : C.white;
     const nm = this.text(x + 2, y, cut(e.ch.name, 5), col);
     const ini = this.text(x + INIT_W - 2, y + 8, String(e.init), C.grey, 7).setOrigin(1, 0);
-    this.bar(g, x + 2, y + INIT_H - 4, INIT_W - 4, 2, hpRatio(e.ch), HP_TONE[hpTone(e.ch)], enemy ? C.redDim : C.greenDim);
+    this.bar(g, x + 2, y + INIT_H - 4, INIT_W - 4, 2, hpRatio(e.ch), HP_TONE[hpTone(e.ch)], 0x000000);
     const extra: Phaser.GameObjects.GameObject[] = [];
     if (e.down) extra.push(this.text(x + 2, y + 8, '!', C.red, 7));
     if (e.current) extra.push(this.text(x + INIT_W / 2, y + INIT_H, '▲', C.amber, 7).setOrigin(0.5, 0));
@@ -643,8 +638,8 @@ export class UIScene extends Phaser.Scene {
 
   private actionButton(x: number, y: number, w: number, b: ActionButton, key: string): Phaser.GameObjects.GameObject[] {
     const on = b.enabled && this.hud.canAct;
-    const col = b.active ? C.amber : on ? C.green : C.greyDim;
-    const r = this.add.rectangle(x, y, w, AB_BH, b.active ? C.amberDim : C.bg, 0.95).setOrigin(0).setStrokeStyle(1, col).setInteractive({ useHandCursor: on });
+    const col = b.active ? C.amber : on ? PAL.edge : C.greyDim;
+    const r = this.add.rectangle(x, y, w, AB_BH, b.active ? C.amberDim : PAL.panel2, 0.95).setOrigin(0).setStrokeStyle(1, col).setInteractive({ useHandCursor: on });
     const out: Phaser.GameObjects.GameObject[] = [r];
     let tx = x + 2;
     if (key) {
@@ -668,11 +663,11 @@ export class UIScene extends Phaser.Scene {
       out.push(g);
     }
     r.on('pointerover', () => {
-      if (on) r.setFillStyle(col, 0.25);
+      if (on) r.setFillStyle(0x3a2c1e, 1).setStrokeStyle(1, PAL.edgeHi);
       this.hud.setHover(b.tip ?? b.label);
     });
     r.on('pointerout', () => {
-      r.setFillStyle(b.active ? C.amberDim : C.bg, 0.95);
+      r.setFillStyle(b.active ? C.amberDim : PAL.panel2, 0.95).setStrokeStyle(1, col);
       this.hud.setHover(null);
     });
     r.on('pointerdown', () => {
@@ -704,7 +699,7 @@ export class UIScene extends Phaser.Scene {
     const num = this.text(17, 16, '?', C.white, 10).setOrigin(0.5, 0);
     const line = this.text(34, 13, '', C.grey, 7);
     const deg = this.text(34, 23, '', col, 8);
-    box.add([bg, lab, die, num, line, deg, this.scanlines(W, H)]);
+    box.add([bg, lab, die, num, line, deg]);
     box.setAlpha(0);
     this.tweens.add({ targets: box, alpha: 1, duration: 80 });
     const spin = Math.round(r.duration * 0.4);
@@ -803,7 +798,7 @@ export class UIScene extends Phaser.Scene {
     }
     const bg = this.add.rectangle(0, 0, W, y + 4, C.bg, 0.97).setOrigin(0).setStrokeStyle(1, C.amber).setInteractive();
     bg.on('pointerdown', () => this.hud.toggleHelp(false));
-    box.add([bg, ...items, this.scanlines(W, y + 4)]);
+    box.add([bg, ...items]);
     this.helpBox = box;
   }
 
@@ -986,12 +981,12 @@ export class UIScene extends Phaser.Scene {
     };
 
     // nagłówek
-    const close = this.text(SHEET_W - 3, y, '[X]', C.green).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    const close = this.text(SHEET_W - 3, y, '[X]', C.grey).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     close.on('pointerdown', () => {
       SoundManager.sfx('click');
       this.hud.toggleInventory(false);
     });
-    items.push(this.text(3, y, cut(ch.name, 22), C.white), close);
+    items.push(this.text(3, y, cut(ch.name, 22), C.amber), close);
     y += LH;
     items.push(this.text(3, y, classLabel(ch), C.grey));
     y += LH + 2;
@@ -999,7 +994,7 @@ export class UIScene extends Phaser.Scene {
     // statystyki 3x2
     statPairs(ch).forEach(([k, v], i) => {
       const cx = 3 + (i % 3) * 61, cy = y + Math.floor(i / 3) * LH;
-      items.push(this.text(cx, cy, k, C.grey), this.text(cx + 30, cy, v, C.green));
+      items.push(this.text(cx, cy, k, C.grey), this.text(cx + 30, cy, v, C.white));
     });
     y += LH * 2 + 3;
 
@@ -1028,7 +1023,7 @@ export class UIScene extends Phaser.Scene {
     for (const ab of abilityRows(ch, acts)) {
       const hit = this.add.rectangle(2, y - 1, SHEET_W - 4, LH + 1, C.amber, 0).setOrigin(0).setInteractive();
       const label = ab.name + (ab.uses !== null ? ` (${ab.uses})` : '');
-      const col = ab.off ? C.grey : C.green;
+      const col = ab.off ? C.grey : C.white;
       const cost = ab.cost === null ? 'reakcja' : ab.cost === 0 ? 'darmowa' : '◆'.repeat(Math.min(3, ab.cost));
       items.push(hit, this.text(6, y, cut(label, 28), col), this.text(SHEET_W - 4, y, cost, ab.off ? C.greyDim : C.amber).setOrigin(1, 0));
       hit.on('pointerover', () => {
@@ -1049,7 +1044,7 @@ export class UIScene extends Phaser.Scene {
     // nieprzezroczyste tło: karta zasłania karty drużyny pod spodem
     const solid = this.add.rectangle(0, 0, SHEET_W, y, C.bg, 1).setOrigin(0);
     const bg = this.panelRect(0, 0, SHEET_W, y, C.amber);
-    S.add([solid, bg, ...items, this.scanlines(SHEET_W, y)]);
+    S.add([solid, bg, ...items]);
   }
 
   private itemRow(row: InventoryRow, y: number, key: number | null): Phaser.GameObjects.GameObject[] {
@@ -1082,7 +1077,7 @@ export class UIScene extends Phaser.Scene {
     this.banner?.destroy();
     const color = TONE[b.tone];
     const t = this.text(0, 0, b.sub ? `${b.text}\n${b.sub}` : b.text, color, 16).setOrigin(0.5).setAlign('center');
-    const bg = this.add.rectangle(0, 0, t.width + 16, t.height + 6, 0x050a06, 0.75).setStrokeStyle(1, color);
+    const bg = this.add.rectangle(0, 0, t.width + 16, t.height + 6, C.bg, 0.85).setStrokeStyle(1, color);
     // baner bez skalowania (skala != 1 rozjechałaby piksele czcionki z siatką) - tylko wjazd z góry i zanik
     const box = this.add.container(Math.round(BASE_W / 2), Math.round(BASE_H * 0.36) - 6, [bg, t]).setAlpha(0);
     this.banner = box;

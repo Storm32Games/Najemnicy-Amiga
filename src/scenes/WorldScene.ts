@@ -30,7 +30,7 @@ import {
 } from './iso/IsoArt';
 import { PixelCanvas, hash2, rng } from './iso/Pixel';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, SX0, SY0, ZOOM, label } from './ui/Kit';
+import { BASE_H, BASE_W, SX0, SY0, ZOOM, PAL, label } from './ui/Kit';
 import { LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
 
 // Pełna walka PF2e z src/core/tactical (Mission + Combat + AI): drużyna 3 najemników, grupy wrogów,
@@ -2162,8 +2162,8 @@ export class WorldScene extends Phaser.Scene {
     if (result.casualties.length) this.hud.pushLog(`Polegli: ${result.casualties.join(', ')}.`, 'bad');
     SoundManager.music('defeat');
     this.hud.showBanner('DRUŻYNA POLEGŁA', 'bad');
-    const lost = label(this, BASE_W / 2, BASE_H / 2 - 8, 'SYGNAŁ UTRACONY', { size: 14, bold: true, color: 0xff5555 }).setOrigin(0.5);
-    this.overlay.add([this.add.rectangle(BASE_W / 2, BASE_H / 2 - 8, lost.width + 12, lost.height + 8, 0x050a06, 1), lost]);
+    const lost = label(this, BASE_W / 2, BASE_H / 2 - 8, 'SYGNAŁ UTRACONY', { size: 14, bold: true, color: PAL.bad }).setOrigin(0.5);
+    this.overlay.add([this.add.rectangle(BASE_W / 2, BASE_H / 2 - 8, lost.width + 12, lost.height + 8, PAL.panel, 1).setStrokeStyle(1, PAL.blood), lost]);
     if (this.job)
       this.overlay.add(label(this, BASE_W / 2, BASE_H / 2 + 14, GAMEOVER_LINES[0], { size: 7, color: 0xc8b8a0, wrap: 300, align: 'center' }).setOrigin(0.5, 0));
     const hold = this.job ? 3600 : 100;
