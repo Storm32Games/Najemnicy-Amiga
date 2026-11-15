@@ -519,6 +519,13 @@ const SFX = {
     noise(c, o, t, { type: 'highpass', f: 3500, d: 0.9, vol: 0.05 });
     tone(c, o, t, { f: 1050 * P, d: 0.07, vol: 0.12, lp: 3000 });
   } },
+  /** grzmot burzy: trzask, potem przetaczający się niski pomruk */
+  thunder: { dur: 4.5, rev: 0.6, max: 1, fn(c, o, t, P) {
+    noise(c, o, t, { type: 'highpass', f: 2200 * P, d: 0.09, vol: 0.45 });
+    noise(c, o, t + 0.02, { type: 'lowpass', f: 900 * P, f2: 60, a: 0.04, d: 2.6, vol: 0.9 });
+    tone(c, o, t, { f: 52 * P, f2: 26, a: 0.05, d: 2.4, vol: 0.45 });
+    for (let i = 0; i < 6; i++) noise(c, o, t + rnd(0.25, 2.2), { type: 'lowpass', f: rnd(180, 480) * P, f2: 50, a: 0.12, d: rnd(0.6, 1.5), vol: rnd(0.25, 0.55) });
+  } },
 } satisfies Record<string, SfxDef>;
 
 export type SfxName = keyof typeof SFX;

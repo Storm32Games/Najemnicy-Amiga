@@ -9,11 +9,16 @@ export const MAP_W = 32;
 export const MAP_H = 32;
 
 export type Biome = 'ruins' | 'wastes' | 'industrial' | 'bunker';
-export type FloorType = 'sand' | 'asphalt' | 'asphalt_cracked' | 'rubble' | 'concrete' | 'dirt' | 'toxic' | 'metal' | 'tiles';
+export type FloorType = 'sand' | 'asphalt' | 'asphalt_cracked' | 'rubble' | 'concrete' | 'dirt' | 'toxic' | 'grass_dead' | 'metal' | 'tiles';
 export type PropType =
   | 'car' | 'bus' | 'barrel' | 'barrel_toxic' | 'crate' | 'debris' | 'sandbags' | 'container' | 'fence' | 'generator' | 'pillar'
   | 'terminal' | 'tent' | 'tank_trap' | 'scrap_pile' | 'wall' | 'wall_broken'
-  | 'lamp' | 'sign' | 'antenna' | 'tree_dead' | 'skeleton' | 'campfire' | 'door';
+  | 'lamp' | 'sign' | 'antenna' | 'tree_dead' | 'skeleton' | 'campfire' | 'door'
+  | FloraType;
+/** Roślinność (Oldgame/src/gfx/flora.js) - czysto wizualna dekoracja, niczego nie blokuje. */
+export type FloraType =
+  | 'flora_saguaro' | 'flora_pear' | 'flora_deadbush' | 'flora_shrooms' | 'flora_flower' | 'flora_reeds' | 'flora_grass' | 'flora_vine'
+  | 'flora_pod' | 'flora_fern' | 'flora_crystal';
 
 /** Ile blokuje dany obiekt: 1 niska osłona, 2 wysoka przeszkoda. Brak wpisu = 1. */
 export const PROP_KIND: Readonly<Partial<Record<PropType, CellKind>>> = {
@@ -319,6 +324,66 @@ export function generateMap(spec: MapSpec, enemyIds: readonly EnemyId[] = []): T
     }
   }
 
+  function decorate(): void {
+    const vr = makeRng((seed ^ 0x51f15eed) >>> 0);
+    const vi = (a: number, b: number): number => a + Math.floor(vr() * (b - a + 1));
+    const vpick = <T>(a: readonly T[]): T => a[Math.floor(vr() * a.length)];
+    const soft = (t: FloorType): boolean => t === 'sand' || t === 'dirt' || t === 'rubble' || t === 'asphalt_cracked';
+    // 1) plamy wyschniętej trawy: pustkowia - nieregularne kępy na piasku/ziemi; ruiny - obrzeża mapy i gruzowiska
+    const grassAt = (x: number, y: number): void => {
+      if (inb(x, y) && soft(floor[I(x, y)]) && block[I(x, y)] !== CellKind.HIGH) floor[I(x, y)] = 'grass_dead';
+    };
+    if (biome === 'wastes' || biome === 'ruins') {
+      const patches = biome === 'wastes' ? kn(9) : kn(7);
+      for (let p = 0; p < patches; p++) {
+        // w ruinach kępy trzymają się krawędzi mapy (zarastające obrzeża), na pustkowiach - gdziekolwiek
+        const edge = biome === 'ruins' || vr() < 0.4;
+        const side = vi(0, 3), along = vi(1, W - 2), depth = vi(0, 3);
+        const cx = edge ? (side === 0 ? depth : side === 1 ? W - 1 - depth : along) : vi(2, W - 3);
+        const cy = edge ? (side === 2 ? depth : side === 3 ? H - 1 - depth : along) : vi(2, H - 3);
+        const rad = 1.4 + vr() * 2.2;
+        for (let y = Math.floor(cy - rad); y <= cy + rad; y++)
+          for (let x = Math.floor(cx - rad); x <= cx + rad; x++) if (Math.hypot(x - cx, y - cy) <= rad - vr() * 0.9) grassAt(x, y);
+      }
+    }
+    // 2) roślinność: tylko wolne pola bez rekwizytów, dekoracji, skrzyń, znalezisk, celu i punktów startowych wrogów
+    const taken = new Set<number>(used);
+    for (const p of props) taken.add(I(p.gx, p.gy));
+    for (const p of deco) taken.add(I(p.gx, p.gy));
+    for (const d of decor) taken.add(I(d.gx, d.gy));
+    for (const c of crates) taken.add(I(c.gx, c.gy));
+    for (const f of finds) taken.add(I(f.gx, f.gy));
+    for (const g of groups) for (const c of g.cells) taken.add(I(c.gx, c.gy));
+    const nearToxic = (x: number, y: number): boolean => {
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (inb(x + dx, y + dy) && floor[I(x + dx, y + dy)] === 'toxic') return true;
+      return false;
+    };
+    const nearHigh = (x: number, y: number): boolean => DIRS4.some(([dx, dy]) => inb(x + dx, y + dy) && block[I(x + dx, y + dy)] === CellKind.HIGH);
+    const count = { wastes: kn(46), ruins: kn(30), industrial: kn(14), bunker: kn(12) }[biome];
+    let placed = 0;
+    for (let t = 0; t < count * 6 && placed < count; t++) {
+      const x = vi(0, W - 1), y = vi(0, H - 1), i = I(x, y);
+      if (block[i] !== CellKind.FREE || taken.has(i) || reserved(x, y)) continue;
+      const fl = floor[i];
+      let type: FloraType | null = null;
+      if (nearToxic(x, y)) type = vpick(['flora_shrooms', 'flora_shrooms', 'flora_reeds', 'flora_pod', 'flora_vine', 'flora_fern'] as const);
+      else if (biome === 'wastes') {
+        if (fl === 'grass_dead') type = vpick(['flora_grass', 'flora_grass', 'flora_deadbush', 'flora_flower', 'flora_grass'] as const);
+        else if (fl === 'sand' || fl === 'dirt') type = vpick(['flora_saguaro', 'flora_saguaro', 'flora_pear', 'flora_pear', 'flora_deadbush', 'flora_grass', 'flora_grass', 'flora_crystal'] as const);
+      } else if (biome === 'ruins') {
+        if (fl === 'grass_dead') type = vpick(['flora_grass', 'flora_grass', 'flora_deadbush', 'flora_fern', 'flora_flower'] as const);
+        else if (fl === 'rubble' || fl === 'asphalt_cracked') type = vr() < 0.6 ? vpick(['flora_grass', 'flora_deadbush', 'flora_vine', 'flora_grass'] as const) : null;
+        else if (nearHigh(x, y)) type = vr() < 0.5 ? vpick(['flora_vine', 'flora_fern', 'flora_grass'] as const) : null;
+      } else if (biome === 'industrial') {
+        if (fl === 'concrete' && (nearHigh(x, y) || vr() < 0.3)) type = vpick(['flora_grass', 'flora_deadbush', 'flora_vine', 'flora_grass'] as const);
+      } else if (nearHigh(x, y) && vr() < 0.7) type = vpick(['flora_shrooms', 'flora_shrooms', 'flora_crystal', 'flora_fern', 'flora_vine'] as const); // bunkier: grzyby i kryształy pod ścianami
+      if (!type) continue;
+      taken.add(i);
+      deco.push({ type, gx: x, gy: y, rot: 0, seed: vi(1, 9999) });
+      placed++;
+    }
+  }
+
   // osiągalność (4 kierunki) od wejścia
   const dist4 = new Int16Array(W * H).fill(-1);
   const start = entry.cells[5];
@@ -414,6 +479,10 @@ export function generateMap(spec: MapSpec, enemyIds: readonly EnemyId[] = []): T
     if (!c) break;
     finds.push({ gx: c.gx, gy: c.gy, kind: pick(FIND_KINDS), hidden: rng() < 0.55 });
   }
+
+  // ---- warstwa czysto wizualna: wyschnięta darń i roślinność. Osobny generator (ziarno pochodne od ziarna mapy),
+  // uruchamiany PO całej logice - nie zmienia kolizji, widoczności ani kolejności losowań misji.
+  decorate();
 
   return {
     width: W, height: H, biome, grid: new TacticalGrid(W, H, block), floor, props, deco, decor, buildings, solids, entry, groups,

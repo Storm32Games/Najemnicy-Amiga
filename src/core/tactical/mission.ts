@@ -484,11 +484,24 @@ export class Mission {
     this.updateVisibility();
   }
 
+  /**
+   * Atak z ukrycia na nieświadomą grupę: Skradanie atakującego vs 10 + najlepsza Percepcja grupy.
+   * Sukces = zasadzka (Combat.start ambush), porażka = zwykła walka (grupa w porę dostrzega drużynę).
+   * W Oldgame kliknięcie wroga tylko podchodziło; tu atak jest dostępny, ale wymaga udanego testu.
+   */
+  ambushAttack(a: Actor, g: EnemyGroup): CheckResult {
+    const alive = g.actors.filter((e) => e.state !== 'dead');
+    const dc = 10 + Math.max(0, ...alive.map((e) => getStat(e.ch, 'perception')));
+    const r = check(getStat(a.ch, 'stealth'), dc, this.rng);
+    const ok = r.degree >= 2;
+    this.log(`${a.ch.name}: Skradanie ${r.d20}${r.mod >= 0 ? '+' : ''}${r.mod} = ${r.total} vs ST ${dc} — ${ok ? 'zasadzka!' : 'wrogowie dostrzegają ruch.'}`, ok ? 'amber' : 'bad');
+    this.startCombat(g, ok);
+    return r;
+  }
+
   private onCombatEnd(outcome: CombatEnd): void {
     if (outcome === 'defeat') {
-      // Cała drużyna powalona = nikt nie wyniesie rannych: wszyscy giną (stary kod: od razu ekran końca gry).
-      for (const p of this.pcs) if (p.state !== 'dead') p.ch.conditions.dead = 1;
-      this.combat.syncAll();
+      // Cała drużyna powalona = koniec drogi (Oldgame mission.js:558-568: ekran końca gry, polegli = faktycznie martwi).
       this.finish('fail');
       return;
     }
@@ -510,6 +523,8 @@ export class Mission {
    */
   interact(a: Actor, th: MissionThing, skill?: SkillId): boolean {
     if (th.done || cheb(a, th) > 1 || a.state !== 'up') return false;
+    // Oldgame combat.js:450: akcja schodzi tylko, gdy interakcja się udała.
+    if (th.kind === 'crate' && !skill) return false;
     if (this.mode === 'combat' && !this.combat.spendActions(a, 1)) return false;
     if (th.kind === 'item') {
       th.done = true;

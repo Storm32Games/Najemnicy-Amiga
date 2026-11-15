@@ -9,8 +9,8 @@ import { abilityDef, itemDef } from '../../core/rules/lookup';
 import { abilityIcon, abilityKind, itemIcon } from '../legacy/icons';
 import { portraitCanvas } from '../legacy/portraits';
 import { addHiRes } from '../iso/HiRes';
-import { BASE_H, BASE_W, PAL, type UiButton, ZOOM, autoZoom, button, hex, label, panel, parseColor } from './Kit';
-import { RES_CHOICES, type ResSetting, Settings } from './Settings';
+import { ART, BASE_H, BASE_W, PAL, type UiButton, ZOOM, applyZoom, autoZoom, button, canApplyZoomLive, hex, label, panel, parseColor } from './Kit';
+import { RES_CHOICES, type ResSetting, Settings, UI_SIZES } from './Settings';
 
 // Okna, podpowiedzi, listy przewijane, pole tekstowe, opcje i zapis gry - odpowiedniki UI.modal / UI.toast / UI.tooltip,
 // Settings.open, nameEditor i Game.save z Oldgame, zbudowane z obiektów Phasera (bez DOM-owej nakładki).
@@ -77,38 +77,39 @@ const hashStr = (s: string): string => {
   return (h >>> 0).toString(36);
 };
 
-/** Klucz tekstury portretu 64x64 (budowany raz na wygląd). */
 /**
  * Tekstura portretu o rozmiarze projektowym `size` (domyślnie 32). Portret jest malowany w 2x gęstości projektowej
  * (32 -> 64 px, 40 -> 80 px), a HiRes dokłada Scale2x do gęstości płótna - bez skalowania na GPU, więc jest ostry.
- * Wyświetlaj go w tym samym rozmiarze, w jakim został zamówiony.
+ * Wyświetlaj go w tym samym rozmiarze, w jakim został zamówiony. Klucz zawiera ART: po zmianie rozdzielczości
+ * (applyZoom) powstaje nowa tekstura w nowej gęstości.
  */
 export function portraitKey(scene: Phaser.Scene, ch: PortraitSource, size = 32): string {
   const id = hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`);
-  const key = size === 32 ? `por_${id}` : `por_${id}_${size}`;
+  const key = `por_${id}_${size}@${ART}`;
   if (!scene.textures.exists(key)) addHiRes(scene, key, portraitCanvas(ch, size * 2) as HTMLCanvasElement, { w: size, h: size });
   return key;
 }
 
-/** Portret w ramce; (x, y) = lewy górny róg, size w pikselach projektowych. */
+/** Portret w ramce; (x, y) = lewy górny róg, size w pikselach projektowych. Tekstura 1:1 z pikselami ekranu. */
 export function portrait(scene: Phaser.Scene, x: number, y: number, ch: PortraitSource, size = 32, frame: number = PAL.edge): Phaser.GameObjects.Container {
-  const img = scene.add.image(0, 0, portraitKey(scene, ch)).setOrigin(0).setDisplaySize(size, size);
+  const img = scene.add.image(0, 0, portraitKey(scene, ch, size)).setOrigin(0).setDisplaySize(size, size);
   const edge = scene.add.rectangle(0, 0, size, size).setOrigin(0).setStrokeStyle(1, frame);
   return scene.add.container(x, y, [img, edge]);
 }
 
+/** Ikona przedmiotu w gęstości płótna (HiRes): rozmiar projektowy `size`, bez skalowania na GPU. */
 export function itemIconImage(scene: Phaser.Scene, x: number, y: number, id: string, size = 12): Phaser.GameObjects.Image {
   const def = itemDef(id);
-  const key = `ico_${def?.icon ?? ''}_${def?.type ?? id}_${id}_${size}`;
+  const key = `ico_${def?.icon ?? ''}_${def?.type ?? id}_${id}_${size}@${ART}`;
   if (!scene.textures.exists(key)) addHiRes(scene, key, itemIcon(def ?? id, 32) as HTMLCanvasElement, { w: size, h: size });
   return scene.add.image(x, y, key).setOrigin(0).setDisplaySize(size, size);
 }
 
-/** Ikona zdolności (Oldgame/src/gfx/icons.js: abilityIcon) - odznaka z glifem wg icon/id/fx zdolności. */
+/** Ikona zdolności (Oldgame/src/gfx/icons.js: abilityIcon) - odznaka z glifem wg id/icon zdolności, malowana natywnie. */
 export function abilityIconImage(scene: Phaser.Scene, x: number, y: number, id: string, size = 12): Phaser.GameObjects.Image {
   const def = abilityDef(id);
   const src = def ? { icon: def.icon, id: def.id, name: def.name, fx: def.fx } : id;
-  const key = `abico_${abilityKind(src)}_${size}`;
+  const key = `abico_${abilityKind(src)}_${size}@${ART}`;
   if (!scene.textures.exists(key)) addHiRes(scene, key, abilityIcon(src, 24) as HTMLCanvasElement, { w: size, h: size });
   return scene.add.image(x, y, key).setOrigin(0).setDisplaySize(size, size);
 }
@@ -151,7 +152,7 @@ export class Tip {
   }
 
   private place(p: Phaser.Input.Pointer): void {
-    const w = this.bg.width, h = this.bg.height;
+    const k = this.box.scaleX, w = this.bg.width * k, h = this.bg.height * k;
     let x = p.worldX + 8, y = p.worldY + 8;
     if (x + w > BASE_W - 2) x = p.worldX - w - 6;
     if (y + h > BASE_H - 2) y = p.worldY - h - 6;
@@ -166,7 +167,7 @@ export class Tip {
       this.owner = obj;
       this.text.setText(s);
       this.bg.setSize(this.text.displayWidth + 8, this.text.displayHeight + 7);
-      this.box.setVisible(true);
+      this.box.setScale(Settings.uiScale).setVisible(true);
       this.place(p);
     });
     const hide = (): void => {
@@ -192,7 +193,7 @@ const TONE: Record<Tone, number> = { good: PAL.good, amber: PAL.amber, bad: PAL.
 export function toast(scene: Phaser.Scene, msg: string, tone: Tone = 'amber'): void {
   const t = label(scene, 0, 0, msg, { size: 7, color: TONE[tone], wrap: 280, align: 'center' }).setOrigin(0.5);
   const bg = scene.add.rectangle(0, 0, t.displayWidth + 16, t.displayHeight + 8, 0x120e0a, 0.96).setStrokeStyle(1, TONE[tone]);
-  const box = scene.add.container(BASE_W / 2, 30, [bg, t]).setDepth(D_TOAST).setAlpha(0);
+  const box = scene.add.container(BASE_W / 2, 30, [bg, t]).setDepth(D_TOAST).setAlpha(0).setScale(Settings.uiScale);
   scene.tweens.add({ targets: box, alpha: 1, y: 36, duration: 160 });
   scene.tweens.add({ targets: box, alpha: 0, delay: 2200, duration: 400, onComplete: () => box.destroy() });
 }
@@ -221,8 +222,7 @@ export function openWindow(scene: Phaser.Scene, w: number, h: number, title: str
   scene.data.set('modals', (scene.data.get('modals') ?? 0) + 1);
   const depth = D_MODAL + (scene.data.get('modals') as number) * 10;
   const back = scene.add.rectangle(0, 0, BASE_W, BASE_H, 0x000000, 0.66).setOrigin(0).setInteractive().setDepth(depth);
-  const x = Math.round((BASE_W - w) / 2), y = Math.round((BASE_H - h) / 2);
-  const box = panel(scene, x, y, w, h, PAL.edgeHi, 0.98).setDepth(depth + 1);
+  const box = fitWindow(panel(scene, 0, 0, w, h, PAL.edgeHi, 0.98).setDepth(depth + 1), w, h);
   if (title) box.add(label(scene, 8, 6, title.toUpperCase(), { size: 9, bold: true, color: PAL.amber }));
   let closed = false;
   const level = scene.data.get('modals') as number;
@@ -258,6 +258,16 @@ export function openWindow(scene: Phaser.Scene, w: number, h: number, title: str
   return win;
 }
 
+/**
+ * Skala i środek okna wg rozmiaru interfejsu (Opcje: Settings.uiScale), tak by okno zawsze mieściło się na ekranie.
+ * Zawartość okna leży w kontenerze, więc skaluje się razem z nim (także obszary kliknięć).
+ */
+export function fitWindow(box: Phaser.GameObjects.Container, w: number, h: number): Phaser.GameObjects.Container {
+  const ui = Settings.uiScale;
+  const k = Math.max(Math.min(ui, 1), Math.min(ui, (BASE_W - 4) / w, (BASE_H - 4) / h));
+  return box.setScale(k).setPosition(Math.round((BASE_W - w * k) / 2), Math.round((BASE_H - h * k) / 2));
+}
+
 export interface DialogButton<T> {
   label: string;
   value: T;
@@ -291,10 +301,10 @@ export function dialog<T>(scene: Phaser.Scene, o: { title: string; body: string;
 
 // ------------------------------------------------------------------ opcje (Oldgame/src/core/settings.js)
 
-/** Okno opcji: dźwięk + wyciszenie, pełny ekran, efekty retro, rozdzielczość. Esc / klik w tło zamyka. */
+/** Okno opcji: dźwięk + wyciszenie, pełny ekran, rozmiar interfejsu, efekty retro, rozdzielczość. Esc / klik w tło zamyka. */
 export function openOptions(scene: Phaser.Scene): Promise<void> {
   return new Promise<void>((resolve) => {
-    const W = 330, H = 222;
+    const W = 330, H = 248;
     const win = openWindow(scene, W, H, 'Opcje', resolve);
     const L = 12, R = 172;
     const head = (x: number, y: number, t: string): void => void win.add(label(scene, x, y, t.toUpperCase(), { size: 6, bold: true, color: PAL.dim }));
@@ -316,7 +326,7 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
         val.setText(`${Math.round(v * 100)}%`);
       };
       const set = (p: Phaser.Input.Pointer): void => {
-        const local = (p.worldX - (win.box.x + bx)) / bw;
+        const local = (p.worldX - (win.box.x + bx * win.box.scaleX)) / (bw * win.box.scaleX);
         SoundManager.setVolume({ [k]: Math.round(Phaser.Math.Clamp(local, 0, 1) * 20) / 20 });
         paint();
       };
@@ -356,8 +366,25 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     toggle(R, 76, 'Dithering', () => Settings.values.dither, (v) => Settings.set('dither', v), 'raster Bayera jak przy ograniczonej palecie');
     toggle(R, 98, 'Profil Amiga', () => Settings.values.amiga, (v) => Settings.set('amiga', v), 'A1200/PiStorm: 50 Hz, bez nakładek (restart)');
 
-    // --- rozdzielczość (dół, pełna szerokość)
-    head(L, 136, 'Rozdzielczość obrazu');
+    // --- rozmiar interfejsu (Oldgame/src/core/settings.js:56-57): skala okien, podpowiedzi i komunikatów
+    head(L, 134, 'Rozmiar interfejsu');
+    const uiMarks: [number, UiButton][] = [];
+    const paintUi = (): void => {
+      for (const [k, b] of uiMarks) b.setLabel((Math.abs(Settings.uiScale - k) < 0.01 ? '● ' : '○ ') + (UI_SIZES.find(([v]) => v === k)?.[1] ?? '').replace('Bardzo', 'B.'));
+    };
+    UI_SIZES.forEach(([k], i) => {
+      const b = button(scene, L + i * 77, 144, '', () => {
+        Settings.set('ui', k);
+        fitWindow(win.box, W, H);
+        paintUi();
+      }, { w: 74, h: 13, size: 6 });
+      uiMarks.push([k, b]);
+      win.add(b.box);
+    });
+    paintUi();
+
+    // --- rozdzielczość (dół, pełna szerokość); poza misją zmienia się od razu, w misji po ponownym uruchomieniu
+    head(L, 164, 'Rozdzielczość obrazu');
     const marks: [ResSetting, UiButton][] = [];
     const paintRes = (): void => {
       for (const [r, b] of marks) b.setLabel((Settings.values.res === r ? '● ' : '○ ') + (r === 'auto' ? 'Auto' : `${r}×`));
@@ -367,15 +394,18 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
       restart.box.setVisible(want !== ZOOM);
     };
     RES_CHOICES.forEach((r, i) => {
-      const b = button(scene, L + i * 51, 146, '', () => {
+      const b = button(scene, L + i * 51, 174, '', () => {
         Settings.set('res', r);
+        const want = r === 'auto' ? autoZoomFor() : r;
+        if (canApplyZoomLive(scene.game)) applyZoom(scene.game, want);
         paintRes();
       }, { w: 48, h: 13, size: 6 });
       marks.push([r, b]);
       win.add(b.box);
     });
-    const resNote = win.add(label(scene, L, 163, '', { size: 5.5, color: PAL.dim }));
-    win.add(label(scene, L, 172, 'Auto = największa ostra skala mieszcząca się w oknie przeglądarki.', { size: 5.5, color: PAL.dim }));
+    const resNote = win.add(label(scene, L, 191, '', { size: 5.5, color: PAL.dim }));
+    win.add(label(scene, L, 200, 'Auto = największa ostra skala mieszcząca się w oknie przeglądarki.', { size: 5.5, color: PAL.dim }));
+    win.add(label(scene, L, 208, 'W trakcie misji zmiana rozdzielczości wymaga ponownego uruchomienia.', { size: 5.5, color: PAL.dim }));
     const restart = button(scene, L, H - 22, 'Uruchom ponownie', async () => {
       const inMission = scene.scene.isActive('WorldScene');
       const ok = await dialog(scene, {
@@ -481,7 +511,12 @@ export function namePrompt(scene: Phaser.Scene, o: NamePromptOptions): Promise<{
     const mark = (): void => marks.forEach(([c, sw]) => sw.setStrokeStyle(c === color ? 2 : 1, c === color ? 0xffffff : 0x000000));
     mark();
     win.add(button(scene, 10, 76, 'Losuj imię', () => {
-      value = o.generate();
+      // do 8 prób, aż imię przejdzie walidację (Oldgame/src/scenes/meta/nameedit.js:29)
+      for (let i = 0; i < 8; i++) {
+        value = o.generate();
+        if (checkName(value, o.taken()).ok) break;
+      }
+      SoundManager.sfx('dice', { vol: 0.4 });
       paint();
     }, { w: 70, size: 7 }).box);
     if (o.reset)

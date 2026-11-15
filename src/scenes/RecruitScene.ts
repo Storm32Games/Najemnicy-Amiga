@@ -13,7 +13,8 @@ import { abilityDef, ancestryOf, classDef, itemDef } from '../core/rules/lookup'
 import { getStat } from '../core/rules/stats';
 import type { Character } from '../core/rules/types';
 import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, canvasTexture, cut, dunes, enter, goto, hex, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
-import { miniButton, modalOpen, namePrompt, openWindow, portrait } from './ui/Widgets';
+import { addUnit, unitLookOf } from './iso/UnitLooks';
+import { Tip, miniButton, modalOpen, namePrompt, openWindow, portrait } from './ui/Widgets';
 
 // Werbunek (port Oldgame/src/scenes/recruit.js): wybierz dokładnie 4 z 16 gotowych najemników.
 
@@ -41,6 +42,9 @@ export class RecruitScene extends Phaser.Scene {
   private hint!: PixelText;
   private start!: UiButton;
   private dust: Motes | null = null;
+  private tip!: Tip;
+  /** Wybrani najemnicy stojący na placu pod panelami (Oldgame/src/scenes/recruit.js:122-123). */
+  private figures = new Map<string, Phaser.GameObjects.Sprite>();
 
   constructor() {
     super('RecruitScene');
@@ -58,6 +62,7 @@ export class RecruitScene extends Phaser.Scene {
     this.cards = [];
     this.previews = new Map();
     this.custom = new Map();
+    this.figures = new Map();
 
     canvasTexture(this, 'recruit_bg', BASE_W, BASE_H, (g, w, h) => {
       skyGradient(g, w, h, [[0, '#1a1030'], [0.45, '#6a3440'], [0.7, '#c0683a'], [0.85, '#e0a060']]);
@@ -97,7 +102,9 @@ export class RecruitScene extends Phaser.Scene {
 
     // ---- dół
     button(this, 8, BASE_H - 26, '◀ Wróć', () => goto(this, 'TitleScene'), { w: 50 });
-    this.hint = label(this, 66, BASE_H - 22, '', { size: 7, color: PAL.dim });
+    // podpowiedź w nagłówku - dół między przyciskami zajmują sylwetki wybranych
+    this.hint = label(this, BASE_W - 90, 9, '', { size: 7, color: PAL.dim }).setOrigin(1, 0);
+    this.tip = new Tip(this, 180);
     button(this, BASE_W - 254, BASE_H - 26, 'Pomoc', () => this.help(), { w: 44 });
     button(this, BASE_W - 204, BASE_H - 26, 'Losuj drużynę', () => this.randomParty(), { w: 92 });
     this.start = button(this, BASE_W - 106, BASE_H - 28, 'Rozpocznij ▶', () => this.begin(), { primary: true, w: 98, h: 20, size: 9 });
@@ -116,6 +123,7 @@ export class RecruitScene extends Phaser.Scene {
     const ch = this.preview(r);
     const cls = classDef(r.classId), anc = ancestryOf(ch.ancestry);
     const D = this.detail;
+    this.tip?.hide();
     D.removeAll(true);
     const add = <T extends Phaser.GameObjects.GameObject>(o: T): T => (D.add(o), o);
     const L = (x: number, y: number, s: string, o: Parameters<typeof label>[4] = {}) => add(label(this, x, y, s, o));
@@ -147,17 +155,19 @@ export class RecruitScene extends Phaser.Scene {
       L(x + kl.displayWidth, y, v, { bold: true, color: col });
     });
 
-    const chips = (y: number, title: string, items: string[], color: number, edge: number): number => {
+    const chips = (y: number, title: string, items: string[], color: number, edge: number, tips: string[] = []): number => {
       L(8, y, title, { size: 6, color: PAL.dim });
       let x = 8, cy = y + 9;
-      for (const s of items.length ? items : ['—']) {
+      for (const [i, s] of (items.length ? items : ['—']).entries()) {
         const t = label(this, 0, 0, s, { size: 7, color });
         const tw = t.displayWidth;
         if (x + tw + 6 > DET_W - 8) {
           x = 8;
           cy += 12;
         }
-        add(this.add.rectangle(x, cy, tw + 6, 10, 0x000000, 0.35).setOrigin(0).setStrokeStyle(1, edge));
+        const chip = add(this.add.rectangle(x, cy, tw + 6, 10, 0x000000, 0.35).setOrigin(0).setStrokeStyle(1, edge));
+        // opis po najechaniu (UI.tooltip w recruit.js:34)
+        if (tips[i]) this.tip.attach(chip.setInteractive(), () => (modalOpen(this) ? '' : tips[i]));
         add(t.setPosition(x + 3, cy + 0.5));
         x += tw + 9;
       }
@@ -172,7 +182,8 @@ export class RecruitScene extends Phaser.Scene {
     L(8, 136, cut(`Wyposażenie: ${gear.join(', ') || '—'}`, 76), { size: 6, color: PAL.dim });
     const universal: readonly string[] = UNIVERSAL_ABILITIES;
     const y = chips(146, 'KLUCZOWE UMIEJĘTNOŚCI', skills.map((s) => `${SKILLS[s.id]?.name ?? s.id} ${signed(s.v)} (${PROF_NAMES[s.rank]?.slice(0, 3) ?? ''}.)`), PAL.text, PAL.edge);
-    chips(y, 'ZDOLNOŚCI KLASY', ch.abilities.filter((id) => !universal.includes(id)).map((id) => abilityDef(id)?.name).filter((n): n is string => !!n).slice(0, 5), PAL.toxic, 0x4f6a2a);
+    const abil = ch.abilities.filter((id) => !universal.includes(id)).map((id) => abilityDef(id)).filter((a): a is NonNullable<typeof a> => !!a?.name).slice(0, 5);
+    chips(y, 'ZDOLNOŚCI KLASY', abil.map((a) => a.name), PAL.toxic, 0x4f6a2a, abil.map((a) => `${a.name}\n${a.desc ?? ''}`.trim()));
 
     for (const c of this.cards) c.bg.setStrokeStyle(1, c.r === r ? PAL.edgeHi : this.picks.includes(c.r) ? PAL.toxic : PAL.edge);
   }
@@ -275,7 +286,29 @@ export class RecruitScene extends Phaser.Scene {
     if (full && new Set(this.picks.map((r) => r.classId)).size < 3) hint += ' (mało różnorodna drużyna)';
     this.hint.setText(hint).setColor(hex(PAL.dim));
 
+    this.standFigures();
     if (sound) SoundManager.sfx(n ? 'pickup' : 'click', { vol: 0.5 });
+  }
+
+  /** Sylwetki wybranych w kolejności wyboru; nowa postać "wyrasta" jak w Oldgame (skala 0.6 -> 1). */
+  private standFigures(): void {
+    for (const [id, sp] of this.figures) {
+      if (this.picks.some((r) => r.id === id)) continue;
+      sp.destroy();
+      this.figures.delete(id);
+    }
+    const n = this.picks.length;
+    this.picks.forEach((r, i) => {
+      const x = Math.round(142 + (i - (n - 1) / 2) * 34), y = BASE_H - 3 - (i % 2);
+      let sp = this.figures.get(r.id);
+      if (!sp) {
+        sp = addUnit(this, x, y, `pc_${r.id}`, unitLookOf(this.preview(r))).setDepth(2).setScale(0.6);
+        this.tweens.add({ targets: sp, scale: 1, duration: 250, ease: 'Back.easeOut' });
+        this.figures.set(r.id, sp);
+      }
+      this.tweens.add({ targets: sp, x, y, duration: 180 });
+      sp.setFlipX(i >= n / 2 && n > 1);
+    });
   }
 
   private begin(): void {
