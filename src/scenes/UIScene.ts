@@ -28,6 +28,7 @@ import { normWeapon } from '../core/rules/stats';
 import { TurnPhase } from '../core/TurnManager';
 import { BASE_H, BASE_W, PAL, ZOOM, button as kitButton, fitCamera, label, parseColor } from './ui/Kit';
 import { fitText } from './ui/FontGlyphs';
+import { MissionLayout, type MissionLayoutData } from './ui/MissionLayout';
 import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
 
 // HUD misji - port Oldgame/src/mission/hud.js (DOM) do Phasera, w stylu terminala CRT.
@@ -162,6 +163,35 @@ function keepAnchor(x: number, w0: number, w1: number, total: number): number {
 /** Rozmiar dziennika (zmieniany uchwytem w prawym dolnym rogu). */
 let logSize = { w: LOG_W, h: LOG_H };
 const LOG_MIN_W = 120;
+
+/** Układ domyślny wszystkich okien (PPM na nagłówku resetuje pojedynczy panel). */
+function resetLayout(): void {
+  for (const k of Object.keys(panelPos) as PanelId[]) {
+    panelPos[k] = null;
+    panelScale[k] = 1;
+  }
+  partyPos = null;
+  partyHoriz = true;
+  partyScale = 1;
+  logSize = { w: LOG_W, h: LOG_H };
+}
+/** Wczytanie zapisanego układu (opcja "Zapamiętuj układ okien misji"). */
+function loadLayout(): void {
+  const d = MissionLayout.load();
+  if (!d) return;
+  for (const k of Object.keys(panelPos) as PanelId[]) {
+    if (d.panelPos && k in d.panelPos) panelPos[k] = d.panelPos[k] ?? null;
+    if (d.panelScale?.[k]) panelScale[k] = d.panelScale[k]!;
+  }
+  if (d.partyPos !== undefined) partyPos = d.partyPos;
+  if (d.partyHoriz !== undefined) partyHoriz = d.partyHoriz;
+  if (d.partyScale) partyScale = d.partyScale;
+  if (d.logSize) logSize = { w: Math.max(LOG_MIN_W, Math.round(d.logSize.w)), h: Math.max(LOG_HEAD + 3 * LH + 3, Math.round(d.logSize.h)) };
+}
+const layoutSnapshot = (): MissionLayoutData => ({ panelPos: { ...panelPos }, panelScale: { ...panelScale }, partyPos, partyHoriz, partyScale, logSize: { ...logSize } });
+const saveLayout = (): void => MissionLayout.save(layoutSnapshot());
+MissionLayout.setSource(layoutSnapshot);
+MissionLayout.onReset(resetLayout);
 const LOG_HEAD = 13; // nagłówek + linia
 
 interface DisplayLine {
@@ -272,6 +302,7 @@ export class UIScene extends Phaser.Scene {
   create(): void {
     if (!this.hud) throw new Error('UIScene: brak HudState - uruchom przez scene.launch("UIScene", { hud })');
     fitCamera(this);
+    loadLayout();
 
     // ---- lewy górny: drużyna
     this.partyLayer = this.add.container(M, M);
@@ -323,11 +354,15 @@ export class UIScene extends Phaser.Scene {
       const press = this.partyPress;
       this.partyPress = null;
       if (this.drag?.target === 'party' && press && !press.moved) press.click?.();
+      if (this.drag && this.drag.target !== 'logThumb') saveLayout();
       this.drag = null;
       this.stopLogRepeat();
       if (thumb) this.drawLog();
     });
-    this.input.on('gameout', () => (this.drag = null));
+    this.input.on('gameout', () => {
+      if (this.drag && this.drag.target !== 'logThumb') saveLayout();
+      this.drag = null;
+    });
 
     // ---- klawiatura (jak w starym HUD: Spacja, I, X, Esc, 1-9)
     // (Oldgame/src/scenes/mission.js:640-651: H, F, G, Tab, Spacja, Esc, 1-9)
@@ -384,6 +419,12 @@ export class UIScene extends Phaser.Scene {
     // ---- subskrypcja modelu
     const off = this.hud.on((c) => this.onHudChange(c));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
+    // "Domyślny układ okien" w Opcjach (stan modułu zeruje już resetLayout)
+    const offLayout = MissionLayout.onReset(() => {
+      this.drawParty();
+      for (const id of Object.keys(panelPos) as PanelId[]) this.placePanel(id);
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, offLayout);
 
 
     this.drawParty();
@@ -671,6 +712,7 @@ export class UIScene extends Phaser.Scene {
         partyHoriz = true;
         partyScale = 1;
         this.drawParty();
+        saveLayout();
         SoundManager.sfx('click');
         return;
       }
@@ -693,6 +735,7 @@ export class UIScene extends Phaser.Scene {
     if (partyPos) partyPos = { x: keepAnchor(this.partyLayer.x, w0, w1, BASE_W), y: keepAnchor(this.partyLayer.y, h0, h1, BASE_H) };
     SoundManager.sfx('click');
     this.drawParty();
+    saveLayout();
     this.hud.setHover(`Skala kart: ${Math.round(partyScale * 100)}%`);
   }
 
@@ -1187,6 +1230,7 @@ export class UIScene extends Phaser.Scene {
         panelPos[target] = null;
         panelScale[target] = 1;
         this.placePanel(target);
+        saveLayout();
         SoundManager.sfx('click');
         return;
       }
@@ -1266,6 +1310,7 @@ export class UIScene extends Phaser.Scene {
     if (panelPos[id]) panelPos[id] = { x: keepAnchor(box.x, w * s0, w * s1, BASE_W), y: keepAnchor(box.y, h * s0, h * s1, BASE_H) };
     SoundManager.sfx('click');
     this.placePanel(id);
+    saveLayout();
     this.hud.setHover(`Skala panelu: ${Math.round(s1 * 100)}%`);
   }
 

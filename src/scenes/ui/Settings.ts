@@ -23,9 +23,11 @@ export interface SettingsValues {
    * z mieszaniem alfa (linie / ziarno / raster), bez tekstur większych niż 256x256 w logo. Podgląd budżetu docelowego.
    */
   amiga: boolean;
+  /** Zapamiętywanie układu okien HUD misji (pozycje i skale paneli) między uruchomieniami gry. */
+  layout: boolean;
 }
 
-const DEFAULTS: SettingsValues = { res: 'auto', ui: 1, scanlines: true, grain: true, dither: true, amiga: false };
+const DEFAULTS: SettingsValues = { res: 'auto', ui: 1, scanlines: true, grain: true, dither: true, amiga: false, layout: false };
 
 const validRes = (v: unknown): v is ResSetting => v === 'auto' || (typeof v === 'number' && [2, 3, 4, 5, 6].includes(v));
 

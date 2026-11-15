@@ -11,6 +11,7 @@ import { portraitCanvas } from '../legacy/portraits';
 import { addHiRes } from '../iso/HiRes';
 import { ART, BASE_H, BASE_W, PAL, type UiButton, ZOOM, applyZoom, autoZoom, button, canApplyZoomLive, hex, label, panel, parseColor } from './Kit';
 import { RES_CHOICES, type ResSetting, Settings, UI_SIZES } from './Settings';
+import { MissionLayout } from './MissionLayout';
 
 // Okna, podpowiedzi, listy przewijane, pole tekstowe, opcje i zapis gry - odpowiedniki UI.modal / UI.toast / UI.tooltip,
 // Settings.open, nameEditor i Game.save z Oldgame, zbudowane z obiektów Phasera (bez DOM-owej nakładki).
@@ -365,6 +366,7 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     toggle(R, 54, 'Ziarno filmu', () => Settings.values.grain, (v) => Settings.set('grain', v), 'migoczący szum obrazu');
     toggle(R, 76, 'Dithering', () => Settings.values.dither, (v) => Settings.set('dither', v), 'raster Bayera jak przy ograniczonej palecie');
     toggle(R, 98, 'Profil Amiga', () => Settings.values.amiga, (v) => Settings.set('amiga', v), 'A1200/PiStorm: 50 Hz, bez nakładek (restart)');
+    toggle(R, 118, 'Układ okien misji', () => Settings.values.layout, (v) => MissionLayout.setEnabled(v), 'zapamiętuj pozycje i skale okien HUD');
 
     // --- rozmiar interfejsu (Oldgame/src/core/settings.js:56-57): skala okien, podpowiedzi i komunikatów
     head(L, 134, 'Rozmiar interfejsu');
@@ -419,6 +421,12 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     }, { w: 100, size: 6.5 });
     win.add(restart.box);
     paintRes();
+    const resetLayout = button(scene, L + 106, H - 22, 'Domyślny układ okien', () => {
+      MissionLayout.reset();
+      SoundManager.sfx('click');
+      toast(scene, 'Przywrócono domyślny układ okien misji');
+    }, { w: 140, size: 6.5 });
+    win.add(resetLayout.box);
 
     win.add(button(scene, W - 62, H - 22, 'Gotowe', () => win.close(), { w: 54, size: 7, primary: true }).box);
   });
