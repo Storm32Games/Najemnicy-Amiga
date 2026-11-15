@@ -115,15 +115,35 @@ export class DebriefScene extends Phaser.Scene {
     if (r.items.length)
       at(0.5, () => {
         this.reveal(line('Łup:', PAL.dim, 6), 'pickup');
-        r.items.slice(0, 10).forEach((id, i) => {
-          const x = LX + (i % 2) * 90, y = ly + Math.floor(i / 2) * 13;
-          const hit = this.add.rectangle(x, y, 86, 12, 0x000000, 0.3).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
-          this.tip.attach(hit, () => itemTip(id));
-          this.reveal(hit);
-          this.reveal(itemIconImage(this, x + 1, y + 1, id, 10));
-          this.reveal(label(this, x + 14, y + 2.5, cut(itemDef(id)?.name ?? id, 17), { size: 5.5 }));
-        });
-        ly += Math.ceil(Math.min(10, r.items.length) / 2) * 13 + 4;
+        // cały łup: te same przedmioty łączone w stosy (xN); gdy lista z nazwami nie mieści się w panelu - zwarta siatka ikon
+        const stacks = new Map<string, number>();
+        for (const id of r.items) stacks.set(id, (stacks.get(id) ?? 0) + 1);
+        const list = [...stacks.entries()];
+        const reserve = (r.fallen.length ? 14 : 0) + (r.story ? 14 : 0);
+        const room = PH - 28 - reserve - ly;
+        const namedRows = Math.ceil(list.length / 2);
+        if (namedRows * 13 <= room) {
+          list.forEach(([id, n], i) => {
+            const x = LX + (i % 2) * 90, y = ly + Math.floor(i / 2) * 13;
+            const hit = this.add.rectangle(x, y, 86, 12, 0x000000, 0.3).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
+            this.tip.attach(hit, () => itemTip(id));
+            this.reveal(hit);
+            this.reveal(itemIconImage(this, x + 1, y + 1, id, 10));
+            this.reveal(label(this, x + 14, y + 2.5, cut(itemDef(id)?.name ?? id, n > 1 ? 14 : 17) + (n > 1 ? ` ×${n}` : ''), { size: 5.5 }));
+          });
+          ly += namedRows * 13 + 4;
+        } else {
+          const CELL = 15, cols = Math.floor((RX - LX - 8) / CELL);
+          list.forEach(([id, n], i) => {
+            const x = LX + (i % cols) * CELL, y = ly + Math.floor(i / cols) * CELL;
+            const hit = this.add.rectangle(x, y, CELL - 1, CELL - 1, 0x000000, 0.3).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
+            this.tip.attach(hit, () => itemTip(id, n > 1 ? `\nZdobyto: ×${n}` : ''));
+            this.reveal(hit);
+            this.reveal(itemIconImage(this, x + 1, y + 1, id, 12));
+            if (n > 1) this.reveal(label(this, x + CELL - 2, y + CELL - 7, String(n), { size: 5, bold: true, color: PAL.amber }).setOrigin(1, 0));
+          });
+          ly += Math.ceil(list.length / cols) * CELL + 4;
+        }
       });
     if (r.fallen.length) at(0.6, () => this.reveal(line('Polegli: ' + r.fallen.join(', '), PAL.bad), 'death'));
     if (r.story) at(0.6, () => this.reveal(line(r.win ? '★ Kostucha nie żyje!' : '★ Wątek fabularny posunął się naprzód.', PAL.amber), 'levelup'));

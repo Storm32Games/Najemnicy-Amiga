@@ -112,7 +112,7 @@ export const WEAPONS = {
     type: 'weapon',
     price: 900,
     level: 5,
-    icon: 'blade',
+    icon: 'monoblade',
     weapon: {
       dmgType: 'S',
       range: 0,
@@ -194,7 +194,7 @@ export const WEAPONS = {
     type: 'weapon',
     price: 120,
     level: 1,
-    icon: 'pistol',
+    icon: 'revolver',
     weapon: {
       dmgType: 'P',
       range: 9,
@@ -215,7 +215,7 @@ export const WEAPONS = {
     type: 'weapon',
     price: 90,
     level: 0,
-    icon: 'shotgun',
+    icon: 'sawedoff',
     weapon: {
       dmgType: 'P',
       range: 3,
@@ -299,7 +299,7 @@ export const WEAPONS = {
     type: 'weapon',
     price: 260,
     level: 2,
-    icon: 'rifle',
+    icon: 'sniper',
     weapon: {
       dmgType: 'P',
       range: 18,
@@ -320,7 +320,7 @@ export const WEAPONS = {
     type: 'weapon',
     price: 450,
     level: 3,
-    icon: 'rifle',
+    icon: 'assault',
     weapon: {
       dmgType: 'P',
       range: 14,
@@ -341,7 +341,7 @@ export const WEAPONS = {
     type: 'weapon',
     price: 600,
     level: 4,
-    icon: 'laser',
+    icon: 'laser_pistol',
     weapon: {
       dmgType: 'fire',
       range: 10,
@@ -362,7 +362,7 @@ export const WEAPONS = {
     type: 'weapon',
     price: 1500,
     level: 6,
-    icon: 'laser',
+    icon: 'laser_rifle',
     weapon: {
       dmgType: 'fire',
       range: 16,
@@ -387,7 +387,7 @@ export const ARMORS = {
     type: 'armor',
     price: 40,
     level: 0,
-    icon: 'armor_leather',
+    icon: 'leather',
     armor: { checkPenalty: 0, speedPenalty: 0, ac: 1, dexCap: 4, category: 'light' },
   },
   nomad_cloak: {
@@ -397,7 +397,7 @@ export const ARMORS = {
     type: 'armor',
     price: 60,
     level: 1,
-    icon: 'armor_leather',
+    icon: 'cloak',
     armor: { checkPenalty: 0, speedPenalty: 0, ac: 1, dexCap: 5, category: 'light' },
   },
   scrap_armor: {
@@ -407,7 +407,7 @@ export const ARMORS = {
     type: 'armor',
     price: 80,
     level: 1,
-    icon: 'armor_scrap',
+    icon: 'scrap_armor',
     armor: { checkPenalty: 1, speedPenalty: 0, ac: 2, dexCap: 3, category: 'light' },
   },
   scrap_plate: {
@@ -417,7 +417,7 @@ export const ARMORS = {
     type: 'armor',
     price: 160,
     level: 1,
-    icon: 'armor_scrap',
+    icon: 'scrap_plate',
     armor: { checkPenalty: 1, speedPenalty: 0, ac: 2, dexCap: 2, category: 'medium' },
   },
   kevlar: {
@@ -427,7 +427,7 @@ export const ARMORS = {
     type: 'armor',
     price: 260,
     level: 2,
-    icon: 'armor_kevlar',
+    icon: 'vest',
     armor: { checkPenalty: 1, speedPenalty: 0, ac: 2, dexCap: 2, category: 'medium' },
   },
   riot_armor: {
@@ -437,7 +437,7 @@ export const ARMORS = {
     type: 'armor',
     price: 520,
     level: 3,
-    icon: 'armor_kevlar',
+    icon: 'riot',
     armor: { checkPenalty: 2, speedPenalty: 0, ac: 4, dexCap: 1, category: 'medium' },
   },
   power_armor: {
@@ -447,7 +447,7 @@ export const ARMORS = {
     type: 'armor',
     price: 1800,
     level: 6,
-    icon: 'armor_power',
+    icon: 'power_armor',
     armor: { checkPenalty: 3, speedPenalty: 1, ac: 6, dexCap: 0, category: 'heavy', tech: true },
   },
 } as const satisfies Readonly<Record<ArmorId, ArmorItem>>;
@@ -471,7 +471,7 @@ export const SHIELDS = {
     type: 'shield',
     price: 130,
     level: 2,
-    icon: 'shield',
+    icon: 'riot_shield',
     shield: { ac: 2, hardness: 5, hp: 30 },
   },
 } as const satisfies Readonly<Record<ShieldId, ShieldItem>>;
@@ -575,7 +575,7 @@ export const CONSUMABLES = {
     type: 'consumable',
     price: 80,
     level: 2,
-    icon: 'grenade',
+    icon: 'emp',
     consumable: {
       actions: 1,
       target: 'area',
@@ -597,7 +597,7 @@ export const CONSUMABLES = {
     type: 'consumable',
     price: 60,
     level: 1,
-    icon: 'stim',
+    icon: 'combat_stim',
     consumable: {
       actions: 1,
       target: 'self',
@@ -617,7 +617,7 @@ export const JUNK = {
     type: 'junk',
     price: 5,
     level: 0,
-    icon: 'junk',
+    icon: 'scrap',
   },
   copper_wire: {
     id: 'copper_wire',
@@ -635,7 +635,7 @@ export const JUNK = {
     type: 'junk',
     price: 6,
     level: 0,
-    icon: 'junk',
+    icon: 'food',
   },
   old_watch: {
     id: 'old_watch',
@@ -644,7 +644,7 @@ export const JUNK = {
     type: 'junk',
     price: 15,
     level: 0,
-    icon: 'junk',
+    icon: 'watch',
   },
   trophy_teeth: {
     id: 'trophy_teeth',
@@ -653,7 +653,7 @@ export const JUNK = {
     type: 'junk',
     price: 20,
     level: 1,
-    icon: 'junk',
+    icon: 'teeth',
   },
   mutant_gland: {
     id: 'mutant_gland',
@@ -662,7 +662,7 @@ export const JUNK = {
     type: 'junk',
     price: 30,
     level: 1,
-    icon: 'junk',
+    icon: 'gland',
   },
   fuel_can: {
     id: 'fuel_can',
@@ -671,7 +671,7 @@ export const JUNK = {
     type: 'junk',
     price: 35,
     level: 1,
-    icon: 'junk',
+    icon: 'fuel',
   },
   battery: {
     id: 'battery',
@@ -689,7 +689,7 @@ export const JUNK = {
     type: 'junk',
     price: 50,
     level: 1,
-    icon: 'mask',
+    icon: 'gas_mask',
   },
   memory_card: {
     id: 'memory_card',
@@ -698,7 +698,7 @@ export const JUNK = {
     type: 'tech',
     price: 35,
     level: 1,
-    icon: 'chip',
+    icon: 'memory_card',
   },
   radio_part: {
     id: 'radio_part',
@@ -707,7 +707,7 @@ export const JUNK = {
     type: 'tech',
     price: 40,
     level: 1,
-    icon: 'chip',
+    icon: 'radio',
   },
   circuit: {
     id: 'circuit',
@@ -725,7 +725,7 @@ export const JUNK = {
     type: 'tech',
     price: 45,
     level: 2,
-    icon: 'chip',
+    icon: 'tube',
   },
   drone_parts: {
     id: 'drone_parts',
@@ -734,7 +734,7 @@ export const JUNK = {
     type: 'tech',
     price: 60,
     level: 2,
-    icon: 'chip',
+    icon: 'drone',
   },
   power_core: {
     id: 'power_core',
@@ -743,7 +743,7 @@ export const JUNK = {
     type: 'tech',
     price: 120,
     level: 4,
-    icon: 'battery',
+    icon: 'power_core',
   },
   ammo_box: {
     id: 'ammo_box',
@@ -752,7 +752,7 @@ export const JUNK = {
     type: 'ammo',
     price: 20,
     level: 0,
-    icon: 'junk',
+    icon: 'ammo',
   },
 } as const satisfies Readonly<Record<Exclude<ItemId, WeaponId | ArmorId | ShieldId | ConsumableId>, JunkItem>>;
 

@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
-import { campaign } from '../core/campaign/session';
+import { campaign, recruitCharacter } from '../core/campaign/session';
 import { freshState } from '../core/campaign/state';
 import { plainName } from '../core/data/names';
+import { RECRUITS } from '../core/data/recruits';
+import type { Character } from '../core/rules/types';
 import { CREDITS, EPILOGUE, GAMEOVER_LINES } from '../core/data/story';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, Typewriter, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline } from './ui/Kit';
@@ -12,6 +14,11 @@ import { Save, toast } from './ui/Widgets';
 
 // Ekrany końcowe (port Oldgame/src/scenes/gameover.js i victory.js).
 
+/**
+ * Dane startowe GameOverScene. Pełne wybicie drużyny (Oldgame/src/scenes/mission.js:565-568) startuje tę scenę od razu,
+ * bez podsumowania misji: `scene.start('GameOverScene', { fallen: [imiona poległych] })`.
+ * Bez `fallen` imiona biorą się z campaign.state.flags.fallen + bieżącej drużyny (jak `casualties` w gameover.js).
+ */
 export interface GameOverData {
   fallen?: string[];
 }
@@ -19,8 +26,7 @@ export interface GameOverData {
 export class GameOverScene extends Phaser.Scene {
   private names: string[] = [];
   private tw: Typewriter | null = null;
-  private line = 0;
-  private wait = 0;
+  private t = 0;
   private text!: PixelText;
   private dust: Motes | null = null;
   private buttons!: Phaser.GameObjects.Container;
@@ -30,14 +36,25 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   init(data: GameOverData): void {
-    this.names = data?.fallen ?? campaign.state.flags.fallen ?? [];
+    const st = campaign.state;
+    const given = Array.isArray(data?.fallen) ? data.fallen.filter((n) => typeof n === 'string' && n) : [];
+    // Oldgame/src/scenes/gameover.js:12 - polegli z misji albo dotychczasowi polegli + drużyna (ostatnie 4 imiona)
+    const pool = given.length ? given : [...(st.flags.fallen ?? []), ...st.party.map((c) => c.name)];
+    this.names = [...new Set(pool)].slice(-4);
+  }
+
+  /** Postaci leżące na ziemi: polegli z drużyny (po imieniu), inaczej drużyna, inaczej pierwsi rekruci. */
+  private crew(): Character[] {
+    const party = campaign.state.party;
+    const named = party.filter((c) => this.names.includes(c.name));
+    const list = named.length ? named : party.length ? party : RECRUITS.slice(0, 4).map((r) => recruitCharacter(r));
+    return list.slice(0, 4);
   }
 
   create(): void {
     enter(this, 1200);
     const st = campaign.state;
-    this.line = 0;
-    this.wait = 0;
+    this.t = 0;
     canvasTexture(this, 'over_bg', BASE_W, BASE_H, (g, w, h) => {
       skyGradient(g, w, h, [[0, '#050308'], [0.6, '#1c0c10'], [1, '#3a1410']]);
       skyline(g, w, seeded(13), { n: 30, base: 190, hMin: 12, hMax: 70, color: '#0c0608', lit: null });
@@ -48,21 +65,40 @@ export class GameOverScene extends Phaser.Scene {
         g.fillRect(x, 190 - 26 * s, 3, 30 * s);
         g.fillRect(x - 6 * s, 190 - 18 * s, 14 * s, 3);
       }
+    });
+    this.add.image(0, 0, 'over_bg').setOrigin(0);
+    // czerwona poświata nad poległymi (PointLight z gameover.js)
+    this.add.ellipse(BASE_W / 2, 176, 300, 60, 0xc43d2f, 0.12).setDepth(1);
+    // polegli: poza "die" - przewracają się jeden po drugim i zostają na ziemi
+    const crew = this.crew();
+    crew.forEach((ch, i) => {
+      const x = Math.round(BASE_W / 2 + (i - (crew.length - 1) / 2) * 84), y = 182 + (i % 2) * 6;
+      const sp = addUnit(this, x, y, `pc_${ch.recruitId ?? ch.id}`, unitLookOf(ch), 'idle', 2).setDepth(3 + (i % 2)).setFlipX(i % 2 === 1);
+      sp.anims.stop();
+      sp.setFrame('f_hurt');
+      this.tweens.add({
+        targets: sp, angle: sp.flipX ? -90 : 90, y: y + 2, delay: 600 + i * 380, duration: 420, ease: 'Quad.easeIn',
+        onStart: () => SoundManager.sfx('hit', { vol: 0.25 }),
+        onComplete: () => sp.setTint(0xb09090),
+      });
+      this.add.ellipse(x, y + 2, 50, 7, 0x000000, 0.45).setDepth(2);
+    });
+    const vignette = canvasTexture(this, 'over_vig', BASE_W, BASE_H, (g, w, h) => {
       const grad = g.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
       grad.addColorStop(1, 'rgba(48,0,0,0.65)');
       g.fillStyle = grad;
       g.fillRect(0, 0, w, h);
     });
-    this.add.image(0, 0, 'over_bg').setOrigin(0);
-    this.dust = new Motes(this, 80, { x: 0, y: 60, w: BASE_W, h: 150 }, 0xa08070, 14, 2, 9, 0.4);
-    this.add.image(BASE_W / 2, 40, titleTexture(this, 'over_title', 'KONIEC', 6, { top: '#e06050', bottom: '#5a1410', spacing: 2 }));
+    this.add.image(0, 0, vignette).setOrigin(0).setDepth(5);
+    this.dust = new Motes(this, 80, { x: 0, y: 60, w: BASE_W, h: 150 }, 0xa08070, 14, 2, 9, 0.4, 6);
+    this.add.image(BASE_W / 2, 34, titleTexture(this, 'over_title', 'KONIEC DROGI', 5, { top: '#e07a6a', bottom: '#6a1410', spacing: 2 })).setDepth(7);
 
-    panel(this, 60, 196, BASE_W - 120, 66, PAL.blood, 0.93);
-    label(this, BASE_W / 2, 200, 'Polegli: ' + (this.names.map(plainName).join(', ') || '—'), { size: 7, color: PAL.bad, wrap: BASE_W - 140, align: 'center' }).setOrigin(0.5, 0);
-    this.text = label(this, 70, 212, '', { size: 7, wrap: BASE_W - 140, lineSpacing: 2 });
-    label(this, BASE_W / 2, 236, `Przetrwaliście do dnia ${st.day}. Ukończone zlecenia: ${st.completed.length}.`, { size: 6, color: PAL.dim }).setOrigin(0.5, 0);
-    this.buttons = this.add.container(0, 0).setAlpha(0);
+    panel(this, 56, 196, BASE_W - 112, 68, PAL.blood, 0.93).setDepth(8);
+    label(this, BASE_W / 2, 200, 'Polegli: ' + (this.names.map(plainName).join(', ') || '—'), { size: 7, color: PAL.bad, wrap: BASE_W - 132, align: 'center' }).setOrigin(0.5, 0).setDepth(9);
+    this.text = label(this, BASE_W / 2, 211, '', { size: 7, wrap: BASE_W - 132, lineSpacing: 2, align: 'center' }).setOrigin(0.5, 0).setDepth(9);
+    label(this, BASE_W / 2, 236, `Przetrwaliście do dnia ${st.day}. Ukończone zlecenia: ${st.completed.length}.`, { size: 6, color: PAL.dim }).setOrigin(0.5, 0).setDepth(9);
+    this.buttons = this.add.container(0, 0).setAlpha(0).setDepth(9);
     if (Save.exists())
       this.buttons.add(button(this, BASE_W / 2 - 130, 246, 'Wczytaj ostatni zapis', () => {
         if (Save.load() && campaign.state.party.length) goto(this, 'HubScene');
@@ -72,8 +108,9 @@ export class GameOverScene extends Phaser.Scene {
       campaign.state = freshState();
       goto(this, 'TitleScene');
     }, { w: 100, size: 7, danger: true }).box);
-    this.tw = new Typewriter(this.text, GAMEOVER_LINES[0], 30);
-    // klik / klawisz przyspiesza tekst i od razu pokazuje przyciski (Oldgame/src/scenes/gameover.js:39)
+    // całe epitafium jednym ciągiem maszyny do pisania (gameover.js:29)
+    this.tw = new Typewriter(this.text, GAMEOVER_LINES.join(' '), 28);
+    // klik / klawisz kończy tekst i od razu pokazuje przyciski
     const skip = (): void => {
       this.tw?.finish();
       this.showButtons();
@@ -81,7 +118,6 @@ export class GameOverScene extends Phaser.Scene {
     this.input.on('pointerdown', skip);
     this.input.keyboard?.on('keydown-SPACE', skip);
     this.input.keyboard?.on('keydown-ENTER', skip);
-    this.time.delayedCall(3000 + 1200, () => this.showButtons());
     SoundManager.music('defeat');
     SoundManager.ambience('wind');
     SoundManager.sfx('defeat');
@@ -89,14 +125,11 @@ export class GameOverScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     const dt = Math.min(delta / 1000, 0.1);
+    this.t += dt;
     this.dust?.update(dt);
     this.tw?.update(dt);
-    if (!this.tw?.done) return;
-    this.wait += dt;
-    if (this.line + 1 < GAMEOVER_LINES.length && this.wait > 2.2) {
-      this.wait = 0;
-      this.tw = new Typewriter(this.text, GAMEOVER_LINES[++this.line], 30);
-    } else if (this.line + 1 >= GAMEOVER_LINES.length) this.showButtons();
+    // przyciski po skończeniu tekstu albo po 3 s (gameover.js:37)
+    if (this.tw?.done || this.t > 3) this.showButtons();
   }
 
   private showButtons(): void {
@@ -190,7 +223,8 @@ export class VictoryScene extends Phaser.Scene {
     col.add(this.add.image(0, y + 20, titleTexture(this, 'win_studio', 'STORM 32', 4, { top: '#ffe08a', bottom: '#d0521e', spacing: 2 })));
     col.add(label(this, 0, y + 46, 'Dziękujemy za grę.', { size: 7, color: PAL.dim }).setOrigin(0.5, 0));
     this.tweens.add({
-      targets: col, y: -(y + 70), duration: 26000,
+      // 34 s jak animacja crl w Oldgame/src/scenes/victory.js:42
+      targets: col, y: -(y + 70), duration: 34000,
       onComplete: () => this.endButtons(),
     });
     this.input.once('pointerdown', () => this.endButtons());
