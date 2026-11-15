@@ -464,6 +464,9 @@ export class WorldScene extends Phaser.Scene {
       case 'retreat':
         void this.askRetreat();
         break;
+      case 'zoom':
+        this.zoomBy(c.f);
+        break;
       case 'toggleGroup':
         this.hud.setGroupMove(!this.hud.groupMove);
         this.hud.pushLog(this.hud.groupMove ? 'Ruch: cała drużyna.' : 'Ruch: jeden najemnik.');
