@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
 import { CELL_H, CHARSET, LINE_H, TOP, fitText, glyph, measure } from './FontGlyphs';
+import { addHiRes } from '../iso/HiRes';
 
 // Czcionka bitmapowa "PYŁ 6x8" jako Phaser BitmapText.
 //
-// - Glify są rysowane piksel po pikselu (FontGlyphs.ts) do tekstury 1:1 - jeden texel czcionki = jeden piksel
-//   projektowy (480x270), czyli dokładnie tyle samo co piksel grafik postaci i otoczenia. Brak skalowania,
-//   brak wygładzania: kamera z zoomem = ZOOM powiększa wszystko jednakowo (pixelArt: true -> NEAREST).
+// - Glify są rysowane piksel po pikselu (FontGlyphs.ts) w siatce projektowej (480x270), a atlas idzie przez
+//   skaler pixel artu do gęstości ART (iso/HiRes.ts) - te same metryki, ale ukosy liter są wygładzone
+//   w rozdzielczości płótna, jak grafiki postaci i otoczenia.
 // - Dwa odcienie: wnętrze litery jest białe (barwione przez tint na kolor tekstu), obrys/cień jest czarny
 //   (tint mnoży, więc czerń zostaje czernią) - tekst nie zlewa się z tłem ruin.
 // - Pozycja i punkt zaczepienia są zaokrąglane do pełnych pikseli, więc litery trafiają w siatkę ekranu.
@@ -56,8 +57,7 @@ function buildFont(scene: Phaser.Scene, style: FontStyle, bold: boolean): void {
       u0: x0 / W, v0: 1 - y0 / H, u1: (x0 + w) / W, v1: 1 - (y0 + h) / H,
     };
   });
-  if (scene.textures.exists(key)) scene.textures.remove(key);
-  scene.textures.addCanvas(key, canvas);
+  addHiRes(scene, key, canvas);
   scene.sys.cache.bitmapFont.add(key, {
     data: { retroFont: true, font: key, size: CELL_H, lineHeight: LINE_H, chars },
     texture: key,

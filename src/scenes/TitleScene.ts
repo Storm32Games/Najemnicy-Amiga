@@ -73,7 +73,7 @@ export class TitleScene extends Phaser.Scene {
     // logo
     // logo ma > 256 px szerokości - w profilu Amiga idzie jako kafle; zaczepione w środku, jak wcześniej obraz
     const centered = (key: string, y: number): Phaser.GameObjects.Container => {
-      const src = this.textures.get(key).getSourceImage();
+      const src = this.textures.get(key).get(); // wymiary projektowe (obraz źródłowy jest ART razy większy)
       return tiledImage(this, key, BASE_W / 2 - src.width / 2, y - src.height / 2, src.width / 2, src.height / 2).setDepth(10);
     };
     this.logo = centered(titleTexture(this, 'title_logo', GAME_TITLE, 5, { top: '#ffe08a', bottom: '#c0501e', spacing: 2 }), 50);

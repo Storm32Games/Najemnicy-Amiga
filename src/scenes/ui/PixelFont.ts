@@ -32,8 +32,9 @@ export function titleTexture(scene: Phaser.Scene, key: string, str: string, scal
   // akcenty wielkich liter leżą w wierszu -1: przesuwamy wszystko o 1 w dół
   for (const p of px) p[1] += 1;
   const set = new Set(px.map(([a, b]) => `${a},${b}`));
-  return canvasTexture(scene, key, (w + pad * 2) * k, (h + pad * 2) * k, (g) => {
-    const dot = (a: number, b: number) => g.fillRect((a + pad) * k, (b + pad) * k, k, k);
+  // rysunek 1:1, powiększenie o k robi skaler pixel artu (wygładzone ukosy liter zamiast bloków k x k)
+  return canvasTexture(scene, key, w + pad * 2, h + pad * 2, (g) => {
+    const dot = (a: number, b: number) => g.fillRect(a + pad, b + pad, 1, 1);
     g.fillStyle = o.outline ?? '#000000';
     // twardy cień + obrys 8-sąsiedztwa
     for (const [a, b] of px) {
@@ -46,5 +47,5 @@ export function titleTexture(scene: Phaser.Scene, key: string, str: string, scal
       g.fillStyle = set.has(`${a},${b + 1}`) ? (o.top ?? '#ffd36b') : (o.bottom ?? '#b4532a');
       dot(a, b);
     }
-  });
+  }, k);
 }
