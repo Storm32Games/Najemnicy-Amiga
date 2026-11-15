@@ -38,8 +38,10 @@ import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, op
 //   lewy dół:     opis pola/wroga pod kursorem                         <- H.showInfo
 //   prawy dół:    dziennik walki (kółko = przewijanie, zwijany)        <- H.log
 //   panel (I):    karta postaci: statystyki, wyposażenie, plecak       <- H.sheet
-// Menu, pasek rundy, panel akcji i karta postaci mają własną skalę (−/+ w nagłówku albo kółko nad nagłówkiem)
-// i dają się przesuwać za nagłówek; PPM na nagłówku = pozycja i skala domyślna. Portrety drużyny się nie skalują.
+// Menu, pasek rundy, panel akcji, karta postaci i dziennik mają własną skalę (−/+ w nagłówku; kółko nad nagłówkiem
+// poza dziennikiem) i dają się przesuwać za nagłówek; PPM na nagłówku = pozycja i skala domyślna.
+// Karty drużyny się nie skalują; przesuwa się je za listwę nad kartami, a przy górnej / dolnej krawędzi ekranu
+// układają się poziomo.
 // Cały stan pochodzi z HudState (src/core); polecenia wracają przez hud.command().
 
 // ------------------------------------------------------------------ paleta / czcionka
@@ -77,6 +79,10 @@ const PARTY_W = PC_PT + 4;
 const PC_HPB = 9;
 const PARTY_H = 2 + PC_PT + 1 + PC_HPB + 2;
 const PC_GAP = 3;
+/** Listwa nad kartami drużyny (uchwyt do przesuwania). */
+const PARTY_GRIP = 6;
+/** Odległość kursora od górnej / dolnej krawędzi, przy której karty drużyny przechodzą w układ poziomy. */
+const PARTY_EDGE = 14;
 /** Menu po prawej (port .m-menu): siatka 2 kolumn + szeroki "Odwrót". */
 const BTN_W = 78;
 const BTN_H = 12;
@@ -113,9 +119,9 @@ const AB_BH = 11;
 const WT_H = 13;
 
 type BtnVariant = 'normal' | 'primary' | 'danger';
-/** Panele ze skalą i pozycją (bez kart drużyny; dziennik ma własną czcionkę i rozmiar). */
-type PanelId = 'menu' | 'top' | 'actions' | 'sheet';
-type DragTarget = 'log' | PanelId | 'logSize' | 'logThumb';
+/** Panele ze skalą i pozycją (bez kart drużyny - te tylko się przesuwają). */
+type PanelId = 'menu' | 'top' | 'actions' | 'sheet' | 'log';
+type DragTarget = PanelId | 'party' | 'logSize' | 'logThumb';
 
 interface Button {
   bg: Phaser.GameObjects.Rectangle;
@@ -127,10 +133,12 @@ interface Button {
 }
 
 /** Pozycje przesuniętych paneli (null = domyślna); na poziomie modułu, żeby przetrwały kolejne misje. */
-let logPos: { x: number; y: number } | null = null;
-const panelPos: Record<PanelId, { x: number; y: number } | null> = { menu: null, top: null, actions: null, sheet: null };
+const panelPos: Record<PanelId, { x: number; y: number } | null> = { menu: null, top: null, actions: null, sheet: null, log: null };
 /** Skala paneli (1 = bazowa); mniejsza skala = mniejsza czcionka, bo panel skaluje się w całości. */
-const panelScale: Record<PanelId, number> = { menu: 1, top: 1, actions: 1, sheet: 1 };
+const panelScale: Record<PanelId, number> = { menu: 1, top: 1, actions: 1, sheet: 1, log: 1 };
+/** Karty drużyny: pozycja (null = lewy górny róg) i układ (poziomy po upuszczeniu przy górnej / dolnej krawędzi). */
+let partyPos: { x: number; y: number } | null = null;
+let partyHoriz = false;
 /**
  * Dostępne skale paneli: k / ZOOM (1 piksel projektowy = k pikseli płótna), żeby czcionka bitmapowa i ramki
  * trafiały w siatkę ekranu. Zakres ~0.5x - 1.5x; liczone na bieżąco, bo ZOOM może się zmienić między misjami.
@@ -154,16 +162,6 @@ function keepAnchor(x: number, w0: number, w1: number, total: number): number {
 }
 /** Rozmiar dziennika (zmieniany uchwytem w prawym dolnym rogu). */
 let logSize = { w: LOG_W, h: LOG_H };
-/**
- * Skale czcionki dziennika: tylko k / ZOOM (1 piksel czcionki = k pikseli płótna), żeby litery zostały ostre.
- * Zakres ~0.5x - 2x rozmiaru bazowego.
- */
-const LOG_FONT_SCALES: number[] = (() => {
-  const out: number[] = [];
-  for (let k = Math.max(1, Math.ceil(ZOOM / 2)); k <= ZOOM * 2; k++) out.push(k / ZOOM);
-  return out;
-})();
-let logFont = Math.max(0, LOG_FONT_SCALES.indexOf(1));
 const LOG_MIN_W = 120;
 const LOG_HEAD = 13; // nagłówek + linia
 
@@ -183,6 +181,7 @@ export class UIScene extends Phaser.Scene {
   private hud!: HudState;
 
   private partyLayer!: Phaser.GameObjects.Container;
+  private partyGrip!: Phaser.GameObjects.Container;
   private foeLayer!: Phaser.GameObjects.Container;
   private roundText!: PixelText;
   private topPanel!: Phaser.GameObjects.Container;
@@ -232,7 +231,7 @@ export class UIScene extends Phaser.Scene {
   private logNewBg!: Phaser.GameObjects.Rectangle;
   private logHeadLine!: Phaser.GameObjects.Graphics;
   private logGrip!: Phaser.GameObjects.Rectangle;
-  private logFontBtns: PixelText[] = [];
+  private logScaleBtns: PixelText[] = [];
   private logResize!: Phaser.GameObjects.Rectangle;
   private logResizeMark!: Phaser.GameObjects.Graphics;
   private logLayoutKey = '';
@@ -259,7 +258,7 @@ export class UIScene extends Phaser.Scene {
     this.logScroll = 0;
     this.logUnseen = 0;
     this.logSeenId = 0;
-    this.logFontBtns = [];
+    this.logScaleBtns = [];
     this.logLayoutKey = '';
     this.sheetFooter = null;
     this.drag = null;
@@ -276,6 +275,7 @@ export class UIScene extends Phaser.Scene {
 
     // ---- lewy górny: drużyna
     this.partyLayer = this.add.container(M, M);
+    this.partyGrip = this.partyHandle();
 
     // ---- środek góra: runda + wrogowie / inicjatywa
     //      (warstwy wrogów liczą x w układzie ekranu, stąd przesunięcie o -MID_X0 w panelu)
@@ -522,10 +522,20 @@ export class UIScene extends Phaser.Scene {
 
   private drawParty(): void {
     const L = this.partyLayer;
+    L.remove(this.partyGrip);
     L.removeAll(true);
     const hud = this.hud;
+    const { w: gw } = this.partySize();
+    const gripBg = this.partyGrip.getAt(0) as Phaser.GameObjects.Rectangle;
+    gripBg.setSize(gw, PARTY_GRIP);
+    gripBg.input?.hitArea.setSize(gw, PARTY_GRIP);
+    const dots = this.partyGrip.getAt(1) as Phaser.GameObjects.Graphics;
+    dots.clear().fillStyle(PAL.edgeHi, 1);
+    for (let x = 3; x < gw - 2; x += 3) dots.fillRect(x, 2, 1, 1).fillRect(x + 1, 3, 1, 1);
+    L.add(this.partyGrip);
     hud.party.forEach((ch, i) => {
-      const y = i * (PARTY_H + PC_GAP);
+      const y = 0;
+      const card = partyHoriz ? { x: i * (PARTY_W + PC_GAP), y: PARTY_GRIP + 1 } : { x: 0, y: PARTY_GRIP + 1 + i * (PARTY_H + PC_GAP) };
       const isCurrent = ch === hud.active;
       const turn = isCurrent && hud.inCombat && hud.phase !== TurnPhase.ENEMY_TURN && ch.hp > 0;
       const st = stateLabel(ch);
@@ -590,8 +600,73 @@ export class UIScene extends Phaser.Scene {
       const hp = `${Math.max(0, ch.hp)}/${ch.maxHp}${ch.tempHp ? '+' + ch.tempHp : ''}`;
       parts.push(this.text(px + PC_PT / 2, hy, fitText(hp, PC_PT), 0xffffff).setOrigin(0.5, 0));
 
-      L.add(parts);
+      L.add(this.add.container(card.x, card.y, parts));
     });
+    this.placeParty();
+  }
+
+  /** Rozmiar kart drużyny (z listwą) w bieżącym układzie. */
+  private partySize(): { w: number; h: number } {
+    const n = Math.max(1, this.hud.party.length);
+    if (partyHoriz) return { w: n * (PARTY_W + PC_GAP) - PC_GAP, h: PARTY_GRIP + 1 + PARTY_H };
+    return { w: PARTY_W, h: PARTY_GRIP + 1 + n * (PARTY_H + PC_GAP) - PC_GAP };
+  }
+
+  /** Karty drużyny w całości na ekranie; domyślnie lewy górny róg. */
+  private placeParty(): void {
+    const { w, h } = this.partySize();
+    const pos = partyPos ?? { x: M, y: M };
+    this.partyLayer.setPosition(
+      Phaser.Math.Clamp(Math.round(pos.x), 0, Math.max(0, BASE_W - w)),
+      Phaser.Math.Clamp(Math.round(pos.y), 0, Math.max(0, BASE_H - h)),
+    );
+  }
+
+  /** Listwa nad kartami drużyny: LPM + przeciągnięcie = przesuń, PPM = miejsce domyślne (pionowo, lewy górny róg). */
+  private partyHandle(): Phaser.GameObjects.Container {
+    const r = this.add.rectangle(0, 0, PARTY_W, PARTY_GRIP, PAL.panel, 0.92).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive({ cursor: 'move' });
+    r.on('pointerover', () => {
+      r.setFillStyle(0x3a2c1e, 0.95);
+      this.hud.setHover('Przeciągnij: przesuń drużynę · przy górnej / dolnej krawędzi: poziomo · PPM: domyślnie');
+    });
+    r.on('pointerout', () => {
+      r.setFillStyle(PAL.panel, 0.92);
+      this.hud.setHover(null);
+    });
+    r.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonDown()) {
+        this.drag = null;
+        partyPos = null;
+        partyHoriz = false;
+        this.drawParty();
+        SoundManager.sfx('click');
+        return;
+      }
+      this.children.bringToTop(this.partyLayer);
+      this.drag = { target: 'party', dx: p.worldX - this.partyLayer.x, dy: p.worldY - this.partyLayer.y };
+    });
+    return this.add.container(0, 0, [r, this.add.graphics()]);
+  }
+
+  /** Przeciąganie kart drużyny: przy górnej / dolnej krawędzi układ poziomy (przyklejony do krawędzi), dalej pionowy. */
+  private dragParty(p: Phaser.Input.Pointer, d: { dx: number; dy: number }): void {
+    const nearEdge = p.worldY < PARTY_EDGE || p.worldY > BASE_H - PARTY_EDGE;
+    const far = p.worldY > PARTY_EDGE * 3 && p.worldY < BASE_H - PARTY_EDGE * 3;
+    const flip = nearEdge !== partyHoriz && (nearEdge || far);
+    if (flip) {
+      partyHoriz = nearEdge;
+      // listwa zostaje pod kursorem
+      d.dx = Phaser.Math.Clamp(d.dx, 2, this.partySize().w - 2);
+      d.dy = Phaser.Math.Clamp(d.dy, 0, PARTY_GRIP);
+      SoundManager.sfx('click', { vol: 0.5 });
+    }
+    const { h } = this.partySize();
+    let y = p.worldY - d.dy;
+    if (partyHoriz && nearEdge) y = p.worldY < BASE_H / 2 ? M : BASE_H - M - h;
+    partyPos = { x: p.worldX - d.dx, y };
+    if (flip) this.drawParty();
+    else this.placeParty();
+    partyPos = { x: this.partyLayer.x, y: this.partyLayer.y };
   }
 
   /** Opis najemnika pod kursorem (podpowiedź karty z Oldgame: imię, poziom, KP, percepcja, prędkość, stany). */
@@ -1060,7 +1135,7 @@ export class UIScene extends Phaser.Scene {
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
       ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni (albo klik w broń w panelu akcji), PgUp/PgDn/Home/End = przewijanie dziennika, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
-      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: róg prawy dolny = zmiana rozmiaru, A- / A+ = czcionka. PPM na nagłówku = domyślne miejsce i rozmiar.'],
+      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: róg prawy dolny = zmiana rozmiaru, − / + = skala (czcionka maleje razem z panelem). Karty drużyny przesuwa się za listwę nad nimi; przy górnej / dolnej krawędzi ekranu układają się poziomo. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
     const box = this.add.container(BASE_W / 2 - W / 2, 30).setDepth(950);
@@ -1102,34 +1177,30 @@ export class UIScene extends Phaser.Scene {
   // ================================================================== przesuwane panele
 
   /** Niewidoczny uchwyt na nagłówku panelu: LPM + przeciągnięcie = przesuń, PPM = pozycja domyślna. */
-  private dragHandle(target: 'log' | PanelId, w: number, h: number): Phaser.GameObjects.Rectangle {
+  private dragHandle(target: PanelId, w: number, h: number): Phaser.GameObjects.Rectangle {
     const r = this.add.rectangle(0, 0, w, h, C.amber, 0).setOrigin(0).setInteractive({ cursor: 'move' });
     r.on('pointerover', () => {
       r.setFillStyle(C.amber, 0.08);
-      if (target !== 'log') this.hud.setHover(`Przeciągnij: przesuń · kółko / − +: skala ${Math.round(panelScale[target] * 100)}% · PPM: domyślnie`);
+      const how = target === 'log' ? '− +' : 'kółko / − +';
+      this.hud.setHover(`Przeciągnij: przesuń · ${how}: skala ${Math.round(panelScale[target] * 100)}% · PPM: domyślnie`);
     });
     r.on('pointerout', () => {
       r.setFillStyle(C.amber, 0);
-      if (target !== 'log') this.hud.setHover(null);
+      this.hud.setHover(null);
     });
     // kółko nad nagłówkiem panelu = skala (nad dziennikiem kółko przewija - obsługa w create())
     if (target !== 'log') r.on('wheel', (_p: Phaser.Input.Pointer, _dx: number, dy: number) => dy && this.setPanelScale(target, dy > 0 ? -1 : 1));
     r.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (p.rightButtonDown()) {
         this.drag = null;
-        if (target === 'log') {
-          logPos = null;
-          logSize = { w: LOG_W, h: LOG_H };
-          this.drawLog();
-        } else {
-          panelPos[target] = null;
-          panelScale[target] = 1;
-          this.placePanel(target);
-        }
+        if (target === 'log') logSize = { w: LOG_W, h: LOG_H };
+        panelPos[target] = null;
+        panelScale[target] = 1;
+        this.placePanel(target);
         SoundManager.sfx('click');
         return;
       }
-      const box = target === 'log' ? this.logPanel : this.panelBox(target);
+      const box = this.panelBox(target);
       // przeciągany panel na wierzch (żeby po przesunięciu nie chował się pod innym)
       this.children.bringToTop(box);
       this.drag = { target, dx: p.worldX - box.x, dy: p.worldY - box.y };
@@ -1155,6 +1226,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   private panelBox(id: PanelId): Phaser.GameObjects.Container {
+    if (id === 'log') return this.logPanel;
     return id === 'menu' ? this.menuPanel : id === 'top' ? this.topPanel : id === 'actions' ? this.actionLayer : this.sheet;
   }
 
@@ -1163,11 +1235,16 @@ export class UIScene extends Phaser.Scene {
     if (id === 'menu') return { w: RCOL_W, h: this.menuH };
     if (id === 'top') return { w: TOP_W, h: TOP_H };
     if (id === 'actions') return { w: AB_W, h: this.actH };
+    if (id === 'log') return { w: logSize.w, h: this.logCollapsed ? 12 : logSize.h };
     return { w: SHEET_W, h: this.sheetH };
   }
 
   /** Skala + pozycja panelu: przesunięty trzyma lewy górny róg (w granicach ekranu), inaczej miejsce domyślne. */
   private placePanel(id: PanelId): void {
+    if (id === 'log') {
+      this.drawLog();
+      return;
+    }
     const box = this.panelBox(id);
     const s = panelScale[id];
     const { w, h } = this.panelSize(id);
@@ -1208,12 +1285,16 @@ export class UIScene extends Phaser.Scene {
       this.drag = null;
       return;
     }
+    if (d.target === 'party') {
+      this.dragParty(p, d);
+      return;
+    }
     if (d.target === 'logSize') {
-      // prawy dolny róg: lewy górny stoi w miejscu, panel nie wychodzi poza ekran
-      const x0 = this.logPanel.x, y0 = this.logPanel.y;
-      const minH = LOG_HEAD + 3 * this.logLH() + 3;
-      const w = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), LOG_MIN_W, Math.max(LOG_MIN_W, BASE_W - x0));
-      const h = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), minH, Math.max(minH, BASE_H - y0));
+      // prawy dolny róg: lewy górny stoi w miejscu, panel nie wychodzi poza ekran (rozmiar w pikselach panelu przed skalą)
+      const x0 = this.logPanel.x, y0 = this.logPanel.y, s = panelScale.log;
+      const minH = LOG_HEAD + 3 * LH + 3;
+      const w = Phaser.Math.Clamp(Math.round((p.worldX - d.dx - x0) / s), LOG_MIN_W, Math.max(LOG_MIN_W, Math.floor((BASE_W - x0) / s)));
+      const h = Phaser.Math.Clamp(Math.round((p.worldY - d.dy - y0) / s), minH, Math.max(minH, Math.floor((BASE_H - y0) / s)));
       if (w !== logSize.w || h !== logSize.h) {
         logSize = { w, h };
         this.drawLog();
@@ -1225,7 +1306,7 @@ export class UIScene extends Phaser.Scene {
       const t = this.logThumb;
       const maxScroll = Math.max(0, this.logDisplayLines().length - this.logLines());
       const free = Math.max(1, t.trackH - t.h);
-      const pos = Phaser.Math.Clamp((p.worldY - this.logPanel.y - d.dy - t.trackY) / free, 0, 1);
+      const pos = Phaser.Math.Clamp(((p.worldY - this.logPanel.y) / panelScale.log - d.dy - t.trackY) / free, 0, 1);
       const next = Math.round((1 - pos) * maxScroll);
       if (next !== this.logScroll) {
         this.logScroll = next;
@@ -1233,20 +1314,19 @@ export class UIScene extends Phaser.Scene {
       }
       return;
     }
-    const id = d.target === 'log' ? null : d.target;
-    const box = id ? this.panelBox(id) : this.logPanel;
+    const id = d.target;
+    const box = this.panelBox(id);
     if (!box.visible) {
       this.drag = null;
       return;
     }
-    const s = id ? panelScale[id] : 1;
-    const w = id ? this.panelSize(id).w * s : logSize.w;
+    const s = panelScale[id];
+    const w = this.panelSize(id).w * s;
     // panel może wyjechać częściowo poza ekran, ale nagłówek i 30 px szerokości zostają widoczne
     const x = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), Math.round(30 - w), BASE_W - 30);
     const y = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), 0, Math.round(BASE_H - 12 * s));
     box.setPosition(x, y);
-    if (id) panelPos[id] = { x, y };
-    else logPos = { x, y };
+    panelPos[id] = { x, y };
   }
 
   // ================================================================== dziennik (port H.log)
@@ -1265,12 +1345,8 @@ export class UIScene extends Phaser.Scene {
       this.drawLog();
     });
 
-    // A- / A+ = rozmiar czcionki
-    this.logFontBtns = [-1, 1].map((dir) => {
-      const b = this.text(0, 1, dir < 0 ? 'A-' : 'A+', PAL.dim).setOrigin(1, 0).setInteractive({ useHandCursor: true });
-      b.on('pointerdown', () => this.setLogFont(logFont + dir));
-      return b;
-    });
+    // − / + = skala całego panelu (czcionka maleje / rośnie razem z nim), jak w pozostałych panelach
+    this.logScaleBtns = this.scaleButtons('log', 0, 1);
 
     this.logMeasure = this.text(0, 0, '', C.grey).setVisible(false);
     this.logScrollBar = this.add.graphics();
@@ -1296,7 +1372,7 @@ export class UIScene extends Phaser.Scene {
     this.logTrack = this.add.rectangle(0, 0, 7, 10, C.amber, 0).setOrigin(0).setInteractive({ useHandCursor: true });
     this.logTrack.on('pointerdown', (p: Phaser.Input.Pointer) => {
       const t = this.logThumb;
-      const ly = p.worldY - this.logPanel.y;
+      const ly = (p.worldY - this.logPanel.y) / panelScale.log;
       if (ly >= t.y && ly <= t.y + t.h) this.drag = { target: 'logThumb', dx: 0, dy: ly - t.y };
       else this.scrollLog(ly < t.y ? this.logLines() - 1 : -(this.logLines() - 1));
     });
@@ -1323,62 +1399,44 @@ export class UIScene extends Phaser.Scene {
     this.logResize.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (p.rightButtonDown()) return;
       // od teraz pozycja jawna: zmiana rozmiaru trzyma lewy górny róg
-      logPos = { x: this.logPanel.x, y: this.logPanel.y };
-      this.drag = { target: 'logSize', dx: p.worldX - logSize.w, dy: p.worldY - logSize.h };
+      const x0 = this.logPanel.x, y0 = this.logPanel.y, s = panelScale.log;
+      panelPos.log = { x: x0, y: y0 };
+      this.drag = { target: 'logSize', dx: p.worldX - x0 - logSize.w * s, dy: p.worldY - y0 - logSize.h * s };
     });
 
-    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logFontBtns, this.logScrollBar, this.logTrack, this.logUpBtn, this.logDownBtn, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResize]);
-  }
-
-  private logScale(): number {
-    return LOG_FONT_SCALES[logFont] ?? 1;
-  }
-
-  private logLH(): number {
-    return LH * this.logScale();
+    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logScaleBtns, this.logScrollBar, this.logTrack, this.logUpBtn, this.logDownBtn, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResize]);
   }
 
   /** Ile linii mieści dziennik przy bieżącym rozmiarze i czcionce. */
   private logLines(): number {
-    return Math.max(1, Math.floor((logSize.h - LOG_HEAD - 3) / this.logLH()));
+    return Math.max(1, Math.floor((logSize.h - LOG_HEAD - 3) / LH));
   }
 
-  private setLogFont(i: number): void {
-    const n = Phaser.Math.Clamp(i, 0, LOG_FONT_SCALES.length - 1);
-    if (n === logFont) {
-      SoundManager.sfx('error', { vol: 0.3 });
-      return;
-    }
-    SoundManager.sfx('click');
-    logFont = n;
-    this.drawLog();
-  }
-
-  /** Przebudowa elementów zależnych od rozmiaru panelu i czcionki (tylko gdy coś się zmieniło). */
+  /** Przebudowa elementów zależnych od rozmiaru panelu (tylko gdy coś się zmieniło). */
   private layoutLog(): void {
     const { w, h } = logSize;
-    const key = `${w}x${h}@${logFont}`;
+    const key = `${w}x${h}`;
     if (key === this.logLayoutKey) return;
     this.logLayoutKey = key;
-    const sc = this.logScale(), lh = this.logLH(), n = this.logLines();
+    const lh = LH, n = this.logLines();
 
     this.logHeadLine.clear().lineStyle(1, C.greenDim, 1).lineBetween(2, 11.5, w - 2, 11.5);
     this.logColBtn.setX(w - 3);
-    this.logFontBtns[1]?.setX(w - 25);
-    this.logFontBtns[0]?.setX(w - 41);
-    this.logGrip.setSize(w - 70, 12);
-    this.logGrip.input?.hitArea.setSize(w - 70, 12);
+    this.logScaleBtns[1]?.setX(w - 23);
+    this.logScaleBtns[0]?.setX(w - 32);
+    this.logGrip.setSize(w - 60, 12);
+    this.logGrip.input?.hitArea.setSize(w - 60, 12);
 
     // linie tekstu
     for (const t of this.logLineTexts) t.destroy();
     this.logLineTexts = [];
     const at = this.logPanel.getIndex(this.logScrollBar);
     for (let i = 0; i < n; i++) {
-      const t = this.text(4, LOG_HEAD + i * lh, '', C.grey).setScale(sc);
+      const t = this.text(4, LOG_HEAD + i * lh, '', C.grey);
       this.logLineTexts.push(t);
       this.logPanel.addAt(t, at + i);
     }
-    this.logMeasure.setWordWrapWidth(Math.floor((w - 14) / sc));
+    this.logMeasure.setWordWrapWidth(w - 14);
     this.logWrapCache.clear();
 
     this.logUpBtn.setPosition(w - 4, LOG_HEAD - 1);
@@ -1441,16 +1499,14 @@ export class UIScene extends Phaser.Scene {
     const h = this.logCollapsed ? 12 : H;
     this.logBg.setSize(W, h);
     this.logBg.input?.hitArea.setSize(W, h);
-    if (logPos) this.logPanel.setPosition(logPos.x, logPos.y);
-    else this.logPanel.setPosition(BASE_W - M - W, BASE_H - M - h);
+    const s = panelScale.log, pos = panelPos.log;
+    this.logPanel.setScale(s);
+    if (pos) this.logPanel.setPosition(Phaser.Math.Clamp(Math.round(pos.x), Math.round(30 - W * s), BASE_W - 30), Phaser.Math.Clamp(Math.round(pos.y), 0, Math.round(BASE_H - 12 * s)));
+    else this.logPanel.setPosition(Math.round(BASE_W - M - W * s), Math.round(BASE_H - M - h * s));
     this.logColBtn.setText(this.logCollapsed ? '[+]' : '[-]');
     this.logResize.setVisible(!this.logCollapsed);
     this.logResizeMark.setVisible(!this.logCollapsed);
-    this.logFontBtns.forEach((b, i) => {
-      b.setVisible(!this.logCollapsed);
-      const atEnd = i === 0 ? logFont === 0 : logFont === LOG_FONT_SCALES.length - 1;
-      b.setColor(atEnd ? C.greyDim : PAL.dim);
-    });
+
 
     const start = all.length - lines - this.logScroll;
     this.logLineTexts.forEach((t, i) => {
