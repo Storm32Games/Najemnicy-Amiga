@@ -46,6 +46,21 @@ const MOODS: Record<MoodName, MoodDef> = {
   toxic: { shade: [0xa4c474, 0xc4dc8c, 0xd0e69c], lamp: 0.75, haze: [0x5a8a20, 0.08], dust: [0xb8ff60, 30, 0.6], shafts: [0xd8f080, 0.35] },
 };
 
+/**
+ * Tint pól "pamiętanych" (mgła wojny) skompensowany względem mapy światła nastroju:
+ * ciepły gradient (zmierzch/burza/toksyny) mnoży scenę, więc kanały, które gradient
+ * tłumi, podbijamy - po złożeniu pole wychodzi ciemne i neutralne zamiast brązowego.
+ */
+export function fogMemoryTint(base: RGB, mood: MoodName): RGB {
+  const shade = MOODS[mood].shade;
+  if (!shade) return base;
+  let r = 0, g = 0, b = 0;
+  for (const c of shade) (r += (c >> 16) & 255), (g += (c >> 8) & 255), (b += c & 255);
+  const n = shade.length, m = Math.max(r, g, b) / n;
+  const ch = (v: number, avg: number): number => Math.min(255, Math.round((v * m) / Math.max(1, avg / n)));
+  return (ch((base >> 16) & 255, r) << 16) | (ch((base >> 8) & 255, g) << 8) | ch(base & 255, b);
+}
+
 interface Mote {
   img: Phaser.GameObjects.Image;
   vx: number;

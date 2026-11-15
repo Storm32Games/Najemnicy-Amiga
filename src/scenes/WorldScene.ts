@@ -29,7 +29,7 @@ import {
   paintVignette, paintWall,
 } from './iso/IsoArt';
 import { PixelCanvas, hash2, rng } from './iso/Pixel';
-import { Atmosphere, type MoodName, type WorldLight, asMood } from './fx/Atmosphere';
+import { Atmosphere, type MoodName, type WorldLight, asMood, fogMemoryTint } from './fx/Atmosphere';
 import { WorldFx, tracerStyleFor } from './fx/WorldFx';
 import { paintScorch } from './iso/FxArt';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
@@ -1235,7 +1235,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     // mgła: przywrócenie stanu pól
-    const memory = BIOME_STYLE[this.biome].memory;
+    const memory = this.memoryTint();
     this.cells.forEach((cell, i) => {
       cell.state = saved[i].state;
       cell.reveal = saved[i].reveal;
@@ -1365,7 +1365,7 @@ export class WorldScene extends Phaser.Scene {
     const t = this.elapsed;
     for (const l of this.glows) {
       const cell = this.cells[l.cell];
-      const vis = cell.state === 2 ? 1 : cell.state === 1 ? 0.35 : 0;
+      const vis = cell.state === 2 ? 1 : cell.state === 1 ? 0.12 : 0;
       if (vis === 0) {
         l.img.setVisible(false);
         continue;
@@ -1391,9 +1391,14 @@ export class WorldScene extends Phaser.Scene {
   // ================================================================== mgła wojny
 
   /** Mgła z Mission (widok wszystkich najemników): widoczne = pełny kolor, zapamiętane = zimny półmrok, reszta ukryta. */
+  /** Tint pól odkrytych, ale poza zasięgiem wzroku: ciemny i neutralny (bez brązu) w każdym nastroju. */
+  private memoryTint(): number {
+    return fogMemoryTint(BIOME_STYLE[this.biome].memory, this.mood);
+  }
+
   private updateFogOfWar(): void {
     const m = this.mission;
-    const memory = BIOME_STYLE[this.biome].memory;
+    const memory = this.memoryTint();
     for (let i = 0; i < this.cells.length; i++) {
       const cell = this.cells[i];
       const next: CellState = m.vis[i] ? 2 : m.explored[i] ? 1 : 0;
@@ -2337,7 +2342,7 @@ export class WorldScene extends Phaser.Scene {
     const img = this.place(sc.gx, sc.gy, k, 22, 3, D_DECAL + 0.5);
     const cell = this.cells[this.idx(sc.gx, sc.gy)];
     img.setVisible(cell.state !== 0).setAlpha(cell.reveal || 1);
-    if (cell.state === 1) img.setTint(BIOME_STYLE[this.biome].memory);
+    if (cell.state === 1) img.setTint(this.memoryTint());
   }
 
   /** Granat / wybuch w polu `cell`. */

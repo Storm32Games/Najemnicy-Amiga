@@ -70,10 +70,10 @@ export const FLOOR_BASE: Record<FloorType, RGB> = {
 };
 
 export const BIOME_STYLE: Record<Biome, { bg: number; memory: number; wall: RGB; facade: RGB[] }> = {
-  ruins: { bg: 0x141217, memory: 0x585a72, wall: 0x8a4a38, facade: [0x8a7a68, 0x6a7078, 0x7a5a48, 0x76705e] },
-  wastes: { bg: 0x1a1512, memory: 0x6a5e62, wall: 0xa08a64, facade: [0x9a8460, 0x8a7458] },
-  industrial: { bg: 0x121416, memory: 0x52606a, wall: 0x7a7670, facade: [0x6a7078, 0x5a6268] },
-  bunker: { bg: 0x0a0b0d, memory: 0x4a5266, wall: 0x56606a, facade: [0x4a525a] },
+  ruins: { bg: 0x141217, memory: 0x2a2e48, wall: 0x8a4a38, facade: [0x8a7a68, 0x6a7078, 0x7a5a48, 0x76705e] },
+  wastes: { bg: 0x141316, memory: 0x262c4a, wall: 0xa08a64, facade: [0x9a8460, 0x8a7458] },
+  industrial: { bg: 0x121416, memory: 0x283044, wall: 0x7a7670, facade: [0x6a7078, 0x5a6268] },
+  bunker: { bg: 0x0a0b0d, memory: 0x262c42, wall: 0x56606a, facade: [0x4a525a] },
 };
 
 const CAR_COLS: RGB[] = [0x9a3a28, 0x3a5a7a, 0x5a6a3a, 0xa89a4a, 0xb8b4a8, 0x5a4a5a, 0x2a2a2e];
