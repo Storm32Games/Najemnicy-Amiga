@@ -23,7 +23,7 @@ import {
 } from '../core/HudState';
 import type { Character } from '../core/rules/types';
 import { TurnPhase } from '../core/TurnManager';
-import { BASE_H, BASE_W, PAL, button as kitButton, fitCamera, label } from './ui/Kit';
+import { BASE_H, BASE_W, PAL, ZOOM, button as kitButton, fitCamera, label } from './ui/Kit';
 import { type Window as UiWindow, abilityIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
 
 // HUD misji - port Oldgame/src/mission/hud.js (DOM) do Phasera, w stylu terminala CRT.
@@ -98,6 +98,20 @@ interface Button {
 /** Pozycje przesuniętych paneli (null = domyślna); na poziomie modułu, żeby przetrwały kolejne misje. */
 let logPos: { x: number; y: number } | null = null;
 let sheetPos: { x: number; y: number } | null = null;
+/** Rozmiar dziennika (zmieniany uchwytem w prawym dolnym rogu). */
+let logSize = { w: LOG_W, h: LOG_H };
+/**
+ * Skale czcionki dziennika: tylko k / ZOOM (1 piksel czcionki = k pikseli płótna), żeby litery zostały ostre.
+ * Zakres ~0.5x - 2x rozmiaru bazowego.
+ */
+const LOG_FONT_SCALES: number[] = (() => {
+  const out: number[] = [];
+  for (let k = Math.max(1, Math.ceil(ZOOM / 2)); k <= ZOOM * 2; k++) out.push(k / ZOOM);
+  return out;
+})();
+let logFont = Math.max(0, LOG_FONT_SCALES.indexOf(1));
+const LOG_MIN_W = 120;
+const LOG_HEAD = 13; // nagłówek + linia
 
 interface DisplayLine {
   text: string;
@@ -151,13 +165,20 @@ export class UIScene extends Phaser.Scene {
   private logColBtn!: PixelText;
   private logScrollBar!: Phaser.GameObjects.Graphics;
   private logNewBg!: Phaser.GameObjects.Rectangle;
+  private logHeadLine!: Phaser.GameObjects.Graphics;
+  private logGrip!: Phaser.GameObjects.Rectangle;
+  private logFontBtns: PixelText[] = [];
+  private logScan: Phaser.GameObjects.Graphics | null = null;
+  private logResize!: Phaser.GameObjects.Rectangle;
+  private logResizeMark!: Phaser.GameObjects.Graphics;
+  private logLayoutKey = '';
 
   // karta postaci / ekwipunek
   private sheet!: Phaser.GameObjects.Container;
   private sheetFooter: PixelText | null = null;
 
   // przeciąganie paneli za nagłówek
-  private drag: { target: 'log' | 'sheet'; dx: number; dy: number } | null = null;
+  private drag: { target: 'log' | 'sheet' | 'logSize'; dx: number; dy: number } | null = null;
 
   private banner: Phaser.GameObjects.Container | null = null;
 
@@ -172,6 +193,9 @@ export class UIScene extends Phaser.Scene {
     this.logScroll = 0;
     this.logUnseen = 0;
     this.logSeenId = 0;
+    this.logFontBtns = [];
+    this.logScan = null;
+    this.logLayoutKey = '';
     this.sheetFooter = null;
     this.drag = null;
     this.banner = null;
@@ -749,7 +773,7 @@ export class UIScene extends Phaser.Scene {
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
       ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
-      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). PPM na nagłówku = powrót na domyślne miejsce.'],
+      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: róg prawy dolny = zmiana rozmiaru, A- / A+ = czcionka. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
     const box = this.add.container(BASE_W / 2 - W / 2, 30).setDepth(950);
@@ -798,6 +822,7 @@ export class UIScene extends Phaser.Scene {
         this.drag = null;
         if (target === 'log') {
           logPos = null;
+          logSize = { w: LOG_W, h: LOG_H };
           this.drawLog();
         } else {
           sheetPos = null;
@@ -819,13 +844,25 @@ export class UIScene extends Phaser.Scene {
       this.drag = null;
       return;
     }
+    if (d.target === 'logSize') {
+      // prawy dolny róg: lewy górny stoi w miejscu, panel nie wychodzi poza ekran
+      const x0 = this.logPanel.x, y0 = this.logPanel.y;
+      const minH = LOG_HEAD + 3 * this.logLH() + 3;
+      const w = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), LOG_MIN_W, Math.max(LOG_MIN_W, BASE_W - x0));
+      const h = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), minH, Math.max(minH, BASE_H - y0));
+      if (w !== logSize.w || h !== logSize.h) {
+        logSize = { w, h };
+        this.drawLog();
+      }
+      return;
+    }
     const isLog = d.target === 'log';
     const box = isLog ? this.logPanel : this.sheet;
     if (!box.visible) {
       this.drag = null;
       return;
     }
-    const w = isLog ? LOG_W : SHEET_W;
+    const w = isLog ? logSize.w : SHEET_W;
     // panel może wyjechać częściowo poza ekran, ale nagłówek i 30 px szerokości zostają widoczne
     const x = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), 30 - w, BASE_W - 30);
     const y = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), 0, BASE_H - 12);
@@ -837,30 +874,32 @@ export class UIScene extends Phaser.Scene {
   // ================================================================== dziennik (port H.log)
 
   private createLog(): void {
-    const x = BASE_W - M - LOG_W;
-    const y = BASE_H - M - LOG_H;
-    this.logPanel = this.add.container(x, y);
-    this.logBg = this.panelRect(x, y, LOG_W, LOG_H);
-    // panelRect jest w scenie (do getBounds w wheel) - wkładamy go jako pierwszy element, ale z pozycją względną
-    this.logBg.setPosition(0, 0);
+    this.logPanel = this.add.container(0, 0);
+    this.logBg = this.panelRect(0, 0, LOG_W, LOG_H);
 
     const head = this.text(3, 1, 'DZIENNIK', C.amber);
-    const line = this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, 11.5, LOG_W - 2, 11.5);
-    const grip = this.dragHandle('log', LOG_W - 22, 12);
-    this.logColBtn = this.text(LOG_W - 3, 1, '[-]', C.green).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    this.logHeadLine = this.add.graphics();
+    this.logGrip = this.dragHandle('log', 10, 12);
+    this.logColBtn = this.text(0, 1, '[-]', C.green).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     this.logColBtn.on('pointerdown', () => {
       SoundManager.sfx('click');
       this.logCollapsed = !this.logCollapsed;
       this.drawLog();
     });
 
-    for (let i = 0; i < LOG_LINES; i++) this.logLineTexts.push(this.text(4, 13 + i * LH, '', C.grey));
-    this.logMeasure = this.text(0, 0, '', C.grey).setWordWrapWidth(LOG_W - 14).setVisible(false);
+    // A- / A+ = rozmiar czcionki
+    this.logFontBtns = [-1, 1].map((dir) => {
+      const b = this.text(0, 1, dir < 0 ? 'A-' : 'A+', C.green).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+      b.on('pointerdown', () => this.setLogFont(logFont + dir));
+      return b;
+    });
+
+    this.logMeasure = this.text(0, 0, '', C.grey).setVisible(false);
     this.logScrollBar = this.add.graphics();
 
     // ciemny tekst na bursztynie: bez obrysu (jasne tło samo daje kontrast)
-    this.logNewBg = this.add.rectangle(LOG_W / 2, LOG_H - 12, 10, 10, C.amber, 1).setOrigin(0.5, 0).setVisible(false);
-    this.logNewBtn = this.text(LOG_W / 2, LOG_H - 11, '', C.bg)
+    this.logNewBg = this.add.rectangle(0, 0, 10, 10, C.amber, 1).setOrigin(0.5, 0).setVisible(false);
+    this.logNewBtn = this.text(0, 0, '', C.bg)
       .setFontStyle('plain')
       .setOrigin(0.5, 0)
       .setInteractive({ useHandCursor: true })
@@ -872,7 +911,81 @@ export class UIScene extends Phaser.Scene {
       this.drawLog();
     });
 
-    this.logPanel.add([this.logBg, grip, head, line, this.logColBtn, ...this.logLineTexts, this.logScrollBar, this.scanlines(LOG_W, LOG_H), this.logNewBg, this.logNewBtn]);
+    // uchwyt zmiany rozmiaru (prawy dolny róg)
+    this.logResizeMark = this.add.graphics();
+    this.logResize = this.add.rectangle(0, 0, 9, 9, C.amber, 0).setOrigin(1, 1).setInteractive({ cursor: 'nwse-resize' });
+    this.logResize.on('pointerover', () => this.logResize.setFillStyle(C.amber, 0.2));
+    this.logResize.on('pointerout', () => this.logResize.setFillStyle(C.amber, 0));
+    this.logResize.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonDown()) return;
+      // od teraz pozycja jawna: zmiana rozmiaru trzyma lewy górny róg
+      logPos = { x: this.logPanel.x, y: this.logPanel.y };
+      this.drag = { target: 'logSize', dx: p.worldX - logSize.w, dy: p.worldY - logSize.h };
+    });
+
+    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logFontBtns, this.logScrollBar, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResize]);
+  }
+
+  private logScale(): number {
+    return LOG_FONT_SCALES[logFont] ?? 1;
+  }
+
+  private logLH(): number {
+    return LH * this.logScale();
+  }
+
+  /** Ile linii mieści dziennik przy bieżącym rozmiarze i czcionce. */
+  private logLines(): number {
+    return Math.max(1, Math.floor((logSize.h - LOG_HEAD - 3) / this.logLH()));
+  }
+
+  private setLogFont(i: number): void {
+    const n = Phaser.Math.Clamp(i, 0, LOG_FONT_SCALES.length - 1);
+    if (n === logFont) {
+      SoundManager.sfx('error', { vol: 0.3 });
+      return;
+    }
+    SoundManager.sfx('click');
+    logFont = n;
+    this.drawLog();
+  }
+
+  /** Przebudowa elementów zależnych od rozmiaru panelu i czcionki (tylko gdy coś się zmieniło). */
+  private layoutLog(): void {
+    const { w, h } = logSize;
+    const key = `${w}x${h}@${logFont}`;
+    if (key === this.logLayoutKey) return;
+    this.logLayoutKey = key;
+    const sc = this.logScale(), lh = this.logLH(), n = this.logLines();
+
+    this.logHeadLine.clear().lineStyle(1, C.greenDim, 1).lineBetween(2, 11.5, w - 2, 11.5);
+    this.logColBtn.setX(w - 3);
+    this.logFontBtns[1]?.setX(w - 25);
+    this.logFontBtns[0]?.setX(w - 41);
+    this.logGrip.setSize(w - 70, 12);
+    this.logGrip.input?.hitArea.setSize(w - 70, 12);
+
+    // linie tekstu
+    for (const t of this.logLineTexts) t.destroy();
+    this.logLineTexts = [];
+    const at = this.logPanel.getIndex(this.logScrollBar);
+    for (let i = 0; i < n; i++) {
+      const t = this.text(4, LOG_HEAD + i * lh, '', C.grey).setScale(sc);
+      this.logLineTexts.push(t);
+      this.logPanel.addAt(t, at + i);
+    }
+    this.logMeasure.setWordWrapWidth(Math.floor((w - 14) / sc));
+    this.logWrapCache.clear();
+
+    this.logScan?.destroy();
+    this.logScan = this.scanlines(w, h);
+    this.logPanel.addAt(this.logScan, this.logPanel.getIndex(this.logNewBg));
+
+    this.logNewBg.setPosition(w / 2, h - 12);
+    this.logNewBtn.setPosition(w / 2, h - 11);
+    this.logResize.setPosition(w, h);
+    this.logResizeMark.clear().fillStyle(C.greenDim, 1);
+    for (let i = 0; i < 3; i++) for (let j = 0; j <= i; j++) this.logResizeMark.fillRect(w - 3 - j * 2, h - 7 + i * 2, 1, 1);
   }
 
   /** Wszystkie wpisy złamane na linie (z pamięcią podręczną zawijania). */
@@ -899,6 +1012,9 @@ export class UIScene extends Phaser.Scene {
   }
 
   private drawLog(): void {
+    this.layoutLog();
+    const lines = this.logLines();
+    const { w: W, h: H } = logSize;
     const all = this.logDisplayLines();
 
     // Nowe wpisy: jeśli gracz przewinął w górę, trzymamy widok w miejscu i liczymy nieprzeczytane.
@@ -912,19 +1028,27 @@ export class UIScene extends Phaser.Scene {
       this.logSeenId = newest;
     }
 
-    const maxScroll = Math.max(0, all.length - LOG_LINES);
+    const maxScroll = Math.max(0, all.length - lines);
     this.logScroll = Math.max(0, Math.min(maxScroll, this.logScroll));
     if (this.logScroll === 0) this.logUnseen = 0;
 
     // zwinięty dziennik = sam nagłówek
-    const h = this.logCollapsed ? 12 : LOG_H;
-    this.logBg.setSize(LOG_W, h);
-    this.logBg.input?.hitArea.setSize(LOG_W, h);
+    const h = this.logCollapsed ? 12 : H;
+    this.logBg.setSize(W, h);
+    this.logBg.input?.hitArea.setSize(W, h);
     if (logPos) this.logPanel.setPosition(logPos.x, logPos.y);
-    else this.logPanel.setPosition(BASE_W - M - LOG_W, BASE_H - M - h);
+    else this.logPanel.setPosition(BASE_W - M - W, BASE_H - M - h);
     this.logColBtn.setText(this.logCollapsed ? '[+]' : '[-]');
+    this.logScan?.setVisible(!this.logCollapsed);
+    this.logResize.setVisible(!this.logCollapsed);
+    this.logResizeMark.setVisible(!this.logCollapsed);
+    this.logFontBtns.forEach((b, i) => {
+      b.setVisible(!this.logCollapsed);
+      const atEnd = i === 0 ? logFont === 0 : logFont === LOG_FONT_SCALES.length - 1;
+      b.setColor(atEnd ? C.greyDim : C.green);
+    });
 
-    const start = all.length - LOG_LINES - this.logScroll;
+    const start = all.length - lines - this.logScroll;
     this.logLineTexts.forEach((t, i) => {
       const ln = all[start + i];
       t.setVisible(!this.logCollapsed && !!ln);
@@ -935,12 +1059,12 @@ export class UIScene extends Phaser.Scene {
 
     // pasek przewijania
     const g = this.logScrollBar.clear();
-    if (!this.logCollapsed && all.length > LOG_LINES) {
-      const trackY = 13, trackH = LOG_LINES * LH;
-      const thumbH = Math.max(4, Math.round((trackH * LOG_LINES) / all.length));
+    if (!this.logCollapsed && all.length > lines) {
+      const trackY = LOG_HEAD, trackH = Math.min(H - LOG_HEAD - 10, Math.round(lines * this.logLH()));
+      const thumbH = Math.max(4, Math.round((trackH * lines) / all.length));
       const pos = maxScroll ? 1 - this.logScroll / maxScroll : 1;
-      g.fillStyle(C.greenDim, 1).fillRect(LOG_W - 5, trackY, 2, trackH);
-      g.fillStyle(C.green, 1).fillRect(LOG_W - 5, trackY + Math.round((trackH - thumbH) * pos), 2, thumbH);
+      g.fillStyle(C.greenDim, 1).fillRect(W - 5, trackY, 2, trackH);
+      g.fillStyle(C.green, 1).fillRect(W - 5, trackY + Math.round((trackH - thumbH) * pos), 2, thumbH);
     }
 
     const showNew = !this.logCollapsed && this.logScroll > 0;
