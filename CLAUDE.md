@@ -42,3 +42,9 @@ We are migrating an existing pure-JavaScript isometric post-apocalyptic turn-bas
 ## Workflow & Token Economy
 - **Do Not Read:** Never read `node_modules/`, `dist/`, or lockfiles unless explicitly asked.
 - **Verification:** Run `npm run build` or `npx tsc --noEmit` after structural changes to ensure zero TypeScript errors.
+
+## Session Start: Unmerged Work From Other Chats
+Every cloud chat starts from a fresh clone of `main` on its own `ccr-*` branch, so work from earlier chats is invisible until merged.
+- **At the start of each session**, run `git fetch origin` and list remote branches with commits not in `main` (`git log --oneline origin/main..origin/<branch>` for each `origin/ccr-*` and other feature branches; skip `backup/*`).
+- If any exist, show the user each branch with its commit subjects and **ask whether to merge them into the current branch before starting work**. Do not merge without the user's answer.
+- At the end of a chat, remind the user to open and merge a PR so the next chat sees the changes.
