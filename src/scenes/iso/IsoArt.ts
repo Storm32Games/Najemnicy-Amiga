@@ -2,6 +2,7 @@
 // kalkomanie (plamy, przypalenia), okluzja otoczenia i efekty (poświata, kursor, czcionka).
 // Palety pochodzą z Oldgame/src/gfx/textures.js i props.js; geometria 3D zastąpiona rzutem izometrycznym 2:1.
 import { textPixels } from '../ui/FontGlyphs';
+import { addHiRes } from './HiRes';
 import type Phaser from 'phaser';
 import type { Biome, FloorType, PropType } from '../../core/tactical/mapgen';
 import {
@@ -31,8 +32,8 @@ export class ArtBook {
     const hit = this.infos.get(key);
     if (hit && this.scene.textures.exists(key)) return hit;
     const { pc, ax, ay } = build();
-    if (this.scene.textures.exists(key)) this.scene.textures.remove(key);
-    this.scene.textures.addCanvas(key, pc.toCanvas());
+    // kafelki w szerokości pola (podłogi, przejścia, bloki ścian) składają się z sąsiadami: bez wygładzania krawędzi
+    addHiRes(this.scene, key, pc, { smooth: pc.w !== TILE_W });
     const info = { key, ax, ay };
     this.infos.set(key, info);
     return info;
@@ -41,9 +42,7 @@ export class ArtBook {
   /** Arkusz klatek ułożonych poziomo (frame = nazwa). */
   sheet(key: string, pc: PixelCanvas, frames: { name: string; x: number; y: number; w: number; h: number }[]): void {
     if (this.scene.textures.exists(key)) return;
-    const tex = this.scene.textures.addCanvas(key, pc.toCanvas());
-    if (!tex) return;
-    for (const f of frames) tex.add(f.name, 0, f.x, f.y, f.w, f.h);
+    addHiRes(this.scene, key, pc, {}, frames.map((f) => ({ ...f, name: f.name })));
   }
 }
 

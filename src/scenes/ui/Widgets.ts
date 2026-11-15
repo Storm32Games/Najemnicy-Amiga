@@ -8,6 +8,7 @@ import { itemStatLine } from '../../core/HudState';
 import { abilityDef, itemDef } from '../../core/rules/lookup';
 import { abilityIcon, abilityKind, itemIcon } from '../legacy/icons';
 import { portraitCanvas } from '../legacy/portraits';
+import { addHiRes } from '../iso/HiRes';
 import { BASE_H, BASE_W, PAL, type UiButton, ZOOM, autoZoom, button, hex, label, panel, parseColor } from './Kit';
 import { RES_CHOICES, type ResSetting, Settings } from './Settings';
 
@@ -79,7 +80,7 @@ const hashStr = (s: string): string => {
 /** Klucz tekstury portretu 64x64 (budowany raz na wygląd). */
 export function portraitKey(scene: Phaser.Scene, ch: PortraitSource): string {
   const key = `por_${hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`)}`;
-  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, portraitCanvas(ch, 64) as HTMLCanvasElement);
+  if (!scene.textures.exists(key)) addHiRes(scene, key, portraitCanvas(ch, 64) as HTMLCanvasElement, { w: 32, h: 32 });
   return key;
 }
 
@@ -92,8 +93,8 @@ export function portrait(scene: Phaser.Scene, x: number, y: number, ch: Portrait
 
 export function itemIconImage(scene: Phaser.Scene, x: number, y: number, id: string, size = 12): Phaser.GameObjects.Image {
   const def = itemDef(id);
-  const key = `ico_${def?.icon ?? ''}_${def?.type ?? id}_${id}`;
-  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, itemIcon(def ?? id, 32) as HTMLCanvasElement);
+  const key = `ico_${def?.icon ?? ''}_${def?.type ?? id}_${id}_${size}`;
+  if (!scene.textures.exists(key)) addHiRes(scene, key, itemIcon(def ?? id, 32) as HTMLCanvasElement, { w: size, h: size });
   return scene.add.image(x, y, key).setOrigin(0).setDisplaySize(size, size);
 }
 
@@ -101,8 +102,8 @@ export function itemIconImage(scene: Phaser.Scene, x: number, y: number, id: str
 export function abilityIconImage(scene: Phaser.Scene, x: number, y: number, id: string, size = 12): Phaser.GameObjects.Image {
   const def = abilityDef(id);
   const src = def ? { icon: def.icon, id: def.id, name: def.name, fx: def.fx } : id;
-  const key = `abico_${abilityKind(src)}`;
-  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, abilityIcon(src, 24) as HTMLCanvasElement);
+  const key = `abico_${abilityKind(src)}_${size}`;
+  if (!scene.textures.exists(key)) addHiRes(scene, key, abilityIcon(src, 24) as HTMLCanvasElement, { w: size, h: size });
   return scene.add.image(x, y, key).setOrigin(0).setDisplaySize(size, size);
 }
 

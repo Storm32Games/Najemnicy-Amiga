@@ -3,6 +3,7 @@ import { SoundManager } from '../../audio/SoundManager';
 import { Settings } from './Settings';
 import { FLAME_TONGUES, MoteField, Q12, Q8, TickClock, TypeProgress, flameKQ12, flameSwayQ8, glowAlphaQ8, potTiles, secToQ8 } from '../../core/frontend';
 import { PixelText, pixelText } from './BitmapFont';
+import { addHiRes } from '../iso/HiRes';
 
 export { PixelText } from './BitmapFont';
 
@@ -19,7 +20,12 @@ export const BASE_H = 270;
 /** Zoom dopasowany do okna (tryb "Automatyczna"). */
 export function autoZoom(): number {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const fit = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H) * dpr;
+  // Liczone z rozmiaru ekranu, nie okna: ZOOM jest stały przez sesję, więc po przejściu na pełny ekran płótno
+  // trafia 1:1 w piksele monitora (1080p -> 4 -> 1920x1080). W oknie przeglądarka je tylko lekko zmniejsza -
+  // zmniejszanie rozmywa mniej niż powiększanie mniejszego płótna.
+  const sw = Math.max(window.innerWidth, window.screen?.width || 0);
+  const sh = Math.max(window.innerHeight, window.screen?.height || 0);
+  const fit = Math.min(sw / BASE_W, sh / BASE_H) * dpr;
   return Math.max(2, Math.min(6, Math.ceil(fit)));
 }
 function pickZoom(): number {
@@ -28,6 +34,8 @@ function pickZoom(): number {
 }
 /** Piksele płótna na piksel projektowy (stałe przez całą sesję). */
 export const ZOOM = pickZoom();
+/** Gęstość tekstur: teksele na piksel projektowy (= ZOOM, czyli 1 teksel = 1 piksel płótna; patrz iso/HiRes.ts). */
+export const ART = ZOOM;
 
 /** Przesunięcie obiektów ze scrollFactor(0) przy kamerze z zoomem wokół środka: pozycja ekranu (x, y) -> (x + SX0, y + SY0). */
 export const SX0 = (BASE_W / 2) * (ZOOM - 1);
@@ -250,14 +258,17 @@ export function seeded(seed: number): () => number {
   };
 }
 
-/** Tekstura-płótno (zastępuje istniejącą o tym samym kluczu). */
-export function canvasTexture(scene: Phaser.Scene, key: string, w: number, h: number, draw: (g: Ctx2D, w: number, h: number) => void): string {
-  if (scene.textures.exists(key)) scene.textures.remove(key);
-  const tex = scene.textures.createCanvas(key, w, h);
-  if (tex) {
-    draw(tex.getContext(), w, h);
-    tex.refresh();
-  }
+/**
+ * Tekstura-płótno (zastępuje istniejącą o tym samym kluczu). Rysunek w pikselach projektowych (w x h),
+ * tekstura w gęstości ART (iso/HiRes.ts); scale > 1 = rysunek jest powiększany do w*scale x h*scale pikseli projektowych.
+ */
+export function canvasTexture(scene: Phaser.Scene, key: string, w: number, h: number, draw: (g: Ctx2D, w: number, h: number) => void, scale = 1): string {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  if (g) draw(g, w, h);
+  addHiRes(scene, key, c, { w: w * scale, h: h * scale });
   return key;
 }
 
