@@ -1,12 +1,12 @@
-// Mapa regionu malowana z wysokościami (port krajobrazu Oldgame/src/scenes/meta/worldterrain.js bez three.js).
-// Rzut ukośny z południa: x -> poziomo, z -> pionowo (spłaszczone), wysokość podnosi punkt na ekranie.
-// Teren rysowany "voxel space" kolumnami od najbliższego do najdalszego z buforem Y, więc góry, płaskowyże,
-// wał krateru i wydmy zasłaniają to, co za nimi, a stoki są cieniowane od północnego zachodu.
-// Miasto to siatka kwartałów z jezdniami, chodnikami i przejściami; kwartały zabudowane kamienicami, biurowcami
-// i wieżowcami (piętra z oknami, dachy z nadbudówkami), w dużej części zrujnowanymi: poszarpane szczyty,
-// wyrwy po pociskach, kupy gruzu, pręty zbrojeniowe. Pozostałe strefy mają własne obiekty (hale, kominy,
-// zbiorniki, bunkier w skale, obóz Nomadów, wrak samolotu, Przystań z murem ze złomu).
-// Obiekty sortowane po krawędzi frontu (z świata), więc bliższe zasłaniają dalsze.
+// Mapa regionu w rzucie izometrycznym (jak mapa taktyczna), malowana z wysokościami
+// (port krajobrazu Oldgame/src/scenes/meta/worldterrain.js bez three.js).
+// Rzut: ekranX = (x - z) * A, ekranY = (x + z) * B - wysokość * LIFT  (A = 2B, romby 2:1). Północny zachód jest u góry.
+// Teren rysowany "voxel space": dla każdej kolumny ekranu (stałe x - z) idziemy od najbliższego punktu (duże x + z)
+// do najdalszego z buforem Y, więc góry, płaskowyże, wał krateru i wydmy zasłaniają to, co za nimi.
+// Światło pada z lewej góry ekranu: ściany południowe (lewe) jaśniejsze, wschodnie (prawe) w cieniu, dachy najjaśniejsze.
+// Bryły rysowane kolumnami pikseli (dach-romb + dwie ściany), sortowane po x + z, więc bliższe zasłaniają dalsze.
+// Miasto to siatka kwartałów (romby) z jezdniami, chodnikami i przejściami; kamienice, biurowce i wieżowce z oknami
+// na obu widocznych ścianach, w dużej części zrujnowane. Pozostałe strefy mają własne obiekty.
 
 import Phaser from 'phaser';
 import { CITY, CRATER, GATE, HOME, PLAZA_CELLS, PLAZAS, SECTORS, WQ, buildRoute, cityBlock, heightQ8, inCity, riverDistF } from '../../core/campaign/region';
@@ -14,25 +14,30 @@ import { canvasTexture, seeded, type Ctx2D } from '../ui/Kit';
 
 // ------------------------------------------------------------------ rzut
 
-/** Skala mapy względem pierwotnej 480x270 (mapa jest większa niż ekran - kamera ją przewija i przybliża). */
-const S = 2;
-/** Piksele na jednostkę świata (poziomo, pionowo w głąb) i na jednostkę wysokości. */
-export const KX = 7.4 * S, KZ = 5.6 * S, LIFT = 6 * S;
-/** Rozmiar mapy w pikselach projektowych. */
-export const MAP_W = 480 * S, MAP_H = 270 * S;
-const OX = 232 * S, OY = 112 * S;
+/** Piksele ekranu na jednostkę świata: poziomo (A) i pionowo (B) w rzucie 2:1, oraz na jednostkę wysokości. */
+const A = 12, B = 6, LIFT = 12;
+/** Rozmiar mapy w pikselach projektowych (większa niż ekran - kamera ją przewija i przybliża). */
+export const MAP_W = 1000, MAP_H = 700;
+const OX = 488, OY = 380;
 /** Wysokość piętra w pikselach. */
 const FL = 4;
 
-/** x świata (Q8) -> piksel ekranu. */
-export const scrX = (xq: number): number => OX + Math.round((xq * KX) / WQ);
-/** Rzut z wysokością terenu w (x, z) (Q8) + dodatkowe uniesienie `up` (Q8). */
-export const scrY = (xq: number, zq: number, up = 0): number => OY + Math.round((zq * KZ) / WQ) - Math.round(((heightQ8(xq, zq) + up) * LIFT) / WQ);
+/** Punkt świata (Q8) -> ekran X. */
+export const scrX = (xq: number, zq: number): number => OX + Math.round(((xq - zq) * A) / WQ);
+/** Punkt świata (Q8) -> ekran Y z wysokością terenu + uniesienie `up` (Q8). */
+export const scrY = (xq: number, zq: number, up = 0): number => OY + Math.round(((xq + zq) * B) / WQ) - Math.round(((heightQ8(xq, zq) + up) * LIFT) / WQ);
 
-// pomocnicze dla malowania w jednostkach świata (float)
 const W = (v: number): number => Math.round(v * WQ);
-const fx = (x: number): number => OX + Math.round(x * KX);
-const groundY = (x: number, z: number, up = 0): number => scrY(W(x), W(z), W(up));
+/** Wysokość terenu (jednostki). */
+const th = (x: number, z: number): number => heightQ8(W(x), W(z)) / WQ;
+/** Rzut punktu o wysokości bezwzględnej h (float). */
+const pr = (x: number, z: number, h: number): [number, number] => [OX + (x - z) * A, OY + (x + z) * B - h * LIFT];
+/** Punkt na terenie (+ uniesienie), zaokrąglony do piksela. */
+const P = (x: number, z: number, up = 0): { x: number; y: number } => {
+  const [sx, sy] = pr(x, z, th(x, z) + up);
+  return { x: Math.round(sx), y: Math.round(sy) };
+};
+
 
 const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -176,9 +181,9 @@ function groundColor(x: number, z: number, h: number, n: number, slope = 1): RGB
   // suche koryto: spękany muł
   const r = riverDistF(x, z);
   if (r < 1.6) {
-    let mud: RGB = [128, 104, 76];
-    if (Math.abs(vnoise(x * 3.2, z * 3.2 + 30) - 0.5) < 0.03) mud = [90, 70, 50];
-    col = mix(col, mud, (1 - smooth(0.4, 1.6, r)) * 0.85);
+    let mud: RGB = [150, 122, 88];
+    if (Math.abs(vnoise(x * 3.2, z * 3.2 + 30) - 0.5) < 0.03) mud = [104, 82, 60];
+    col = mix(col, mud, (1 - smooth(0.4, 1.6, r)) * 0.7);
   }
   // krater: wypalona, zatruta ziemia
   const dc = Math.hypot(x - KRX, z - KRZ);
@@ -201,19 +206,19 @@ function groundColor(x: number, z: number, h: number, n: number, slope = 1): RGB
   return col;
 }
 
-/** Teren: kolumny od dołu ekranu (blisko) w górę (daleko), bufor Y = co już zasłonięte. */
+/** Teren: kolumna ekranu = stałe u = x - z; idziemy od bliska (duże v = x + z) w dal, bufor Y = co już zasłonięte. */
 function paintTerrain(g: Ctx2D, w: number, h: number): void {
   const img = g.createImageData(w, h), d = img.data;
-  const ZN = W(29), ZF = W(-30), STEP = 10;
+  const VN = (h - OY) / B + 4, VF = -OY / B - 12, STEP = 0.04;
   for (let px = 0; px < w; px++) {
-    const xq = Math.round(((px - OX) * WQ) / KX), x = xq / WQ;
+    const u = (px + 0.5 - OX) / A;
     let ybuf = h;
-    for (let zq = ZN; zq >= ZF && ybuf > 0; zq -= STEP) {
-      const z = zq / WQ;
+    for (let v = VN; v >= VF && ybuf > 0; v -= STEP) {
+      const x = (u + v) / 2, z = (v - u) / 2, xq = W(x), zq = W(z);
       let hq = heightQ8(xq, zq);
       const wet = Math.hypot(x - KRX, z - KRZ) < 2.4 && hq < W(LAKE);
       if (wet) hq = W(LAKE);
-      const y = OY + Math.round((zq * KZ) / WQ) - Math.round((hq * LIFT) / WQ);
+      const y = Math.round(OY + v * B - (hq * LIFT) / WQ);
       if (y >= ybuf) continue;
       const n = hash(xq >> 4, zq >> 4), hf = hq / WQ;
       let c: RGB;
@@ -222,14 +227,14 @@ function paintTerrain(g: Ctx2D, w: number, h: number): void {
         c = Math.abs(dl - 1.2 + n * 0.3) < 0.1 ? [180, 255, 110] : dl > 1.9 ? [70, 120, 40] : [96 + n * 24, 190 + n * 30, 52];
         if (vnoise(x * 4, z * 4) > 0.78) c = [150, 230, 90];
       } else {
-        // światło z północnego zachodu: stok opadający ku południowemu wschodowi jest jaśniejszy;
-        // łagodne pagórki nizin cieniowane słabiej (inaczej pustynia jest w ciemnych pasach)
-        const s = (heightQ8(xq - 128, zq - 128) - heightQ8(xq + 128, zq + 128)) / WQ;
+        // światło z zachodu (lewa strona ekranu): stok wznoszący się ku wschodowi jaśniejszy;
+        // łagodne pagórki nizin cieniowane słabiej
+        const s = (heightQ8(xq + 96, zq) - heightQ8(xq - 96, zq)) / WQ;
         c = groundColor(x, z, hf, n, Math.abs(s));
-        const lim = hf > 1.2 ? 0.5 : 0.12;
-        let f = 1 + Math.max(-lim, Math.min(lim, s * (hf > 1.2 ? 1.3 : 0.5)));
+        const lim = hf > 1.2 ? 0.2 : 0.05;
+        let f = 1 + Math.max(-lim, Math.min(lim, s * (hf > 1.2 ? 0.9 : 0.6)));
         if (hf > 1.2) f *= 1 - Math.min(0.18, (hf - 1.2) * 0.05);
-        if (ybuf - y > 2 * S + 1 && ybuf < h) f *= 0.8; // urwisko widziane z przodu
+        if (ybuf - y > 10 && ybuf < h) f *= 0.88; // urwisko widziane z przodu
         const j = (n - 0.5) * 12;
         c = [c[0] * f + j, c[1] * f + j, c[2] * f + j];
       }
@@ -254,19 +259,11 @@ function paintTerrain(g: Ctx2D, w: number, h: number): void {
   g.putImageData(img, 0, 0);
 }
 
-// ------------------------------------------------------------------ bryły
+// ------------------------------------------------------------------ prymitywy izometryczne
 
 interface Item {
   key: number;
   draw: (g: Ctx2D) => void;
-}
-
-interface BoxRect {
-  x0: number;
-  x1: number;
-  yTop: number;
-  yFront: number;
-  yBase: number;
 }
 
 const px = (g: Ctx2D, c: string, x: number, y: number, w = 1, h = 1): void => {
@@ -274,42 +271,81 @@ const px = (g: Ctx2D, c: string, x: number, y: number, w = 1, h = 1): void => {
   g.fillRect(x, y, w, h);
 };
 
-/** Cień rzucany na wschód (światło z zachodu). */
-function shadow(g: Ctx2D, x1: number, yBase: number, depth: number, height: number): void {
-  const L = Math.min(18, Math.max(2, Math.round(height * 0.45)));
-  g.fillStyle = 'rgba(30,18,10,0.32)';
+/** Odcinek 1 px między dwoma punktami ekranu. */
+function seg(g: Ctx2D, a: readonly [number, number], b: readonly [number, number], col: string): void {
+  const n = Math.max(1, Math.round(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]))));
+  g.fillStyle = col;
+  for (let i = 0; i <= n; i++) g.fillRect(Math.round(a[0] + ((b[0] - a[0]) * i) / n), Math.round(a[1] + ((b[1] - a[1]) * i) / n), 1, 1);
+}
+
+/** Romb podstawy prostopadłościanu w kolumnach ekranu: górna (tylna) i dolna (przednia) krawędź na wysokości h. */
+interface Cols {
+  x0: number;
+  n: number;
+  top: Int16Array;
+  bot: Int16Array;
+  /** Kolumna narożnika południowo-wschodniego (granica ściany południowej i wschodniej). */
+  sx: number;
+  S: [number, number];
+  E: [number, number];
+}
+
+function diamond(X0: number, X1: number, Z0: number, Z1: number, h: number): Cols {
+  const Wp = pr(X0, Z1, h), S = pr(X1, Z1, h), E = pr(X1, Z0, h), N = pr(X0, Z0, h);
+  const x0 = Math.round(Wp[0]), n = Math.max(1, Math.round(E[0]) - x0);
+  const top = new Int16Array(n), bot = new Int16Array(n);
+  const lerp = (a: [number, number], b: [number, number], x: number): number => a[1] + (b[1] - a[1]) * Math.min(1, Math.max(0, (x - a[0]) / (b[0] - a[0] || 1)));
+  for (let i = 0; i < n; i++) {
+    const xc = x0 + i + 0.5;
+    top[i] = Math.round(xc < N[0] ? lerp(Wp, N, xc) : lerp(N, E, xc));
+    bot[i] = Math.round(xc < S[0] ? lerp(Wp, S, xc) : lerp(S, E, xc));
+  }
+  return { x0, n, top, bot, sx: Math.min(n, Math.max(0, Math.round(S[0]) - x0)), S, E };
+}
+
+/** Cień rzucany w prawo (światło z lewej): równoległobok przy ścianie wschodniej. */
+function shadow(g: Ctx2D, c: Cols, H: number): void {
+  const L = Math.min(22, Math.max(2, Math.round(H * 0.55)));
+  g.fillStyle = 'rgba(30,18,10,0.3)';
   g.beginPath();
-  g.moveTo(x1, yBase);
-  g.lineTo(x1 + L, yBase - 2);
-  g.lineTo(x1 + L, yBase - depth - 2);
-  g.lineTo(x1, yBase - depth);
+  g.moveTo(c.S[0], c.S[1]);
+  g.lineTo(c.E[0], c.E[1]);
+  g.lineTo(c.E[0] + L, c.E[1] - L * 0.25);
+  g.lineTo(c.S[0] + L, c.S[1] - L * 0.25);
   g.fill();
 }
 
-/** Prostopadłościan na terenie: front (ciemniejszy), dach (jaśniejszy), krawędzie światła i cienia. */
-function boxAt(g: Ctx2D, x: number, z: number, w: number, d: number, hh: number, color: number, elev = 0, shade = true): BoxRect {
-  const h0 = heightQ8(W(x), W(z)) / WQ + elev;
-  const x0 = fx(x - w / 2), x1 = Math.max(x0 + 1, fx(x + w / 2));
-  const yBase = OY + Math.round((z + d / 2) * KZ) - Math.round(h0 * LIFT);
-  const yFront = yBase - Math.max(1, Math.round(hh * LIFT));
-  const yTop = Math.min(yFront - 1, OY + Math.round((z - d / 2) * KZ) - Math.round((h0 + hh) * LIFT));
-  if (shade && elev === 0) shadow(g, x1, yBase, yFront - yTop + 1, yBase - yFront);
-  px(g, css(color, 0.78), x0, yFront, x1 - x0, yBase - yFront);
-  px(g, css(color, 1.12), x0, yTop, x1 - x0, yFront - yTop);
-  px(g, css(color, 1.28), x0, yFront - 1, x1 - x0, 1);
-  if (x1 - x0 > 2) {
-    px(g, css(color, 0.92), x0, yFront, 1, yBase - yFront);
-    px(g, css(color, 0.55), x1 - 1, yFront, 1, yBase - yFront);
+interface BoxInfo {
+  c: Cols;
+  H: number;
+  h0: number;
+}
+
+/** Dekoracja kolumny: X ekranu, dół ściany (y podstawy), góra dachu, czy ściana południowa, pozycja na ścianie i jej długość. */
+type Deco = (X: number, bot: number, top: number, south: boolean, t: number, len: number) => void;
+
+/** Prostopadłościan na terenie: dach (romb), ściana południowa (jasna), wschodnia (ciemna). */
+function isoBox(g: Ctx2D, x: number, z: number, w: number, d: number, hh: number, col: number, elev = 0, shade = true, deco?: Deco): BoxInfo {
+  const h0 = th(x, z) + elev, H = Math.max(1, Math.round(hh * LIFT));
+  const c = diamond(x - w / 2, x + w / 2, z - d / 2, z + d / 2, h0);
+  if (shade && elev === 0) shadow(g, c, H);
+  const roof = css(col, 1.16), edge = css(col, 1.36), sF = css(col, 0.94), eF = css(col, 0.66);
+  for (let i = 0; i < c.n; i++) {
+    const X = c.x0 + i, bt = c.bot[i], tp = c.top[i], south = i < c.sx;
+    px(g, roof, X, tp - H, 1, bt - tp + 1);
+    px(g, south ? sF : eF, X, bt - H + 1, 1, H);
+    px(g, edge, X, bt - H, 1, 1);
+    if (deco) deco(X, bt, tp - H, south, south ? i : i - c.sx, south ? c.sx : c.n - c.sx);
   }
-  return { x0, x1, yTop, yFront, yBase };
+  if (c.sx > 0 && c.sx < c.n) px(g, css(col, 0.8), c.x0 + c.sx, c.bot[c.sx] - H + 1, 1, H);
+  return { c, H, h0 };
 }
 
 /** Kupka gruzu (piksele w kolorze muru) wokół punktu ekranu. */
 function rubble(g: Ctx2D, cx: number, y: number, wpx: number, hpx: number, col: number, r: () => number): void {
   for (let i = 0; i < wpx * hpx * 0.9; i++) {
     const t = r() * 2 - 1, xx = Math.round(cx + t * wpx * 0.5);
-    const top = hpx * (1 - t * t);
-    const yy = Math.round(y - r() * top);
+    const yy = Math.round(y - r() * hpx * (1 - t * t));
     const v = r();
     px(g, v < 0.15 ? '#2a2420' : v < 0.3 ? '#8a7a68' : css(col, 0.7 + r() * 0.5), xx, yy, 1 + (r() < 0.3 ? 1 : 0), 1);
   }
@@ -323,207 +359,199 @@ interface Bld {
   floors: number;
   col: number;
   roof: number;
-  /** 0 = cały, 1 = zawalony szczyt z jednej strony, 2 = wyrwa w fasadzie, 3 = szkielet stalowy u góry. */
+  /** 0 = cały, 1 = zawalony szczyt z jednej strony, 2 = wyrwa w ścianie, 3 = stalowy szkielet u góry. */
   ruin: number;
   glass: boolean;
   seed: number;
+  /** Dach szedowy (hale). */
+  saw?: boolean;
 }
 
 const WALLS = [0x8a5a48, 0x7a6a5e, 0x6e6a64, 0x8a7a64, 0x6a6058, 0x9a6a4a, 0x5e646a, 0xa07a52, 0x7a4a3a, 0x8a8470, 0x6a7a74];
 const ROOFS = [0x5a544e, 0x6a6258, 0x4e4a46, 0x625a50];
 
-/** Budynek z piętrami: cień, fasada z oknami (parter: witryny), dach z nadbudówkami, ruiny. */
+/** Budynek z piętrami: dach z nadbudówkami, okna na obu ścianach (parter: witryny), ruiny. */
 function building(g: Ctx2D, b: Bld): void {
   const r = seeded(b.seed);
-  const h0 = heightQ8(W(b.x), W(b.z)) / WQ;
-  const x0 = fx(b.x - b.w / 2), x1 = Math.max(x0 + 3, fx(b.x + b.w / 2)), wpx = x1 - x0;
-  const yBase = OY + Math.round((b.z + b.d / 2) * KZ) - Math.round(h0 * LIFT);
-  const Hf = b.floors * FL + 1, Dr = Math.max(3, Math.round(b.d * KZ));
-  const yFront = yBase - Hf;
-  // profil zawalenia: o ile pikseli niżej kończy się każda kolumna fasady
-  const drop = new Int16Array(wpx);
+  const h0 = th(b.x, b.z);
+  const c = diamond(b.x - b.w / 2, b.x + b.w / 2, b.z - b.d / 2, b.z + b.d / 2, h0);
+  const n = c.n, H = b.floors * FL + 1, wall = b.col;
+  // profil zawalenia od jednej strony: o ile pikseli niżej kończy się kolumna
+  const drop = new Int16Array(n);
   if (b.ruin === 1) {
-    const span = Math.round(wpx * (0.35 + r() * 0.5)), left = r() < 0.5;
-    let dd = Math.round(Hf * (0.25 + r() * 0.45));
+    const span = Math.round(n * (0.35 + r() * 0.45)), left = r() < 0.5;
+    let dd = Math.round(H * (0.25 + r() * 0.4));
     for (let i = 0; i < span; i++) {
-      const c = left ? i : wpx - 1 - i;
-      if (i % 2 === 0) dd = Math.max(2, Math.min(Hf - 3, dd + Math.round((r() - 0.62) * 6)));
-      drop[c] = Math.min(Hf - 3, dd + Math.round((span - i) * 0.6));
+      const k = left ? i : n - 1 - i;
+      if (i % 2 === 0) dd = Math.max(2, Math.min(H - 3, dd + Math.round((r() - 0.62) * 6)));
+      drop[k] = Math.min(H - 3, dd + Math.round((span - i) * 0.5));
     }
   }
-  shadow(g, x1, yBase, Dr, Hf - (b.ruin === 1 ? Hf * 0.3 : 0));
-  const wall = b.col;
-  // fasada kolumnami (gradient: u dołu ciemniej)
-  for (let i = 0; i < wpx; i++) {
-    const top = yFront + drop[i];
-    const xi = x0 + i;
-    px(g, css(wall, 0.8), xi, top, 1, yBase - top);
-    px(g, css(wall, 0.68), xi, yBase - Math.min(6, yBase - top), 1, Math.min(6, yBase - top));
-    if (!b.glass && (i * 7 + b.seed) % 11 === 0) px(g, css(wall, 0.74), xi, top, 1, yBase - top);
-  }
-  // gzymsy co kilka pięter
-  for (let f = 3; f < b.floors; f += 4) {
-    const y = yBase - f * FL - 1;
-    for (let i = 0; i < wpx; i++) if (y > yFront + drop[i]) px(g, css(wall, 0.95), x0 + i, y, 1, 1);
-  }
-  // okna
-  const step = b.glass ? 2 : 3;
-  const winW = b.glass ? 1 : 2;
-  for (let f = 0; f < b.floors; f++) {
-    const y = yBase - (f + 1) * FL + 1;
-    if (f === 0 && !b.glass) {
-      // parter: witryny i drzwi
-      for (let xx = x0 + 1; xx < x1 - 2; xx += 5) {
-        const v = r();
-        if (v < 0.25) continue;
-        px(g, v < 0.85 ? '#1c1814' : '#5a4430', xx, y, 3, FL - 1);
-        if (v > 0.6) px(g, css(wall, 0.5), xx, y, 3, 1);
-      }
-      continue;
-    }
-    for (let xx = x0 + 1; xx < x1 - winW; xx += step) {
-      const i = xx - x0;
-      if (y <= yFront + drop[i] + 1 || y <= yFront + drop[Math.min(wpx - 1, i + winW)] + 1) continue;
-      const v = r();
-      let c: string;
-      if (b.glass) c = v < 0.55 ? '#3a4a54' : v < 0.8 ? '#24303a' : v < 0.96 ? '#121416' : '#6a8090';
-      else c = v < 0.72 ? '#1a1714' : v < 0.86 ? '#2c2622' : v < 0.97 ? '#5a4632' : '#ffb050';
-      px(g, c, xx, y, winW, FL - 2);
-      // okopcenie nad wybitym oknem
-      if (!b.glass && v > 0.9 && v < 0.97) px(g, 'rgba(20,14,10,0.45)', xx - 1, y - 2, winW + 2, 2);
-    }
-    if (b.glass) for (let xx = x0; xx < x1; xx++) if (y + FL - 1 > yFront + drop[xx - x0]) px(g, css(wall, 0.62), xx, y + FL - 2, 1, 1);
-  }
-  // krawędzie: lewa w świetle, prawa w cieniu
-  px(g, css(wall, 1.0), x0, yFront + drop[0], 1, yBase - yFront - drop[0]);
-  px(g, css(wall, 0.5), x1 - 1, yFront + drop[wpx - 1], 1, yBase - yFront - drop[wpx - 1]);
-  // dach (tylko nad całymi kolumnami); nad zawalonymi - gruz na niższej wysokości
-  const roof = b.roof;
-  for (let i = 0; i < wpx; i++) {
-    const xi = x0 + i;
-    if (drop[i] === 0) {
-      px(g, css(roof, 1.12), xi, yFront - Dr, 1, Dr);
-      px(g, css(roof, 1.4), xi, yFront - 1, 1, 1);
-      px(g, css(roof, 0.8), xi, yFront - Dr, 1, 1);
+  shadow(g, c, b.ruin === 1 ? Math.round(H * 0.7) : H);
+  const step = b.glass ? 2 : 3, winW = b.glass ? 1 : 2;
+  const sF = css(wall, 0.92), eF = css(wall, 0.64), sD = css(wall, 0.78), eD = css(wall, 0.54);
+  const roofC = css(b.roof, 1.12), roofE = css(b.roof, 1.36), roofB = css(b.roof, 0.8);
+  for (let i = 0; i < n; i++) {
+    const X = c.x0 + i, bt = c.bot[i], tp = c.top[i], dz = drop[i], south = i < c.sx;
+    const faceTop = bt - H + dz;
+    // dach albo gruz na niższej wysokości
+    if (dz === 0) {
+      px(g, roofC, X, tp - H, 1, bt - tp);
+      px(g, roofB, X, tp - H, 1, 1);
+      px(g, roofE, X, bt - H, 1, 1);
     } else {
-      const top = yFront + drop[i];
-      for (let k = 0; k < Dr; k++) px(g, hash(xi, top - k) < 0.3 ? '#2a2420' : css(wall, 0.55 + hash(xi * 3, k) * 0.5), xi, top - Dr + k, 1, 1);
-      px(g, css(wall, 1.25), xi, top, 1, 1);
-      if (hash(xi, b.seed) < 0.12) px(g, '#7a4a30', xi, top - Dr - 1 - Math.floor(hash(b.seed, xi) * 3), 1, 2 + Math.floor(hash(b.seed, xi) * 3));
+      for (let k = 0; k <= bt - tp; k++) px(g, hash(X, k + dz) < 0.3 ? '#2a2420' : css(wall, 0.55 + hash(X * 3, k) * 0.5), X, tp - H + dz + k, 1, 1);
+      px(g, css(wall, 1.25), X, faceTop, 1, 1);
+      if (hash(X, b.seed) < 0.12) px(g, '#7a4a30', X, tp - H + dz - 2 - Math.floor(hash(b.seed, X) * 3), 1, 3);
+    }
+    // ściana
+    px(g, south ? sF : eF, X, faceTop + 1, 1, bt - faceTop);
+    px(g, south ? sD : eD, X, bt - 5, 1, 6);
+    // gzymsy co 4 piętra
+    for (let f = 4; f < b.floors; f += 4) if (bt - f * FL > faceTop + 1) px(g, css(wall, south ? 1.02 : 0.74), X, bt - f * FL, 1, 1);
+    // okna
+    const t = south ? i : i - c.sx, len = south ? c.sx : n - c.sx;
+    if (t < 1 || t >= len - 1) continue;
+    for (let f = 0; f < b.floors; f++) {
+      const y = bt - (f + 1) * FL + 1;
+      if (y <= faceTop + 1) continue;
+      if (f === 0 && !b.glass && !b.saw) {
+        const k = Math.floor((t - 1) / 5);
+        if ((t - 1) % 5 < 3 && hash(b.seed + (south ? 0 : 7), k) > 0.25) px(g, hash(k, b.seed) < 0.85 ? '#1c1814' : '#5a4430', X, y, 1, FL - 1);
+        continue;
+      }
+      if (b.saw) {
+        if (f === 1 && (t - 1) % 4 < 2) px(g, hash(t >> 2, b.seed) < 0.3 ? '#2a3038' : '#1a1a1c', X, y - FL + 2, 1, FL * 2 - 2);
+        continue;
+      }
+      if ((t - 1) % step >= winW) continue;
+      const v = hash(b.seed + (south ? 0 : 999), f * 131 + Math.floor((t - 1) / step));
+      let col: string;
+      if (b.glass) col = south ? (v < 0.55 ? '#46586a' : v < 0.8 ? '#2c3a46' : v < 0.96 ? '#141618' : '#7a90a0') : v < 0.6 ? '#2a3440' : v < 0.96 ? '#121416' : '#5a7080';
+      else col = v < 0.72 ? '#1a1714' : v < 0.86 ? '#2c2622' : v < 0.97 ? '#5a4632' : '#ffb050';
+      px(g, col, X, y, 1, FL - 2);
+      if (!b.glass && v > 0.9 && v < 0.97) px(g, 'rgba(20,14,10,0.45)', X, y - 2, 1, 2);
     }
   }
-  // przekrój stropów na granicy z zawaloną częścią
-  for (let i = 1; i < wpx; i++) {
-    if (drop[i] > 0 && drop[i - 1] === 0) for (let y = yFront; y < yFront + drop[i]; y++) px(g, (yBase - y) % FL === 0 ? css(wall, 1.1) : '#221c18', x0 + i, y, 1, 1);
-    if (drop[i] === 0 && drop[i - 1] > 0) for (let y = yFront; y < yFront + drop[i - 1]; y++) px(g, (yBase - y) % FL === 0 ? css(wall, 1.1) : '#221c18', x0 + i - 1, y, 1, 1);
-  }
-  // nadbudówki na całym dachu
+  // narożnik i lewa krawędź w świetle
+  if (c.sx > 0 && c.sx < n) px(g, css(wall, 1.06), c.x0 + c.sx, c.bot[c.sx] - H + drop[c.sx] + 1, 1, H - drop[c.sx]);
+  px(g, css(wall, 1.05), c.x0, c.bot[0] - H + drop[0] + 1, 1, H - drop[0]);
   const intact = drop.every((v) => v === 0);
-  if (intact && wpx > 6) {
-    const k = r();
+  const roofH = H / LIFT;
+  // dach szedowy: pasy świetlików wzdłuż osi x
+  if (b.saw) {
+    for (let zz = b.z - b.d / 2 + 0.15; zz < b.z + b.d / 2 - 0.05; zz += 0.28) {
+      seg(g, pr(b.x - b.w / 2 + 0.04, zz, h0 + roofH), pr(b.x + b.w / 2 - 0.04, zz, h0 + roofH), css(b.roof, 1.5));
+      seg(g, pr(b.x - b.w / 2 + 0.04, zz + 0.09, h0 + roofH), pr(b.x + b.w / 2 - 0.04, zz + 0.09, h0 + roofH), '#3a4048');
+    }
+    if (r() < 0.6) isoHole(g, b.x - b.w * 0.2, b.z, h0 + roofH, 0.35, 0.25);
+  } else if (intact && n > 8) {
+    // nadbudówki
+    const k = r(), ox = (r() - 0.5) * b.w * 0.4, oz = (r() - 0.5) * b.d * 0.4;
     if (b.floors >= 6 && k < 0.45) {
       // zbiornik na wodę na nóżkach
-      const tx = x0 + 2 + Math.floor(r() * (wpx - 7)), ty = yFront - Math.floor(Dr / 2);
-      px(g, '#3a2e26', tx, ty - 2, 1, 3);
-      px(g, '#3a2e26', tx + 3, ty - 2, 1, 3);
-      px(g, '#6a5240', tx - 1, ty - 7, 6, 5);
-      px(g, '#86684e', tx - 1, ty - 8, 6, 1);
-      px(g, '#4a3a2e', tx + 4, ty - 7, 1, 5);
-    } else if (k < 0.75) {
-      // maszynownia windy / klimatyzatory
-      const bw = 3 + Math.floor(r() * 4), tx = x0 + 1 + Math.floor(r() * (wpx - bw - 2)), ty = yFront - Dr + 1 + Math.floor(r() * Math.max(1, Dr - 4));
-      px(g, css(roof, 0.75), tx, ty, bw, 3);
-      px(g, css(roof, 1.3), tx, ty - 1, bw, 1);
-    }
+      const p = pr(b.x + ox, b.z + oz, h0 + roofH), X = Math.round(p[0]), Y = Math.round(p[1]);
+      px(g, '#3a2e26', X - 2, Y - 3, 1, 3);
+      px(g, '#3a2e26', X + 2, Y - 3, 1, 3);
+      px(g, '#6a5240', X - 3, Y - 9, 7, 6);
+      px(g, '#4a3a2e', X + 1, Y - 9, 3, 6);
+      px(g, '#86684e', X - 3, Y - 10, 7, 1);
+    } else if (k < 0.8) isoBox(g, b.x + ox, b.z + oz, Math.min(0.5, b.w * 0.3), Math.min(0.4, b.d * 0.3), 0.25, b.roof, roofH, false);
     if (b.floors >= 8 && r() < 0.5) {
-      const ax = x0 + 1 + Math.floor(r() * (wpx - 2));
-      px(g, '#5a5a5e', ax, yFront - Dr - 6, 1, 7);
-      px(g, '#5a5a5e', ax - 1, yFront - Dr - 4, 3, 1);
+      const p = pr(b.x - ox, b.z - oz, h0 + roofH), X = Math.round(p[0]), Y = Math.round(p[1]);
+      px(g, '#5a5a5e', X, Y - 9, 1, 9);
+      px(g, '#5a5a5e', X - 1, Y - 6, 3, 1);
     }
-    if (r() < 0.25) px(g, '#1e1a16', x0 + 2 + Math.floor(r() * (wpx - 5)), yFront - Dr + 1 + Math.floor(r() * Math.max(1, Dr - 3)), 2 + Math.floor(r() * 2), 2);
+    if (r() < 0.3) isoHole(g, b.x - ox * 0.5, b.z + oz, h0 + roofH, 0.25, 0.2);
   }
-  // wyrwa po pocisku w fasadzie
-  if (b.ruin === 2 && b.floors >= 3) {
-    const hw = Math.max(3, Math.round(wpx * (0.2 + r() * 0.25))), hh = Math.min(Hf - 6, FL * (2 + Math.floor(r() * 3)));
-    const hx = x0 + 2 + Math.floor(r() * Math.max(1, wpx - hw - 4)), hy = yFront + 3 + Math.floor(r() * Math.max(1, Hf - hh - 8));
-    for (let i = 0; i < hw; i++) {
-      const j0 = Math.round(hash(i, b.seed) * 2), j1 = Math.round(hash(b.seed, i) * 2);
-      px(g, '#141110', hx + i, hy + j0, 1, hh - j0 - j1);
-      px(g, css(wall, 1.15), hx + i, hy + j0 - 1, 1, 1);
+  // wyrwa po pocisku w ścianie południowej
+  if (b.ruin === 2 && b.floors >= 3 && c.sx > 8) {
+    const hw = Math.max(3, Math.round(c.sx * (0.25 + r() * 0.25))), hh = Math.min(H - 6, FL * (2 + Math.floor(r() * 3)));
+    const a = 2 + Math.floor(r() * Math.max(1, c.sx - hw - 3)), up = 3 + Math.floor(r() * Math.max(1, H - hh - 6));
+    for (let i = a; i < a + hw; i++) {
+      const bt = c.bot[i], j0 = Math.round(hash(i, b.seed) * 2), j1 = Math.round(hash(b.seed, i) * 2);
+      const y0 = bt - up - hh + j0;
+      px(g, '#141110', c.x0 + i, y0, 1, hh - j0 - j1);
+      px(g, css(wall, 1.15), c.x0 + i, y0 - 1, 1, 1);
+      for (let y = bt - up - FL; y > y0; y -= FL) px(g, css(wall, 0.8), c.x0 + i, y, 1, 1);
     }
-    for (let y = hy + FL; y < hy + hh - 1; y += FL) px(g, css(wall, 0.9), hx, y, hw, 1);
-    rubble(g, hx + hw / 2, yBase + 2, hw + 6, 4, wall, r);
+    const m = c.x0 + a + hw / 2;
+    rubble(g, m, c.bot[Math.min(n - 1, a + (hw >> 1))] + 2, hw + 6, 4, wall, r);
   }
-  // stalowy szkielet ponad połową wysokości
+  // stalowy szkielet ponad częścią wysokości
   if (b.ruin === 3) {
-    const cut = yFront + Math.round(Hf * (0.3 + r() * 0.25));
-    px(g, '#0f0e0e', x0 + 1, yFront - Dr + 1, wpx - 2, cut - yFront + Dr - 1);
-    for (let y = cut; y > yFront - Dr; y -= FL) px(g, '#5a5450', x0, y, wpx, 1);
-    for (let xx = x0; xx < x1; xx += 4) px(g, '#4a4440', xx, yFront - Dr, 1, cut - yFront + Dr);
-    px(g, '#4a4440', x1 - 1, yFront - Dr, 1, cut - yFront + Dr);
-    // przekrzywiony kawał stropu i pręty
+    const cut = Math.round(H * (0.35 + r() * 0.25));
+    for (let i = 0; i < n; i++) {
+      const X = c.x0 + i, bt = c.bot[i], tp = c.top[i];
+      px(g, '#0f0e0e', X, tp - H, 1, bt - tp + H - cut);
+      const frameCol = (i - (i < c.sx ? 0 : c.sx)) % 4 === 0 || i === c.sx || i === 0 || i === n - 1;
+      if (frameCol) px(g, '#4a4440', X, bt - H, 1, H - cut);
+      for (let y = bt - cut; y > bt - H; y -= FL) px(g, '#5a5450', X, y, 1, 1);
+      px(g, '#5a5450', X, tp - H, 1, 1);
+      px(g, '#5a5450', X, bt - H, 1, 1);
+    }
+    const p = pr(b.x - b.w / 2, b.z, h0 + roofH), X = Math.round(p[0]), Y = Math.round(p[1]);
     g.fillStyle = '#6a6460';
     g.beginPath();
-    g.moveTo(x0 + 2, yFront - Dr);
-    g.lineTo(x0 + 8, yFront - Dr - 4);
-    g.lineTo(x0 + 10, yFront - Dr - 3);
-    g.lineTo(x0 + 4, yFront - Dr + 1);
+    g.moveTo(X + 2, Y);
+    g.lineTo(X + 8, Y - 4);
+    g.lineTo(X + 10, Y - 3);
+    g.lineTo(X + 4, Y + 1);
     g.fill();
-    px(g, '#7a4a30', x1 - 3, yFront - Dr - 4, 1, 4);
-    px(g, '#7a4a30', x0 + wpx / 2, yFront - Dr - 3, 1, 3);
+    px(g, '#7a4a30', c.x0 + n - 3, c.top[n - 3] - H - 4, 1, 4);
   }
-  if (b.ruin === 1) rubble(g, left0(drop) ? x0 + wpx * 0.25 : x1 - wpx * 0.25, yBase + 2, wpx * 0.6 + 4, 5, wall, r);
+  if (b.ruin === 1) {
+    const left = drop[0] > drop[n - 1], i = left ? Math.floor(n * 0.2) : Math.floor(n * 0.8);
+    rubble(g, c.x0 + i, c.bot[i] + 2, n * 0.5 + 4, 5, wall, r);
+  }
 }
-const left0 = (drop: Int16Array): boolean => drop[0] > drop[drop.length - 1];
 
-/** Dom podmiejski z dwuspadowym dachem (kalenica wschód-zachód). */
+/** Ciemna dziura w płaskim dachu (romb). */
+function isoHole(g: Ctx2D, x: number, z: number, h: number, w: number, d: number): void {
+  const c = diamond(x - w / 2, x + w / 2, z - d / 2, z + d / 2, h);
+  for (let i = 0; i < c.n; i++) px(g, '#1a1612', c.x0 + i, c.top[i], 1, c.bot[i] - c.top[i] + 1);
+}
+
+/** Dom podmiejski z dwuspadowym dachem (kalenica wzdłuż x). */
 function house(g: Ctx2D, x: number, z: number, w: number, d: number, col: number, roofCol: number, seed: number, ruined: boolean): void {
-  const r = seeded(seed);
-  const b = boxAt(g, x, z, w, d, 0.42, col);
-  const ww = b.x1 - b.x0;
-  for (let xx = b.x0 + 2; xx < b.x1 - 2; xx += 4) px(g, r() < 0.8 ? '#1a1714' : '#5a4632', xx, b.yFront + 1, 2, 2);
-  // dach: przednia połać ciemniej, tylna jaśniej, kalenica
-  const rh = b.yFront - b.yTop, mid = b.yTop + Math.floor(rh / 2) - 2;
-  for (let i = -1; i <= ww; i++) {
-    const broken = ruined && hash(i, seed) < 0.35 && i > ww * 0.3 && i < ww * 0.8;
+  const info = isoBox(g, x, z, w, d, 0.42, col, 0, true, (X, bt, _tp, south, t, len) => {
+    if (t > 1 && t < len - 2 && t % 4 < 2) px(g, hash(X, seed) < 0.8 ? '#1a1714' : '#5a4632', X, bt - 4, 1, 2);
+    void south;
+  });
+  const { c, H } = info, rh = 4;
+  for (let i = 0; i < c.n; i++) {
+    const X = c.x0 + i, tp = c.top[i] - H, bt = c.bot[i] - H, mid = Math.round((tp + bt) / 2) - rh;
+    const broken = ruined && hash(i, seed) < 0.4 && i > c.n * 0.3 && i < c.n * 0.75;
     if (broken) {
-      px(g, '#1a1410', b.x0 + i, mid + 1, 1, b.yFront - mid - 1);
-      px(g, '#4a3626', b.x0 + i, mid + 1 + ((i * 3) % 3), 1, 1);
+      px(g, '#1a1410', X, mid + 1, 1, bt - mid);
       continue;
     }
-    px(g, css(roofCol, 0.75), b.x0 + i, mid, 1, b.yFront - mid);
-    px(g, css(roofCol, 1.05), b.x0 + i, b.yTop - 2, 1, mid - b.yTop + 2);
-    px(g, css(roofCol, 1.3), b.x0 + i, mid, 1, 1);
-    if ((i & 1) === 0) px(g, css(roofCol, 0.62), b.x0 + i, mid + 2, 1, 1);
+    px(g, css(roofCol, 1.08), X, tp - rh, 1, mid - tp + rh);
+    px(g, css(roofCol, 0.76), X, mid, 1, bt - mid + 1);
+    px(g, css(roofCol, 1.32), X, mid, 1, 1);
+    if (i % 2 === 0) px(g, css(roofCol, 0.6), X, mid + 2, 1, 1);
   }
-  if (!ruined && r() < 0.5) px(g, '#4a3a30', b.x0 + 2, b.yTop - 4, 2, 3);
+  if (!ruined && hash(seed, 1) < 0.5) px(g, '#4a3a30', c.x0 + 3, c.top[3] - H - rh - 4, 2, 4);
 }
 
-/** Wrak auta (poziomo albo pionowo w głąb). */
+/** Wrak auta: wzdłuż osi x albo z (vert). */
 function car(g: Ctx2D, x: number, z: number, vert: boolean, col: number, burnt: boolean, bus = false): void {
   const len = bus ? 1.0 : 0.5, wid = bus ? 0.32 : 0.26;
-  const c = burnt ? 0x3a3230 : col;
-  const b = boxAt(g, x, z, vert ? wid : len, vert ? len : wid, bus ? 0.3 : 0.18, c, 0, false);
-  px(g, 'rgba(20,12,8,0.35)', b.x0 + 1, b.yBase, b.x1 - b.x0, 1);
-  if (vert) {
-    px(g, '#1a1a1c', b.x0, b.yTop + 1, b.x1 - b.x0, 1);
-    px(g, '#141414', b.x0, b.yBase - 1, 1, 1);
-    px(g, '#141414', b.x1 - 1, b.yBase - 1, 1, 1);
-  } else {
-    const w = b.x1 - b.x0;
-    if (bus) for (let xx = b.x0 + 1; xx < b.x1 - 1; xx += 2) px(g, '#1a1a1c', xx, b.yFront, 1, 1);
-    else px(g, burnt ? '#1a1414' : '#2a3036', b.x0 + 1, b.yTop, w - 2, 2);
-    px(g, '#141414', b.x0 + 1, b.yBase - 1, 1, 1);
-    px(g, '#141414', b.x1 - 2, b.yBase - 1, 1, 1);
-  }
-  if (burnt) px(g, '#5a2a1a', b.x0 + 1, b.yFront, 1, 1);
+  const cc = burnt ? 0x3a3230 : col;
+  const info = isoBox(g, x, z, vert ? wid : len, vert ? len : wid, bus ? 0.3 : 0.18, cc, 0, false, (X, bt, _tp, _s, t, l) => {
+    if (t === 1 || t === l - 2) px(g, '#141414', X, bt - 1, 1, 2);
+    if (bus && t % 2 === 1 && t < l - 1) px(g, '#1a1a1c', X, bt - 3, 1, 1);
+  });
+  const p = pr(x, z, info.h0 + info.H / LIFT);
+  px(g, burnt ? '#1a1414' : '#2a3036', Math.round(p[0]) - 1, Math.round(p[1]) - 1, 3, 1);
+  if (burnt) px(g, '#5a2a1a', Math.round(p[0]), Math.round(p[1]), 1, 1);
 }
 
 /** Uliczna latarnia (czasem przewrócona / zgięta). */
 function lamp(g: Ctx2D, x: number, z: number, state: number): void {
-  const cx = fx(x), y = groundY(x, z);
+  const { x: cx, y } = P(x, z);
   if (state < 0.2) {
-    px(g, '#3a3a3e', cx, y - 1, 9, 1);
+    seg(g, [cx, y], [cx + 8, y + 4], '#3a3a3e');
     return;
   }
   px(g, '#4a4a4e', cx, y - 12, 1, 12);
@@ -538,7 +566,7 @@ function lamp(g: Ctx2D, x: number, z: number, state: number): void {
 
 /** Martwe drzewo (szkielet gałęzi). */
 function deadTree(g: Ctx2D, x: number, z: number, s: number, seed: number): void {
-  const cx = fx(x), y = groundY(x, z), h = Math.round(8 + s * 8);
+  const { x: cx, y } = P(x, z), h = Math.round(8 + s * 8);
   px(g, 'rgba(30,18,10,0.3)', cx, y, 5, 1);
   px(g, '#3a2a1e', cx, y - h, 1, h);
   px(g, '#3a2a1e', cx - 1, y - 2, 3, 2);
@@ -550,10 +578,10 @@ function deadTree(g: Ctx2D, x: number, z: number, s: number, seed: number): void
 
 /** Martwa sosna w górach. */
 function pine(g: Ctx2D, x: number, z: number, s: number): void {
-  const cx = fx(x), y = groundY(x, z), h = Math.round(9 + s * 7);
+  const { x: cx, y } = P(x, z), h = Math.round(9 + s * 7);
   px(g, '#2e241c', cx, y - h, 1, h);
   for (let k = 2; k < h - 2; k += 2) {
-    const w = Math.round(((k / h) * 5) + 1);
+    const w = Math.round((k / h) * 5 + 1);
     px(g, k % 4 ? '#3a3a2a' : '#2e2e22', cx - w, y - h + k, w * 2 + 1, 1);
   }
 }
@@ -568,154 +596,8 @@ function smokePlume(g: Ctx2D, x: number, y: number, n: number, dark = false): vo
   }
 }
 
-// ------------------------------------------------------------------ miasto: obiekty
-
-function cityItems(items: Item[], r: () => number): void {
-  const push = (key: number, draw: (g: Ctx2D) => void): void => void items.push({ key, draw });
-  for (let bj = -BJ; bj <= BJ; bj++)
-    for (let bi = -BI; bi <= BI; bi++) {
-      if (!on(bi, bj)) continue;
-      const cx = CX + bi * G, cz = CZ + bj * G;
-      const L = cx - G / 2 + halfW(bi - 1) + SIDE + 0.04, R = cx + G / 2 - halfW(bi) - SIDE - 0.04;
-      const T = cz - G / 2 + halfW(bj - 1) + SIDE + 0.04, B = cz + G / 2 - halfW(bj) - SIDE - 0.04;
-      const core = Math.exp(-(((bi - 0.4) ** 2) / 7 + ((bj + 0.4) ** 2) / 4));
-      const e = ((cx - CX) / CRX) ** 2 + ((cz - CZ) / CRZ) ** 2;
-      if (isPlaza(bi, bj)) {
-        plaza(items, cx, cz, L, R, T, B, r);
-        continue;
-      }
-      const wB = R - L, dB = B - T;
-      if (core > 0.55 && r() < 0.8) {
-        // śródmieście: wieżowiec (czasem dwa) + niska przybudówka z tyłu
-        const two = r() < 0.4;
-        const n = two ? 2 : 1;
-        for (let k = 0; k < n; k++) {
-          const bw = two ? wB * (0.4 + r() * 0.08) : wB * (0.62 + r() * 0.3), bd = dB * (0.5 + r() * 0.3);
-          const bx = two ? (k ? R - bw / 2 : L + bw / 2) : L + bw / 2 + r() * (wB - bw), bz = B - bd / 2 - (two && k ? 0.25 : 0);
-          const rv = r();
-          const b: Bld = { x: bx, z: bz, w: bw, d: bd, floors: Math.round(9 + core * 7 + r() * 5), col: [0x5e646a, 0x6a6862, 0x55524e, 0x7a7468][Math.floor(r() * 4)], roof: ROOFS[Math.floor(r() * 4)], ruin: rv < 0.3 ? 3 : rv < 0.55 ? 1 : rv < 0.75 ? 2 : 0, glass: r() < 0.55, seed: Math.floor(r() * 1e9) };
-          push(bz + bd / 2, (g) => building(g, b));
-        }
-        const ad = dB * 0.3, ab: Bld = { x: L + wB / 2, z: T + ad / 2, w: wB * 0.9, d: ad, floors: 2 + Math.floor(r() * 3), col: WALLS[Math.floor(r() * WALLS.length)], roof: ROOFS[0], ruin: r() < 0.4 ? 1 : 0, glass: false, seed: Math.floor(r() * 1e9) };
-        push(ab.z + ad / 2, (g) => building(g, ab));
-        continue;
-      }
-      const suburb = e > 0.62;
-      // dwa rzędy zabudowy (pierzeje od północy i od południa), parcele dzielone na 1..3
-      for (const row of [0, 1]) {
-        const rd = dB * (row ? 0.46 : 0.42), rz = row ? B - rd / 2 : T + rd / 2;
-        const parts = 1 + Math.floor(r() * 3);
-        let x = L;
-        for (let p = 0; p < parts; p++) {
-          const pw = p === parts - 1 ? R - x : wB / parts * (0.8 + r() * 0.4);
-          const lx = x + pw / 2;
-          x += pw;
-          const v = r();
-          if (v < (suburb ? 0.3 : 0.14)) {
-            // pusta parcela: gruz, wrak, uschnięte drzewo
-            const seed = Math.floor(r() * 1e9), t = r();
-            push(rz, (g) => {
-              const rr = seeded(seed);
-              if (t < 0.5) rubble(g, fx(lx), groundY(lx, rz), pw * KX * 0.7, 4 + rr() * 4, WALLS[seed % WALLS.length], rr);
-              else if (t < 0.9) car(g, lx, rz, false, 0x7a5a3a, true);
-              else deadTree(g, lx, rz, rr(), seed);
-            });
-            continue;
-          }
-          const col = WALLS[Math.floor(r() * WALLS.length)], seed = Math.floor(r() * 1e9);
-          if (suburb && r() < 0.6) {
-            const ruined = r() < 0.45, rc = [0x8a4a34, 0x6a5a4a, 0x5a4a44][Math.floor(r() * 3)];
-            const hw = Math.min(pw - 0.12, 0.9), hd = rd * 0.85;
-            push(rz + hd / 2, (g) => house(g, lx, rz, hw, hd, col, rc, seed, ruined));
-            continue;
-          }
-          const rv = r();
-          if (rv < 0.12) {
-            // zawalony budynek: kupa gruzu z kikutami ścian
-            push(rz + rd / 2, (g) => {
-              const rr = seeded(seed), y = groundY(lx, rz + rd / 2);
-              rubble(g, fx(lx), y, pw * KX * 0.95, 9 + rr() * 5, col, rr);
-              for (let k = 0; k < 2; k++) {
-                const sx = fx(lx - pw * 0.35 + rr() * pw * 0.7), sh = 6 + Math.floor(rr() * 10);
-                px(g, css(col, 0.8), sx, y - sh - 2, 2, sh);
-                px(g, css(col, 1.1), sx, y - sh - 3, 2, 1);
-              }
-            });
-            continue;
-          }
-          const floors = Math.max(1, Math.round((suburb ? 1 : 2) + core * 6 * r() + r() * (suburb ? 1.5 : 3)));
-          const b: Bld = { x: lx, z: rz, w: Math.max(0.4, pw - 0.1), d: rd, floors, col, roof: ROOFS[Math.floor(r() * 4)], ruin: rv < 0.42 ? 1 : rv < 0.58 ? 2 : 0, glass: false, seed };
-          push(rz + rd / 2, (g) => building(g, b));
-        }
-      }
-    }
-  // przewrócony wieżowiec leżący w poprzek bocznej ulicy
-  {
-    const x = CX - 2 * G, z = CZ - 1.5 * G;
-    push(z + 0.4, (g) => {
-      const b = boxAt(g, x, z, 2.6, 0.62, 0.62, 0x5e646a);
-      for (let xx = b.x0 + 2; xx < b.x1 - 2; xx += 3) for (let yy = b.yFront + 2; yy < b.yBase - 1; yy += 3) px(g, hash(xx, yy) < 0.7 ? '#1a1a1c' : '#3a4a54', xx, yy, 2, 1);
-      px(g, '#141110', b.x1 - 4, b.yTop, 4, b.yBase - b.yTop);
-      rubble(g, b.x1 + 2, b.yBase + 1, 14, 6, 0x5e646a, seeded(77));
-    });
-  }
-  // wraki, autobusy, latarnie i zapory na ulicach
-  for (let k = 0; k < 46; k++) {
-    const vert = r() < 0.5, line = Math.floor((r() - 0.5) * (vert ? 11 : 9));
-    const x = vert ? CX + (line + 0.5) * G + (r() - 0.5) * 0.3 : CX + (r() - 0.5) * 2 * CRX;
-    const z = vert ? CZ + (r() - 0.5) * 2 * CRZ : CZ + (line + 0.5) * G + (r() - 0.5) * 0.24;
-    if (!inCity({ x: W(x), z: W(z) })) continue;
-    const col = [0x8a3a2a, 0x4a5a6a, 0x7a7a5a, 0x5a4a3a, 0x9a8a3a, 0x3a5a4a][k % 6], burnt = r() < 0.4, bus = k % 9 === 0;
-    push(z, (g) => car(g, x, z, vert, col, burnt, bus));
-  }
-  for (let i = -BI; i <= BI; i++) {
-    const x = CX + i * G, z = AVE_Z + AVE_W + SIDE * 0.5;
-    if (!on(i, 0) && !on(i, 1)) continue;
-    const s = r();
-    push(z, (g) => lamp(g, x, z, s));
-    const z2 = AVE_Z - AVE_W - SIDE * 0.5, s2 = r();
-    push(z2, (g) => lamp(g, x + 0.6, z2, s2));
-  }
-  // leje po bombach na skrzyżowaniach (malowane na ziemi, przed bryłami)
-  for (let k = 0; k < 6; k++) {
-    const x = CX + (Math.floor((r() - 0.5) * 10) + 0.5) * G, z = CZ + (Math.floor((r() - 0.5) * 7) + 0.5) * G + (r() - 0.5) * 1.2;
-    if (!inCity({ x: W(x), z: W(z) }) || Math.abs(z - AVE_Z) < 0.8) continue;
-    const s = 0.5 + r() * 0.5;
-    push(-99, (g) => crater(g, x, z, s));
-  }
-  // brama miasta na końcu alei: dwie wieże, szlaban, worki z piaskiem, zapory przeciwczołgowe
-  for (const dz of [-0.85, 0.85])
-    push(AVE_Z + dz + 0.22, (g) => {
-      const b = boxAt(g, GX0, AVE_Z + dz, 0.5, 0.44, 1.7, 0x5a5048);
-      px(g, '#1a1614', b.x0 + 2, b.yFront + 3, b.x1 - b.x0 - 4, 2);
-      px(g, '#4a4038', b.x0 - 1, b.yTop - 2, b.x1 - b.x0 + 2, 2);
-    });
-  push(AVE_Z + 0.2, (g) => {
-    const y = groundY(GX0, AVE_Z) - 9;
-    for (let xx = fx(GX0) - 1; xx < fx(GX0) + 2; xx++) px(g, '#3a3430', xx, y - 1, 1, 2);
-    for (let yy = groundY(GX0, AVE_Z - 0.6); yy < groundY(GX0, AVE_Z + 0.6); yy += 2) px(g, (yy >> 1) % 2 ? '#c03a2a' : '#d8d0c0', fx(GX0) + 1, yy - 4, 2, 2);
-  });
-  for (let k = 0; k < 6; k++) {
-    const x = GX0 - 0.9 - (k % 2) * 0.3, z = AVE_Z - 1.6 + k * 0.62;
-    if (Math.abs(z - AVE_Z) < 0.45) continue;
-    push(z, (g) => tankTrap(g, x, z));
-  }
-  for (const dz of [-1.4, 1.4]) push(AVE_Z + dz + 0.1, (g) => sandbags(g, GX0 + 0.4, AVE_Z + dz, 1.4));
-  // zawalony wiadukt wjazdowy
-  for (let k = 0; k < 6; k++) {
-    if (k === 3) continue;
-    const x = -15.5 + k, z = 5.9 - k * 0.5, sag = k === 2 || k === 4 ? -0.35 : 0;
-    push(z + 0.4, (g) => {
-      boxAt(g, x, z + 0.25, 0.22, 0.22, 1.2 + sag, 0x5a5450);
-      const b = boxAt(g, x, z, 1.8, 0.8, 0.2, 0x6a6460, 1.2 + sag);
-      px(g, '#8a8478', b.x0, b.yTop - 1, b.x1 - b.x0, 1);
-    });
-  }
-  push(5.9 - 1.5 + 0.6, (g) => rubble(g, fx(-12.5), groundY(-12.5, 4.6), 16, 7, 0x6a6460, seeded(91)));
-}
-
 function crater(g: Ctx2D, x: number, z: number, s: number): void {
-  const cx = fx(x), cy = groundY(x, z), rx = Math.round(6 * s + 3), rz = Math.round(rx * 0.6);
+  const { x: cx, y: cy } = P(x, z), rx = Math.round(7 * s + 3), rz = Math.round(rx * 0.5);
   g.fillStyle = 'rgba(80,66,54,0.9)';
   g.beginPath();
   g.ellipse(cx, cy, rx + 2, rz + 1.5, 0, 0, Math.PI * 2);
@@ -726,14 +608,12 @@ function crater(g: Ctx2D, x: number, z: number, s: number): void {
   g.fill();
   g.fillStyle = '#3e342c';
   g.beginPath();
-  g.ellipse(cx + 1, cy + 1, rx - 2, rz - 1, 0, 0, Math.PI * 2);
+  g.ellipse(cx + 1, cy + 1, rx - 2, Math.max(1, rz - 1), 0, 0, Math.PI * 2);
   g.fill();
-  px(g, '#9a8a74', cx - rx, cy - 1, 2, 1);
-  px(g, '#9a8a74', cx + rx - 1, cy - rz, 2, 1);
 }
 
 function tankTrap(g: Ctx2D, x: number, z: number): void {
-  const cx = fx(x), y = groundY(x, z);
+  const { x: cx, y } = P(x, z);
   for (let i = 0; i < 5; i++) {
     px(g, '#4a4440', cx - 2 + i, y - 1 - i, 1, 1);
     px(g, '#5e5852', cx + 2 - i, y - 1 - i, 1, 1);
@@ -741,38 +621,198 @@ function tankTrap(g: Ctx2D, x: number, z: number): void {
   px(g, '#3a3430', cx - 2, y - 1, 5, 1);
 }
 
-function sandbags(g: Ctx2D, x: number, z: number, len: number): void {
-  const x0 = fx(x - len / 2), x1 = fx(x + len / 2), y = groundY(x, z);
+/** Wał z worków z piaskiem wzdłuż osi x (alongX) albo z. */
+function sandbags(g: Ctx2D, x: number, z: number, len: number, alongX = true): void {
   for (let row = 0; row < 2; row++)
-    for (let xx = x0 + row * 2; xx < x1 - 2; xx += 4) {
-      px(g, '#8a7a5a', xx, y - 3 - row * 2, 4, 2);
-      px(g, '#a8966e', xx, y - 3 - row * 2, 3, 1);
+    for (let t = -len / 2 + row * 0.12; t < len / 2; t += 0.26) {
+      const { x: X, y: Y } = P(alongX ? x + t : x, alongX ? z : z + t);
+      px(g, '#8a7a5a', X - 2, Y - 3 - row * 2, 4, 2);
+      px(g, '#a8966e', X - 2, Y - 3 - row * 2, 3, 1);
     }
 }
 
-/** Plac zleceń: pomnik na cokole (z tyłu, flaga stoi na środku), ławki, uschnięte drzewa, gruz. */
-function plaza(items: Item[], cx: number, cz: number, L: number, R: number, T: number, B: number, r: () => number): void {
+/** Tor kolejowy wzdłuż osi x. */
+function rails(g: Ctx2D, xa: number, xb: number, z: number): void {
+  for (let x = xa; x < xb; x += 0.16) {
+    const h = th(x, z);
+    seg(g, pr(x, z - 0.16, h), pr(x, z + 0.16, h), '#4a3a2e');
+  }
+  for (const dz of [-0.1, 0.1]) for (let x = xa; x < xb; x += 0.5) seg(g, pr(x, z + dz, th(x, z) + 0.02), pr(x + 0.5, z + dz, th(x + 0.5, z) + 0.02), '#7a7470');
+}
+
+// ------------------------------------------------------------------ miasto: obiekty
+
+function cityItems(items: Item[], r: () => number): void {
+  const push = (key: number, draw: (g: Ctx2D) => void): void => void items.push({ key, draw });
+  for (let bj = -BJ; bj <= BJ; bj++)
+    for (let bi = -BI; bi <= BI; bi++) {
+      if (!on(bi, bj)) continue;
+      const cx = CX + bi * G, cz = CZ + bj * G;
+      const L = cx - G / 2 + halfW(bi - 1) + SIDE + 0.04, R = cx + G / 2 - halfW(bi) - SIDE - 0.04;
+      const T = cz - G / 2 + halfW(bj - 1) + SIDE + 0.04, Bt = cz + G / 2 - halfW(bj) - SIDE - 0.04;
+      const core = Math.exp(-(((bi - 0.4) ** 2) / 7 + ((bj + 0.4) ** 2) / 4));
+      const e = ((cx - CX) / CRX) ** 2 + ((cz - CZ) / CRZ) ** 2;
+      if (isPlaza(bi, bj)) {
+        plaza(items, cx, cz, L, R, T, Bt, r);
+        continue;
+      }
+      const wB = R - L, dB = Bt - T;
+      if (core > 0.55 && r() < 0.8) {
+        // śródmieście: wieżowiec (czasem dwa) + niska przybudówka
+        const two = r() < 0.4;
+        for (let k = 0; k < (two ? 2 : 1); k++) {
+          const bw = two ? wB * (0.4 + r() * 0.08) : wB * (0.55 + r() * 0.3), bd = dB * (0.5 + r() * 0.3);
+          const bx = two ? (k ? R - bw / 2 : L + bw / 2) : L + bw / 2 + r() * (wB - bw), bz = Bt - bd / 2 - (two && k ? 0.25 : 0);
+          const rv = r();
+          const b: Bld = { x: bx, z: bz, w: bw, d: bd, floors: Math.round(9 + core * 7 + r() * 5), col: [0x5e646a, 0x6a6862, 0x55524e, 0x7a7468][Math.floor(r() * 4)], roof: ROOFS[Math.floor(r() * 4)], ruin: rv < 0.3 ? 3 : rv < 0.55 ? 1 : rv < 0.75 ? 2 : 0, glass: r() < 0.55, seed: Math.floor(r() * 1e9) };
+          push(bx + bz, (g) => building(g, b));
+        }
+        const ad = dB * 0.3, ab: Bld = { x: L + wB / 2, z: T + ad / 2, w: wB * 0.9, d: ad, floors: 2 + Math.floor(r() * 3), col: WALLS[Math.floor(r() * WALLS.length)], roof: ROOFS[0], ruin: r() < 0.4 ? 1 : 0, glass: false, seed: Math.floor(r() * 1e9) };
+        push(ab.x + ab.z, (g) => building(g, ab));
+        continue;
+      }
+      const suburb = e > 0.62;
+      // dwa rzędy zabudowy (pierzeje od północy i od południa), parcele dzielone na 1..3
+      for (const row of [0, 1]) {
+        const rd = dB * (row ? 0.46 : 0.42), rz = row ? Bt - rd / 2 : T + rd / 2;
+        const parts = 1 + Math.floor(r() * 3);
+        let x = L;
+        for (let p = 0; p < parts; p++) {
+          const pw = p === parts - 1 ? R - x : (wB / parts) * (0.8 + r() * 0.4);
+          const lx = x + pw / 2;
+          x += pw;
+          const v = r();
+          if (v < (suburb ? 0.3 : 0.14)) {
+            const seed = Math.floor(r() * 1e9), t = r();
+            push(lx + rz, (g) => {
+              const rr = seeded(seed), q = P(lx, rz);
+              if (t < 0.5) rubble(g, q.x, q.y, pw * A * 0.9, 4 + rr() * 4, WALLS[seed % WALLS.length], rr);
+              else if (t < 0.9) car(g, lx, rz, false, 0x7a5a3a, true);
+              else deadTree(g, lx, rz, rr(), seed);
+            });
+            continue;
+          }
+          const col = WALLS[Math.floor(r() * WALLS.length)], seed = Math.floor(r() * 1e9);
+          if (suburb && r() < 0.6) {
+            const ruined = r() < 0.45, rc = [0x8a4a34, 0x6a5a4a, 0x5a4a44][Math.floor(r() * 3)];
+            const hw = Math.min(pw - 0.12, 0.9), hd = rd * 0.85;
+            push(lx + rz, (g) => house(g, lx, rz, hw, hd, col, rc, seed, ruined));
+            continue;
+          }
+          const rv = r();
+          if (rv < 0.12) {
+            // zawalony budynek: kupa gruzu z kikutami ścian
+            push(lx + rz, (g) => {
+              const rr = seeded(seed), q = P(lx, rz);
+              rubble(g, q.x, q.y + 2, pw * A * 1.1, 9 + rr() * 5, col, rr);
+              for (let k = 0; k < 2; k++) {
+                const sx = q.x - 6 + Math.floor(rr() * 12), sh = 6 + Math.floor(rr() * 10);
+                px(g, css(col, 0.8), sx, q.y - sh, 2, sh);
+                px(g, css(col, 1.1), sx, q.y - sh - 1, 2, 1);
+              }
+            });
+            continue;
+          }
+          const floors = Math.max(1, Math.round((suburb ? 1 : 2) + core * 6 * r() + r() * (suburb ? 1.5 : 3)));
+          const b: Bld = { x: lx, z: rz, w: Math.max(0.4, pw - 0.1), d: rd, floors, col, roof: ROOFS[Math.floor(r() * 4)], ruin: rv < 0.42 ? 1 : rv < 0.58 ? 2 : 0, glass: false, seed };
+          push(lx + rz, (g) => building(g, b));
+        }
+      }
+    }
+  // przewrócony wieżowiec leżący w poprzek bocznej ulicy
+  {
+    const x = CX - 2 * G, z = CZ - 1.5 * G;
+    push(x + z, (g) => {
+      const info = isoBox(g, x, z, 2.6, 0.62, 0.62, 0x5e646a, 0, true, (X, bt, _tp, south, t, len) => {
+        if (south && t % 3 === 1 && t < len - 1) for (let y = bt - 6; y < bt - 1; y += 3) px(g, hash(X, y) < 0.7 ? '#1a1a1c' : '#3a4a54', X, y, 1, 1);
+      });
+      const c = info.c, e = c.x0 + c.n - 1;
+      px(g, '#141110', e - 3, c.top[c.n - 4] - info.H, 3, c.bot[c.n - 1] - c.top[c.n - 4] + info.H);
+      rubble(g, e + 3, c.bot[c.n - 1] + 2, 14, 6, 0x5e646a, seeded(77));
+    });
+  }
+  // wraki, autobusy, latarnie na ulicach
+  for (let k = 0; k < 46; k++) {
+    const vert = r() < 0.5, line = Math.floor((r() - 0.5) * (vert ? 11 : 9));
+    const x = vert ? CX + (line + 0.5) * G + (r() - 0.5) * 0.3 : CX + (r() - 0.5) * 2 * CRX;
+    const z = vert ? CZ + (r() - 0.5) * 2 * CRZ : CZ + (line + 0.5) * G + (r() - 0.5) * 0.24;
+    if (!inCity({ x: W(x), z: W(z) })) continue;
+    const col = [0x8a3a2a, 0x4a5a6a, 0x7a7a5a, 0x5a4a3a, 0x9a8a3a, 0x3a5a4a][k % 6], burnt = r() < 0.4, bus = k % 9 === 0;
+    push(x + z, (g) => car(g, x, z, vert, col, burnt, bus));
+  }
+  for (let i = -BI; i <= BI; i++) {
+    if (!on(i, 0) && !on(i, 1)) continue;
+    const x = CX + i * G, z = AVE_Z + AVE_W + SIDE * 0.5, s = r();
+    push(x + z, (g) => lamp(g, x, z, s));
+    const z2 = AVE_Z - AVE_W - SIDE * 0.5, s2 = r();
+    push(x + 0.6 + z2, (g) => lamp(g, x + 0.6, z2, s2));
+  }
+  // leje po bombach (na ziemi, przed bryłami)
+  for (let k = 0; k < 6; k++) {
+    const x = CX + (Math.floor((r() - 0.5) * 10) + 0.5) * G, z = CZ + (Math.floor((r() - 0.5) * 7) + 0.5) * G + (r() - 0.5) * 1.2;
+    if (!inCity({ x: W(x), z: W(z) }) || Math.abs(z - AVE_Z) < 0.8) continue;
+    const s = 0.5 + r() * 0.5;
+    push(-999, (g) => crater(g, x, z, s));
+  }
+  // brama miasta na końcu alei: dwie wieże, szlaban, worki z piaskiem, zapory przeciwczołgowe
+  for (const dz of [-0.85, 0.85])
+    push(GX0 + AVE_Z + dz, (g) => {
+      isoBox(g, GX0, AVE_Z + dz, 0.5, 0.44, 1.7, 0x5a5048, 0, true, (X, bt, _tp, _s, t, len) => {
+        if (t > 0 && t < len - 1) px(g, '#1a1614', X, bt - 16, 1, 2);
+      });
+    });
+  push(GX0 + AVE_Z + 0.01, (g) => {
+    const h = th(GX0, AVE_Z) + 0.7;
+    for (let k = 0; k < 6; k++) {
+      const z0 = AVE_Z - 0.6 + k * 0.2;
+      seg(g, pr(GX0, z0, h), pr(GX0, z0 + 0.2, h), k % 2 ? '#c03a2a' : '#d8d0c0');
+    }
+  });
+  for (let k = 0; k < 6; k++) {
+    const x = GX0 - 0.9 - (k % 2) * 0.3, z = AVE_Z - 1.6 + k * 0.62;
+    if (Math.abs(z - AVE_Z) < 0.45) continue;
+    push(x + z, (g) => tankTrap(g, x, z));
+  }
+  for (const dz of [-1.4, 1.4]) push(GX0 + 0.4 + AVE_Z + dz, (g) => sandbags(g, GX0 + 0.4, AVE_Z + dz, 1.0, false));
+  // zawalony wiadukt wjazdowy
+  for (let k = 0; k < 6; k++) {
+    if (k === 3) continue;
+    const x = -15.5 + k, z = 5.9 - k * 0.5, sag = k === 2 || k === 4 ? -0.35 : 0;
+    push(x + z + 0.5, (g) => {
+      isoBox(g, x, z + 0.25, 0.22, 0.22, 1.2 + sag, 0x5a5450);
+      isoBox(g, x, z, 1.8, 0.8, 0.2, 0x6a6460, 1.2 + sag);
+    });
+  }
+  push(-12.5 + 4.6, (g) => {
+    const q = P(-12.5, 4.6);
+    rubble(g, q.x, q.y, 16, 7, 0x6a6460, seeded(91));
+  });
+}
+
+/** Plac zleceń: pomnik na cokole (z tyłu, flaga stoi na środku), ławki, uschnięte drzewa. */
+function plaza(items: Item[], cx: number, cz: number, L: number, R: number, T: number, Bt: number, r: () => number): void {
   const seed = Math.floor(r() * 1e9);
-  items.push({ key: cz - 0.45, draw: (g) => {
-    const b = boxAt(g, cx - 0.1, cz - 0.62, 0.5, 0.36, 0.3, 0x8a8274);
-    // posąg bez głowy / ręki
-    const sx = Math.round((b.x0 + b.x1) / 2);
-    px(g, '#5a6a5a', sx - 1, b.yTop - 9, 3, 9);
-    px(g, '#4a5a4a', sx + 1, b.yTop - 9, 1, 9);
-    px(g, '#5a6a5a', sx - 3, b.yTop - 8, 2, 1);
-    px(g, '#5a6a5a', sx - 4, b.yTop - 11, 1, 3);
-    rubble(g, sx + 6, b.yBase + 1, 8, 3, 0x8a8274, seeded(seed));
+  items.push({ key: cx - 0.5 + cz - 0.5, draw: (g) => {
+    const info = isoBox(g, cx - 0.5, cz - 0.5, 0.42, 0.42, 0.3, 0x8a8274);
+    const p = pr(cx - 0.5, cz - 0.5, info.h0 + info.H / LIFT), sx = Math.round(p[0]), sy = Math.round(p[1]);
+    // posąg bez głowy, z uniesioną ręką
+    px(g, '#5a6a5a', sx - 1, sy - 9, 3, 9);
+    px(g, '#4a5a4a', sx + 1, sy - 9, 1, 9);
+    px(g, '#5a6a5a', sx - 3, sy - 8, 2, 1);
+    px(g, '#5a6a5a', sx - 4, sy - 11, 1, 3);
+    const q = P(cx - 0.1, cz - 0.4);
+    rubble(g, q.x, q.y, 8, 3, 0x8a8274, seeded(seed));
   } });
   for (const [dx, dz] of [[-1, -1], [1, 1]]) {
-    const x = dx < 0 ? L + 0.18 : R - 0.18, z = dz < 0 ? T + 0.16 : B - 0.16, s = r();
-    items.push({ key: z, draw: (g) => deadTree(g, x, z, s, seed + dx * 3 + dz) });
+    const x = dx < 0 ? L + 0.18 : R - 0.18, z = dz < 0 ? T + 0.16 : Bt - 0.16, s = r();
+    items.push({ key: x + z, draw: (g) => deadTree(g, x, z, s, seed + dx * 3 + dz) });
   }
-  items.push({ key: B - 0.3, draw: (g) => {
+  items.push({ key: cx + Bt - 0.3, draw: (g) => {
     for (const bx of [cx - 0.55, cx + 0.45]) {
-      const xx = fx(bx), y = groundY(bx, B - 0.3);
-      px(g, '#5a4430', xx, y - 2, 5, 1);
-      px(g, '#3a2e24', xx, y - 1, 1, 1);
-      px(g, '#3a2e24', xx + 4, y - 1, 1, 1);
+      const q = P(bx, Bt - 0.3);
+      seg(g, [q.x, q.y - 2], [q.x + 4, q.y], '#5a4430');
+      px(g, '#3a2e24', q.x, q.y - 1, 1, 1);
+      px(g, '#3a2e24', q.x + 4, q.y + 1, 1, 1);
     }
   } });
 }
@@ -781,38 +821,32 @@ function plaza(items: Item[], cx: number, cz: number, L: number, R: number, T: n
 
 function regionItems(items: Item[], r: () => number): void {
   const push = (key: number, draw: (g: Ctx2D) => void): void => void items.push({ key, draw });
-  // ================= strefa przemysłowa
-  const halls: [number, number, number, number, number, number][] = [[8.7, -11.9, 2.3, 1.5, 1.3, 0x7a4a30], [12.1, -12.7, 2.5, 1.8, 1.6, 0x5a4a40], [16.1, -12.4, 2.1, 1.6, 1.2, 0x6a5040], [11.3, -9.1, 1.9, 1.2, 1.0, 0x6a5a4a]];
-  for (const [x, z, w, d, h, col] of halls)
-    push(z + d / 2, (g) => {
-      const b = boxAt(g, x, z, w, d, h, col);
-      // dach szedowy: pasy świetlików
-      for (let y = b.yTop + 1; y < b.yFront - 1; y += 3) {
-        px(g, css(col, 1.35), b.x0, y, b.x1 - b.x0, 1);
-        px(g, '#3a4048', b.x0 + 1, y + 1, b.x1 - b.x0 - 2, 1);
-      }
-      // ściana: wysokie okna, brama
-      for (let xx = b.x0 + 3; xx < b.x1 - 3; xx += 4) px(g, hash(xx, b.yBase) < 0.3 ? '#2a3038' : '#1a1a1c', xx, b.yFront + 2, 2, Math.max(2, b.yBase - b.yFront - 8));
-      const gw = 6;
-      px(g, '#2a2420', Math.round((b.x0 + b.x1) / 2 - gw / 2), b.yBase - 7, gw, 7);
-      for (let yy = b.yBase - 7; yy < b.yBase; yy += 2) px(g, '#5a5048', Math.round((b.x0 + b.x1) / 2 - gw / 2), yy, gw, 1);
-      // dziura w dachu
-      if (hash(Math.round(x * 10), 3) < 0.6) px(g, '#141110', b.x0 + 4, b.yTop + 2, 5, 3);
-    });
+  // ================= strefa przemysłowa: hale szedowe, kominy, chłodnia, zbiorniki, tory, kontenery, suwnica
+  const halls: [number, number, number, number, number, number][] = [[8.7, -11.9, 2.3, 1.5, 4, 0x7a4a30], [12.1, -12.7, 2.5, 1.8, 5, 0x5a4a40], [16.1, -12.4, 2.1, 1.6, 4, 0x6a5040], [11.3, -9.1, 1.9, 1.2, 3, 0x6a5a4a]];
+  halls.forEach(([x, z, w, d, f, col], i) => {
+    const b: Bld = { x, z, w, d, floors: f, col, roof: 0x5a5450, ruin: 0, glass: false, seed: 300 + i, saw: true };
+    push(x + z, (g) => building(g, b));
+  });
   for (const [x, z, h] of [[13.5, -14.1, 4.6], [9.9, -13.1, 3.6], [17.3, -13.6, 3.9]]) {
-    push(z + 0.2, (g) => {
-      const b = boxAt(g, x, z, 0.42, 0.42, h, 0x7a3a2a);
-      for (let y = b.yFront + 3; y < b.yBase - 2; y += 6) px(g, '#5a2a1e', b.x0, y, b.x1 - b.x0, 1);
-      px(g, '#d8d0c0', b.x0, b.yFront + 2, b.x1 - b.x0, 2);
-      px(g, '#c03020', b.x0, b.yFront + 5, b.x1 - b.x0, 1);
-      smokePlume(g, b.x0 + 3, b.yTop - 4, 9, x < 12);
+    push(x + z, (g) => {
+      const info = isoBox(g, x, z, 0.42, 0.42, h, 0x7a3a2a, 0, true, (X, bt, _tp, south) => {
+        for (let y = bt - 4; y > bt - h * LIFT + 6; y -= 6) px(g, south ? '#5a2a1e' : '#4a2218', X, y, 1, 1);
+        px(g, '#d8d0c0', X, bt - Math.round(h * LIFT) + 3, 1, 2);
+        px(g, '#c03020', X, bt - Math.round(h * LIFT) + 6, 1, 1);
+      });
+      const p = pr(x, z, info.h0 + h);
+      smokePlume(g, Math.round(p[0]), Math.round(p[1]) - 3, 9, x < 12);
     });
   }
   {
     const x = 21.4, z = -16.4;
-    push(z + 1, (g) => {
+    push(x + z, (g) => {
       // chłodnia kominowa: hiperboloida z talią i pęknięciem
-      const cx = fx(x), yb = groundY(x, z + 1), hh = 3.2 * LIFT, rb = 1.1 * KX;
+      const { x: cx, y: yb } = P(x, z), hh = 3.2 * LIFT, rb = 1.1 * A * 1.3;
+      g.fillStyle = 'rgba(30,18,10,0.3)';
+      g.beginPath();
+      g.ellipse(cx + rb * 0.6, yb - 2, rb, rb * 0.4, 0, 0, Math.PI * 2);
+      g.fill();
       g.fillStyle = '#7a746a';
       g.beginPath();
       g.moveTo(cx - rb, yb);
@@ -825,129 +859,125 @@ function regionItems(items: Item[], r: () => number): void {
       g.fillStyle = '#5a564e';
       g.fillRect(cx + rb * 0.3, yb - hh * 0.8, rb * 0.25, hh * 0.7);
       g.fillStyle = '#2a2624';
-      g.fillRect(cx - rb * 0.62 + 1, yb - hh - 2, rb * 1.24 - 2, 3);
+      g.beginPath();
+      g.ellipse(cx, yb - hh, rb * 0.62, rb * 0.62 * 0.45, 0, 0, Math.PI * 2);
+      g.fill();
       g.strokeStyle = '#3a3430';
       g.beginPath();
-      g.moveTo(cx - 2, yb - hh + 2);
+      g.moveTo(cx - 2, yb - hh + 4);
       g.lineTo(cx + 1, yb - hh * 0.7);
       g.lineTo(cx - 1, yb - hh * 0.5);
       g.stroke();
-      for (let i = 0; i < 4; i++) px(g, '#5a564e', cx - rb + 2 + i * (rb / 2), yb - 4, 2, 4);
     });
   }
-  // zbiorniki (walce z kopułą), rurociąg na estakadzie
+  // zbiorniki (walce z kopułą)
   for (const [x, z, rr] of [[7.2, -14.2, 0.6], [8.6, -14.9, 0.5], [6.6, -12.6, 0.45]]) {
-    push(z + rr, (g) => {
-      const cx = fx(x), yb = groundY(x, z + rr), w = Math.round(rr * 2 * KX), hh = Math.round(1.6 * LIFT * rr * 1.6), x0 = cx - (w >> 1);
-      shadow(g, x0 + w, yb, Math.round(rr * 2 * KZ), hh);
-      for (let i = 0; i < w; i++) {
-        const t = i / (w - 1), f = 0.6 + Math.sin(t * Math.PI) * 0.5 - t * 0.2;
-        px(g, css(0x8a7a64, f), x0 + i, yb - hh, 1, hh);
-      }
-      for (let y = yb - hh + 4; y < yb; y += 5) px(g, 'rgba(60,40,30,0.5)', x0, y, w, 1);
-      g.fillStyle = css(0x8a7a64, 1.2);
+    push(x + z, (g) => {
+      const { x: cx, y: yb } = P(x, z), rx = Math.round(rr * A * 1.41), ry = Math.max(2, Math.round(rr * B * 1.41)), hh = Math.round(LIFT * rr * 2.4);
+      g.fillStyle = 'rgba(30,18,10,0.3)';
       g.beginPath();
-      g.ellipse(cx, yb - hh, w / 2, Math.max(2, rr * KZ * 0.8), 0, Math.PI, Math.PI * 2);
+      g.ellipse(cx + rx * 0.7, yb, rx, ry, 0, 0, Math.PI * 2);
       g.fill();
-      px(g, '#7a3a24', x0 + 2, yb - hh + 6, 3, 4);
-      px(g, '#c0a030', x0, yb - 6, w, 1);
+      for (let i = -rx; i <= rx; i++) {
+        const t = (i + rx) / (2 * rx), f = 0.62 + Math.sin(t * Math.PI) * 0.5 - t * 0.3;
+        const e = Math.round(ry * Math.sqrt(Math.max(0, 1 - (i / rx) ** 2)));
+        px(g, css(0x8a7a64, f), cx + i, yb - hh, 1, hh + e);
+        for (let y = yb - hh + 5; y < yb + e - 1; y += 5) px(g, 'rgba(60,40,30,0.45)', cx + i, y, 1, 1);
+      }
+      g.fillStyle = css(0x8a7a64, 1.22);
+      g.beginPath();
+      g.ellipse(cx, yb - hh, rx, ry, 0, 0, Math.PI * 2);
+      g.fill();
+      px(g, '#7a3a24', cx - rx + 3, yb - hh + 6, 3, 4);
     });
   }
-  push(-13.5, (g) => {
-    const y0 = groundY(8, -13.6) - 9, xa = fx(7.6), xb = fx(11);
-    for (let xx = xa; xx < xb; xx += 7) px(g, '#4a4440', xx, y0, 1, groundY(xx / KX, -13.6) - y0);
-    px(g, '#6a6a6e', xa, y0 - 2, xb - xa, 2);
-    px(g, '#8a8a8e', xa, y0 - 2, xb - xa, 1);
+  // rurociąg na estakadzie
+  push(9.3 - 13.6, (g) => {
+    for (let x = 7.6; x <= 11; x += 0.6) {
+      const q = P(x, -13.6);
+      px(g, '#4a4440', q.x, q.y - 9, 1, 9);
+    }
+    const h = th(9, -13.6) + 0.8;
+    seg(g, pr(7.6, -13.6, h), pr(11, -13.6, h), '#6a6a6e');
+    seg(g, pr(7.6, -13.6, h + 0.09), pr(11, -13.6, h + 0.09), '#8a8a8e');
   });
-  // tor kolejowy z wagonami (szyny malowane na ziemi)
-  push(-99, (g) => rails(g, 3.5, 18.5, -10.35));
+  push(-999, (g) => rails(g, 3.5, 18.5, -10.35));
   for (let k = 0; k < 4; k++) {
     const x = 6.5 + k * 1.15, col = [0x6a3a2a, 0x5a4a3a, 0x3a4a5a, 0x6a3a2a][k];
-    push(-10.35 + 0.2, (g) => {
-      const b = boxAt(g, x, -10.35, 1.0, 0.36, 0.5, col, 0.05);
-      for (let xx = b.x0 + 2; xx < b.x1 - 1; xx += 3) px(g, css(col, 0.6), xx, b.yFront + 1, 1, b.yBase - b.yFront - 2);
-      px(g, '#141414', b.x0 + 1, b.yBase, 2, 1);
-      px(g, '#141414', b.x1 - 3, b.yBase, 2, 1);
+    push(x - 10.35, (g) => {
+      isoBox(g, x, -10.35, 1.0, 0.36, 0.5, col, 0.05, true, (X, bt, _tp, south, t, len) => {
+        if (south && t % 3 === 0) px(g, css(col, 0.6), X, bt - 5, 1, 4);
+        if (t === 1 || t === len - 2) px(g, '#141414', X, bt, 1, 1);
+      });
     });
   }
-  // plac kontenerowy z suwnicą
   for (let k = 0; k < 14; k++) {
     const row = k % 2, x = 8 + Math.floor(k / 2) * 0.95 + (r() - 0.5) * 0.15, z = -7.3 + row * 0.42, col = [0xa04a2a, 0x2a6a8a, 0x8a8a3a, 0x5a6a4a, 0x8a5a3a][k % 5], up = r() < 0.35 ? 0.38 : 0;
     if (r() < 0.12) continue;
-    push(z + 0.2 + up * 0.01, (g) => {
-      const b = boxAt(g, x, z, 0.9, 0.38, 0.38, col, up);
-      for (let xx = b.x0 + 1; xx < b.x1 - 1; xx += 2) px(g, css(col, 0.62), xx, b.yFront, 1, b.yBase - b.yFront);
-    });
+    push(x + z + up * 0.01, (g) => void isoBox(g, x, z, 0.9, 0.38, 0.38, col, up, true, (X, bt, _tp, _s, t) => {
+      if (t % 2 === 1) px(g, css(col, 0.62), X, bt - 4, 1, 4);
+    }));
   }
-  push(-6.7, (g) => {
-    const xa = fx(9.2), xb = fx(12.6), ya = groundY(9.2, -6.8), yb = groundY(12.6, -6.8), top = Math.min(ya, yb) - 20;
-    px(g, '#c09020', xa, top, 2, ya - top);
-    px(g, '#c09020', xb, top, 2, yb - top);
-    px(g, '#d8a828', xa - 1, top - 2, xb - xa + 4, 3);
-    px(g, '#3a3430', xa + 14, top + 1, 1, 8);
-    px(g, '#5a5048', xa + 12, top + 9, 5, 2);
+  push(10.9 - 6.6, (g) => {
+    const a = P(9.2, -6.8), b2 = P(12.6, -6.8), h = th(10.9, -6.8) + 1.8;
+    const ta = pr(9.2, -6.8, h), tb = pr(12.6, -6.8, h);
+    px(g, '#c09020', a.x, Math.round(ta[1]), 2, a.y - Math.round(ta[1]));
+    px(g, '#c09020', b2.x, Math.round(tb[1]), 2, b2.y - Math.round(tb[1]));
+    seg(g, ta, tb, '#d8a828');
+    seg(g, [ta[0], ta[1] - 1], [tb[0], tb[1] - 1], '#d8a828');
+    const m = pr(10.4, -6.8, h);
+    px(g, '#3a3430', Math.round(m[0]), Math.round(m[1]), 1, 8);
+    px(g, '#5a5048', Math.round(m[0]) - 2, Math.round(m[1]) + 8, 5, 2);
   });
   // beczki z odpadami i tablice ostrzegawcze wokół krateru
   for (let k = 0; k < 9; k++) {
     const a = k * 0.72 + 0.3, x = KRX + Math.cos(a) * 3.3, z = KRZ + Math.sin(a) * 3.0;
-    push(z, (g) => {
-      const b = boxAt(g, x, z, 0.2, 0.18, 0.28, 0x6a8a2a, 0, false);
-      px(g, '#3a4a1a', b.x0, b.yFront + 1, b.x1 - b.x0, 1);
+    push(x + z, (g) => {
+      isoBox(g, x, z, 0.2, 0.2, 0.28, 0x6a8a2a, 0, false);
       if (k % 3 === 0) {
-        const cx = fx(x + 0.3), y = groundY(x + 0.3, z);
-        px(g, '#3a3430', cx, y - 8, 1, 8);
-        px(g, '#e0c030', cx - 2, y - 11, 5, 4);
-        px(g, '#1a1a1a', cx, y - 10, 1, 2);
+        const q = P(x + 0.3, z);
+        px(g, '#3a3430', q.x, q.y - 8, 1, 8);
+        px(g, '#e0c030', q.x - 2, q.y - 11, 5, 4);
+        px(g, '#1a1a1a', q.x, q.y - 10, 1, 2);
       }
     });
   }
 
   // ================= góry: bunkier w zboczu, maszt, radar, schrony bojowe, ogrodzenie, martwe sosny
-  push(-8.0 + 0.3, (g) => {
-    const b = boxAt(g, -12, -8.0, 2.2, 0.6, 1.4, 0x5a5a5e);
-    const w = b.x1 - b.x0;
-    // skośne skrzydła portalu
-    g.fillStyle = css(0x5a5a5e, 0.7);
-    g.beginPath();
-    g.moveTo(b.x0, b.yFront);
-    g.lineTo(b.x0 - 6, b.yBase);
-    g.lineTo(b.x0, b.yBase);
-    g.fill();
-    g.beginPath();
-    g.moveTo(b.x1, b.yFront);
-    g.lineTo(b.x1 + 6, b.yBase);
-    g.lineTo(b.x1, b.yBase);
-    g.fill();
-    // wrota pancerne w pasy
-    const dx = b.x0 + 6, dw = w - 12, dy = b.yFront + 4;
-    px(g, '#0a0a0c', dx - 1, dy - 1, dw + 2, b.yBase - dy + 1);
-    px(g, '#4a4c50', dx, dy, dw, b.yBase - dy);
-    px(g, '#2a2c30', dx + dw / 2, dy, 1, b.yBase - dy);
-    for (let xx = b.x0; xx < b.x1; xx += 4) px(g, '#c0a030', xx, b.yFront, 2, 2);
-    px(g, '#ff4030', b.x0 + 3, b.yFront + 4, 1, 1);
-    px(g, '#ff4030', b.x1 - 4, b.yFront + 4, 1, 1);
+  push(-12 - 8.0, (g) => {
+    const H = Math.round(1.4 * LIFT);
+    isoBox(g, -12, -8.0, 2.2, 0.6, 1.4, 0x5a5a5e, 0, true, (X, bt, _tp, south, t, len) => {
+      if (!south) return;
+      // wrota pancerne w pasy, światła, żółto-czarna krawędź
+      if (t > len * 0.25 && t < len * 0.75) {
+        px(g, '#0a0a0c', X, bt - H + 4, 1, H - 4);
+        px(g, Math.abs(t - len / 2) < 1 ? '#2a2c30' : '#4a4c50', X, bt - H + 5, 1, H - 5);
+      }
+      if (t % 4 < 2) px(g, '#c0a030', X, bt - H + 1, 1, 2);
+      if (t === 3 || t === len - 4) px(g, '#ff4030', X, bt - H + 5, 1, 1);
+    });
   });
-  push(-7.4, (g) => {
+  push(-12 - 7.3, (g) => {
     sandbags(g, -13.4, -7.4, 0.9);
     sandbags(g, -10.6, -7.4, 0.9);
   });
-  push(-9.0, (g) => {
+  push(-10.6 - 9.0, (g) => {
     // maszt kratowy z odciągami
-    const cx = fx(-10.6), y = groundY(-10.6, -9.0), h = 4 * LIFT;
+    const { x: cx, y } = P(-10.6, -9.0), h = 4 * LIFT;
     g.strokeStyle = 'rgba(120,120,120,0.5)';
     g.beginPath();
     g.moveTo(cx, y - h + 4);
-    g.lineTo(cx - 14, y + 1);
+    g.lineTo(cx - 14, y + 2);
     g.moveTo(cx, y - h + 4);
-    g.lineTo(cx + 14, y + 1);
+    g.lineTo(cx + 14, y + 2);
     g.stroke();
     px(g, '#8a8a8a', cx - 1, y - h, 1, h);
     px(g, '#8a8a8a', cx + 1, y - h, 1, h);
     for (let yy = y - h + 2; yy < y; yy += 3) px(g, '#6a6a6a', cx - 1, yy, 3, 1);
   });
-  push(-14.2 + 0.3, (g) => {
-    const b = boxAt(g, -14.4, -14.2, 0.5, 0.5, 0.5, 0x5a5a5e);
-    const cx = Math.round((b.x0 + b.x1) / 2), cy = b.yTop - 7;
+  push(-14.4 - 14.2, (g) => {
+    const info = isoBox(g, -14.4, -14.2, 0.5, 0.5, 0.5, 0x5a5a5e);
+    const p = pr(-14.4, -14.2, info.h0 + 0.5), cx = Math.round(p[0]), cy = Math.round(p[1]) - 7;
     g.fillStyle = '#b8b8b0';
     g.beginPath();
     g.ellipse(cx, cy, 7, 4, -0.5, 0, Math.PI * 2);
@@ -956,50 +986,41 @@ function regionItems(items: Item[], r: () => number): void {
     g.beginPath();
     g.ellipse(cx + 1, cy + 1, 5, 2.5, -0.5, 0, Math.PI * 2);
     g.fill();
-    px(g, '#5a5a5e', cx, cy + 3, 1, b.yTop - cy - 3);
-    px(g, '#5a5a5e', cx - 2, cy - 4, 1, 4);
+    px(g, '#5a5a5e', cx, cy + 3, 1, 4);
   });
   for (const [x, z] of [[-17.8, -7.0], [-8.0, -8.0], [-20.6, -10.6]])
-    push(z + 0.3, (g) => {
-      // schron bojowy: niski betonowy klocek ze szczeliną strzelniczą
-      const b = boxAt(g, x, z, 0.8, 0.6, 0.45, 0x6a6a64);
-      px(g, '#0e0e0e', b.x0 + 3, b.yFront + 2, b.x1 - b.x0 - 6, 1);
-      px(g, css(0x6a6a64, 1.3), b.x0 + 1, b.yTop, b.x1 - b.x0 - 2, 1);
-    });
-  for (const [x, z] of [[-21.4, -9.4], [-14.3, -10.8]]) push(z + 0.1, (g) => {
-    const b = boxAt(g, x, z, 0.3, 0.3, 0.5, 0x5a5a5e);
-    px(g, '#1a1a1c', b.x0, b.yTop, b.x1 - b.x0, 2);
+    push(x + z, (g) => void isoBox(g, x, z, 0.8, 0.6, 0.45, 0x6a6a64, 0, true, (X, bt, _tp, _s, t, len) => {
+      if (t > 2 && t < len - 3) px(g, '#0e0e0e', X, bt - 4, 1, 1);
+    }));
+  for (const [x, z] of [[-21.4, -9.4], [-14.3, -10.8]]) push(x + z, (g) => {
+    const info = isoBox(g, x, z, 0.3, 0.3, 0.5, 0x5a5a5e);
+    isoHole(g, x, z, info.h0 + 0.5, 0.2, 0.2);
   });
-  for (let k = 0; k < 16; k++) {
+  for (let k = 0; k < 15; k++) {
     const x = -19.5 + k * 0.75;
     if (Math.abs(x + 12) < 1.2) continue;
-    push(-6.3, (g) => {
-      const cx = fx(x), y = groundY(x, -6.3);
-      px(g, '#4a3a2e', cx, y - 6, 1, 6);
-      const nx = fx(x + 0.75), ny = groundY(x + 0.75, -6.3);
-      if (k < 15 && Math.abs(x + 0.75 + 12) >= 1.2) {
-        g.strokeStyle = 'rgba(110,110,110,0.7)';
-        g.beginPath();
-        g.moveTo(cx, y - 5);
-        g.lineTo(nx, ny - 5);
-        g.moveTo(cx, y - 2.5);
-        g.lineTo(nx, ny - 2.5);
-        g.stroke();
+    push(x - 6.3, (g) => {
+      const q = P(x, -6.3);
+      px(g, '#4a3a2e', q.x, q.y - 6, 1, 6);
+      if (Math.abs(x + 0.75 + 12) >= 1.2) {
+        const nq = P(x + 0.75, -6.3);
+        seg(g, [q.x, q.y - 5], [nq.x, nq.y - 5], 'rgba(110,110,110,0.8)');
+        seg(g, [q.x, q.y - 3], [nq.x, nq.y - 3], 'rgba(110,110,110,0.8)');
       }
     });
   }
   for (let i = 0; i < 70; i++) {
     const x = -28 + r() * 26, z = -18 + r() * 12, s = r();
-    const h = heightQ8(W(x), W(z)) / WQ;
+    const h = th(x, z);
     if (h < 1.2 || h > 5.2 || !freeAt(x, z, 0.6)) continue;
-    push(z, (g) => pine(g, x, z, s));
+    push(x + z, (g) => pine(g, x, z, s));
   }
 
   // ================= pustkowia: obóz Nomadów, wrak samolotu, szkielet olbrzyma, wieża wiertnicza, wraki
   for (let k = 0; k < 6; k++) {
     const a = k * 1.05 + 0.2, x = 22 + Math.cos(a) * 1.6, z = 9.5 + Math.sin(a) * 1.2, col = [0xc8a468, 0x9a6a3a, 0xb88a54][k % 3];
-    push(z, (g) => {
-      const cx = fx(x), y = groundY(x, z);
+    push(x + z, (g) => {
+      const { x: cx, y } = P(x, z);
       px(g, 'rgba(30,18,10,0.3)', cx, y, 9, 2);
       g.fillStyle = css(col);
       g.beginPath();
@@ -1020,65 +1041,71 @@ function regionItems(items: Item[], r: () => number): void {
   }
   for (let k = 0; k < 3; k++) {
     const x = 24.6 + k * 1.0, z = 8.0 + k * 0.6;
-    push(z + 0.2, (g) => {
-      const b = boxAt(g, x, z, 0.9, 0.45, 0.35, 0x6a4a2a);
-      g.fillStyle = '#d8c8a0';
-      g.beginPath();
-      g.ellipse((b.x0 + b.x1) / 2, b.yTop, (b.x1 - b.x0) / 2, 5, 0, Math.PI, Math.PI * 2);
-      g.fill();
-      px(g, '#b8a880', b.x0, b.yTop, b.x1 - b.x0, 1);
-      px(g, '#141414', b.x0 + 1, b.yBase - 1, 2, 2);
-      px(g, '#141414', b.x1 - 3, b.yBase - 1, 2, 2);
+    push(x + z, (g) => {
+      const info = isoBox(g, x, z, 0.9, 0.45, 0.35, 0x6a4a2a, 0, true, (X, bt, _tp, _s, t, len) => {
+        if (t === 1 || t === len - 2) px(g, '#141414', X, bt - 1, 1, 2);
+      });
+      // plandeka: łuk nad skrzynią
+      const c = info.c;
+      for (let i = 0; i < c.n; i++) {
+        const tp = c.top[i] - info.H, bt = c.bot[i] - info.H, arch = Math.round(5 * Math.sin((i / (c.n - 1)) * Math.PI));
+        px(g, i < c.sx ? '#d8c8a0' : '#b8a880', c.x0 + i, tp - 4 - Math.min(2, arch), 1, bt - tp + 4);
+      }
     });
   }
-  push(9.5 - 1.6, (g) => {
+  push(20.2 + 7.9, (g) => {
     // totem z czaszką
-    const cx = fx(20.2), y = groundY(20.2, 7.9);
+    const { x: cx, y } = P(20.2, 7.9);
     px(g, '#5a3a24', cx, y - 14, 2, 14);
     px(g, '#5a3a24', cx - 3, y - 11, 8, 1);
     px(g, '#e6dcc0', cx - 1, y - 18, 4, 4);
     px(g, '#1a1410', cx, y - 17, 1, 1);
     px(g, '#1a1410', cx + 2, y - 17, 1, 1);
   });
-  push(11.3, (g) => {
-    // wrak samolotu: kadłub, złamane skrzydło, statecznik
-    const x0 = fx(26.2), x1 = fx(29.6), y = groundY(27.8, 11.3);
-    px(g, 'rgba(30,18,10,0.3)', x0 + 4, y, x1 - x0, 3);
-    px(g, '#9a9c9a', x0, y - 8, x1 - x0, 7);
-    px(g, '#b8bab6', x0, y - 9, x1 - x0, 2);
-    px(g, '#6a6c6a', x0, y - 2, x1 - x0, 2);
-    for (let xx = x0 + 6; xx < x1 - 8; xx += 4) px(g, '#2a3036', xx, y - 7, 2, 2);
-    px(g, '#1a1a1a', x0 - 1, y - 8, 3, 7);
-    px(g, '#9a9c9a', x1 - 6, y - 17, 6, 9);
-    px(g, '#c04030', x1 - 5, y - 16, 4, 2);
+  push(25.2 + 13.4, (g) => {
+    // wrak samolotu: kadłub wzdłuż x, złamane skrzydło, statecznik
+    const h = th(25.2, 13.4);
+    const info = isoBox(g, 25.2, 13.4, 3.4, 0.5, 0.55, 0x9a9c9a, 0, true, (X, bt, _tp, south, t, len) => {
+      if (south) {
+        px(g, '#6a6c6a', X, bt - 1, 1, 1);
+        if (t > 3 && t < len - 6 && t % 4 < 2) px(g, '#2a3036', X, bt - 5, 1, 2);
+      }
+    });
+    const c = info.c;
+    px(g, '#1a1a1a', c.x0, c.bot[0] - info.H, 2, info.H);
+    const tail = pr(26.7, 13.2, h + 0.55), tx = Math.round(tail[0]), ty = Math.round(tail[1]);
+    px(g, '#9a9c9a', tx - 3, ty - 10, 5, 10);
+    px(g, '#c04030', tx - 2, ty - 9, 3, 2);
+    // skrzydło jako płaski romb leżący na piasku
+    const w0 = pr(24.6, 13.7, h + 0.05), w1 = pr(25.4, 13.7, h + 0.05), w2 = pr(25.9, 15.0, h), w3 = pr(25.3, 15.0, h);
     g.fillStyle = '#8a8c8a';
     g.beginPath();
-    g.moveTo(x0 + 18, y - 3);
-    g.lineTo(x0 + 34, y + 6);
-    g.lineTo(x0 + 26, y + 6);
-    g.lineTo(x0 + 14, y - 2);
+    g.moveTo(w0[0], w0[1]);
+    g.lineTo(w1[0], w1[1]);
+    g.lineTo(w2[0], w2[1]);
+    g.lineTo(w3[0], w3[1]);
     g.fill();
-    rubble(g, x0 + 30, y + 3, 10, 3, 0x9a9c9a, seeded(5));
+    rubble(g, Math.round(w2[0]), Math.round(w2[1]) + 2, 10, 3, 0x9a9c9a, seeded(5));
   });
-  push(17.2, (g) => {
+  push(25 + 17.2, (g) => {
+    // szkielet olbrzyma: żebra wzdłuż kręgosłupa (oś x)
     g.strokeStyle = '#e6dcc0';
     g.lineWidth = 1.5;
     for (let k = 0; k < 8; k++) {
-      const x = fx(23.8 + k * 0.32), y = groundY(23.8 + k * 0.32, 17.2), rr = 8 - Math.abs(k - 3.5) * 1.1;
+      const q = P(23.8 + k * 0.32, 17.2), rr = 8 - Math.abs(k - 3.5) * 1.1;
       g.beginPath();
-      g.arc(x + 0.5, y, rr, Math.PI, Math.PI * 1.95);
+      g.arc(q.x + 0.5, q.y, rr, Math.PI, Math.PI * 1.95);
       g.stroke();
     }
     g.lineWidth = 1;
-    px(g, '#e6dcc0', fx(23.8) - 1, groundY(23.8, 17.2) - 2, fx(26.4) - fx(23.8), 2);
-    const sx = fx(23.3), sy = groundY(23.3, 17.2);
-    px(g, '#e6dcc0', sx - 6, sy - 6, 7, 5);
-    px(g, '#1a1410', sx - 4, sy - 5, 2, 2);
-    px(g, '#e6dcc0', sx - 9, sy - 2, 4, 1);
+    const a = P(23.8, 17.2), b2 = P(26.4, 17.2);
+    seg(g, [a.x, a.y - 1], [b2.x, b2.y - 1], '#e6dcc0');
+    px(g, '#e6dcc0', a.x - 7, a.y - 6, 7, 5);
+    px(g, '#1a1410', a.x - 5, a.y - 5, 2, 2);
   });
-  push(15.6, (g) => {
+  push(30.2 + 15.6, (g) => {
     // wieża wiertnicza (kratownica)
-    const cx = fx(30.2), y = groundY(30.2, 15.6), h = 30;
+    const { x: cx, y } = P(30.2, 15.6), h = 30;
     g.strokeStyle = '#4a3a30';
     g.beginPath();
     g.moveTo(cx - 7, y);
@@ -1096,9 +1123,10 @@ function regionItems(items: Item[], r: () => number): void {
     const x = 17 + r() * 14, z = 3 + r() * 16;
     if (!freeAt(x, z, 1.2) || Math.hypot(x - 22, z - 9.5) < 2.6) continue;
     const vert = r() < 0.4, col = [0x8a5a3a, 0x6a6a5a, 0x7a4a3a][k % 3];
-    push(z, (g) => {
+    push(x + z, (g) => {
       car(g, x, z, vert, col, true);
-      px(g, rgbCss(SAND), fx(x) - 4, groundY(x, z) - 1, 6, 2);
+      const q = P(x, z);
+      px(g, rgbCss(SAND), q.x - 4, q.y, 7, 2);
     });
   }
 
@@ -1107,52 +1135,53 @@ function regionItems(items: Item[], r: () => number): void {
     if (k === 0) continue;
     const a = (k / 28) * Math.PI * 2, x = HX + Math.cos(a) * 2.6, z = HZ + Math.sin(a) * 1.9;
     const col = [0x6a5a46, 0x7a4a34, 0x5a6066, 0x6a6a5a][(k * 7) % 4];
-    push(z + 0.1, (g) => {
-      const b = boxAt(g, x, z, 0.6, 0.18, 0.62, col, 0, false);
-      for (let xx = b.x0; xx < b.x1; xx += 2) px(g, css(col, 0.7), xx, b.yFront, 1, b.yBase - b.yFront);
-      px(g, '#3a2e24', b.x0, b.yFront - 2, 1, b.yBase - b.yFront + 2);
-    });
+    const alongX = Math.abs(Math.sin(a)) > 0.7;
+    push(x + z, (g) => void isoBox(g, x, z, alongX ? 0.6 : 0.2, alongX ? 0.2 : 0.6, 0.62, col, 0, false, (X, bt, _tp, _s, t) => {
+      if (t % 2 === 0) px(g, css(col, 0.7), X, bt - 7, 1, 7);
+    }));
   }
   const shacks: [number, number, number][] = [[-1.5, -0.7, 0x7a6a52], [-0.6, -0.9, 0x5a4a3a], [1.5, 0.4, 0x8a6a4a], [-1.9, 0.2, 0x6a5a4a], [0.6, 0.85, 0x7a5a42], [1.3, -0.75, 0x5a5a52]];
   for (const [dx, dz, col] of shacks) {
     const x = HX + dx, z = HZ + dz;
-    push(z + 0.28, (g) => {
-      const b = boxAt(g, x, z, 0.7, 0.5, 0.48, col);
-      px(g, '#1a1410', b.x0 + 2, b.yFront + 2, 2, b.yBase - b.yFront - 2);
-      px(g, '#ffb050', b.x1 - 4, b.yFront + 2, 2, 2);
-      // blacha falista na dachu
-      for (let xx = b.x0 - 1; xx <= b.x1; xx++) px(g, xx % 2 ? '#7a5a3a' : '#9a7048', xx, b.yTop - 1, 1, b.yFront - b.yTop + 1);
-      px(g, '#5a3a24', b.x0 + 3, b.yTop - 1, 3, 2);
-      smokePlume(g, b.x1 - 3, b.yTop - 4, 4);
+    push(x + z, (g) => {
+      const info = isoBox(g, x, z, 0.7, 0.5, 0.48, col, 0, true, (X, bt, tp, south, t, len) => {
+        if (south && t === 2) px(g, '#1a1410', X, bt - 5, 2, 5);
+        if (!south && t === len - 3) px(g, '#ffb050', X, bt - 4, 1, 2);
+        // blacha falista na dachu
+        for (let y = tp; y < bt - Math.round(0.48 * LIFT); y++) if ((X + y) % 3 === 0) px(g, '#9a7048', X, y, 1, 1);
+      });
+      const p = pr(x + 0.2, z - 0.1, info.h0 + 0.48);
+      smokePlume(g, Math.round(p[0]), Math.round(p[1]) - 3, 4);
     });
   }
-  push(HZ + 0.3, (g) => {
+  push(HX + 0.3 + HZ, (g) => {
     // lokomotywa i wagon
-    const b = boxAt(g, HX + 0.3, HZ + 0.05, 1.6, 0.45, 0.5, 0x3a4a3a);
-    boxAt(g, HX + 0.9, HZ + 0.05, 0.5, 0.45, 0.4, 0x2a3a2a, 0.5);
-    px(g, '#c04030', b.x0, b.yFront + 1, b.x1 - b.x0 - 4, 1);
-    for (let xx = b.x0 + 2; xx < b.x1 - 2; xx += 5) px(g, '#141414', xx, b.yBase - 1, 3, 2);
-    px(g, '#2a2a2a', b.x0 + 4, b.yTop - 6, 3, 6);
+    isoBox(g, HX + 0.3, HZ + 0.05, 1.6, 0.45, 0.5, 0x3a4a3a, 0, true, (X, bt, _tp, south, t, len) => {
+      if (south) px(g, '#c04030', X, bt - 5, 1, 1);
+      if (t % 5 === 2 && t < len - 1) px(g, '#141414', X, bt - 1, 2, 2);
+    });
+    isoBox(g, HX + 0.9, HZ + 0.05, 0.5, 0.45, 0.4, 0x2a3a2a, 0.5);
+    const p = pr(HX - 0.3, HZ + 0.05, th(HX, HZ) + 0.5);
+    px(g, '#2a2a2a', Math.round(p[0]), Math.round(p[1]) - 6, 3, 6);
   });
-  push(HZ - 0.9 + 0.2, (g) => {
+  push(HX - 0.4 + HZ - 0.9, (g) => {
     // wieża ciśnień
-    const cx = fx(HX - 0.4), y = groundY(HX - 0.4, HZ - 0.9);
+    const { x: cx, y } = P(HX - 0.4, HZ - 0.9);
     px(g, '#4a3a2e', cx - 4, y - 16, 1, 16);
     px(g, '#4a3a2e', cx + 4, y - 16, 1, 16);
     for (let yy = y - 14; yy < y; yy += 5) px(g, '#4a3a2e', cx - 4, yy, 9, 1);
     px(g, '#6a5240', cx - 6, y - 26, 13, 10);
-    px(g, '#86684e', cx - 6, y - 27, 13, 1);
-    px(g, '#4a3a2e', cx + 5, y - 26, 2, 10);
+    px(g, '#4a3a2e', cx + 2, y - 26, 5, 10);
     g.fillStyle = '#5a4434';
     g.beginPath();
-    g.moveTo(cx - 7, y - 27);
+    g.moveTo(cx - 7, y - 26);
     g.lineTo(cx, y - 31);
-    g.lineTo(cx + 7, y - 27);
+    g.lineTo(cx + 7, y - 26);
     g.fill();
   });
-  push(HZ - 1.3, (g) => {
+  push(HX + 2.0 + HZ - 1.3, (g) => {
     // wiatrak
-    const cx = fx(HX + 2.0), y = groundY(HX + 2.0, HZ - 1.3);
+    const { x: cx, y } = P(HX + 2.0, HZ - 1.3);
     px(g, '#5a5a5e', cx, y - 22, 1, 22);
     g.strokeStyle = '#c8c0b0';
     g.beginPath();
@@ -1165,12 +1194,13 @@ function regionItems(items: Item[], r: () => number): void {
     px(g, '#8a8a8e', cx - 1, y - 23, 3, 2);
   });
   for (const [dx, dz] of [[-2.4, -1.2], [2.3, 1.1], [2.5, -0.6]])
-    push(HZ + dz + 0.15, (g) => {
-      const b = boxAt(g, HX + dx, HZ + dz, 0.34, 0.3, 1.6, 0x5a4a3a);
-      px(g, '#3a2e24', b.x0 - 2, b.yTop - 1, b.x1 - b.x0 + 4, 2);
-      px(g, '#7a5a3a', b.x0 - 2, b.yTop - 5, b.x1 - b.x0 + 4, 1);
-      px(g, '#3a2e24', b.x0 - 2, b.yTop - 4, 1, 3);
-      px(g, '#3a2e24', b.x1 + 1, b.yTop - 4, 1, 3);
+    push(HX + dx + HZ + dz, (g) => {
+      const info = isoBox(g, HX + dx, HZ + dz, 0.34, 0.3, 1.6, 0x5a4a3a);
+      isoBox(g, HX + dx, HZ + dz, 0.5, 0.46, 0.12, 0x6a5038, 1.6 + info.h0 - th(HX + dx, HZ + dz), false);
+      const p = pr(HX + dx, HZ + dz, info.h0 + 1.75);
+      px(g, '#7a5a3a', Math.round(p[0]) - 5, Math.round(p[1]) - 5, 11, 1);
+      px(g, '#3a2e24', Math.round(p[0]) - 5, Math.round(p[1]) - 4, 1, 4);
+      px(g, '#3a2e24', Math.round(p[0]) + 5, Math.round(p[1]) - 4, 1, 4);
     });
 
   // ================= dzicz: linia energetyczna z przewróconymi słupami, opuszczone farmy
@@ -1181,20 +1211,18 @@ function regionItems(items: Item[], r: () => number): void {
     pylons.push([x, z, hash(k, 9) < 0.3]);
   }
   pylons.forEach(([x, z, fallen], i) => {
-    push(z, (g) => {
-      const cx = fx(x), y = groundY(x, z);
+    push(x + z, (g) => {
+      const { x: cx, y } = P(x, z);
+      g.strokeStyle = '#5a5a5e';
+      g.beginPath();
       if (fallen) {
-        g.strokeStyle = '#5a5a5e';
-        g.beginPath();
         g.moveTo(cx, y);
-        g.lineTo(cx + 20, y - 3);
-        g.moveTo(cx + 4, y + 1);
-        g.lineTo(cx + 20, y - 1);
+        g.lineTo(cx + 18, y + 6);
+        g.moveTo(cx + 3, y + 2);
+        g.lineTo(cx + 18, y + 8);
         g.stroke();
         return;
       }
-      g.strokeStyle = '#5a5a5e';
-      g.beginPath();
       g.moveTo(cx - 4, y);
       g.lineTo(cx, y - 24);
       g.lineTo(cx + 4, y);
@@ -1207,12 +1235,12 @@ function regionItems(items: Item[], r: () => number): void {
       px(g, '#5a5a5e', cx - 4, y - 16, 9, 1);
       const nx = pylons[i + 1];
       if (nx && !nx[2]) {
-        const ex = fx(nx[0]), ey = groundY(nx[0], nx[1]);
+        const e = P(nx[0], nx[1]);
         g.strokeStyle = 'rgba(40,36,34,0.6)';
         for (const o of [-6, 6]) {
           g.beginPath();
           g.moveTo(cx + o, y - 20);
-          g.quadraticCurveTo((cx + ex) / 2 + o, (y + ey) / 2 - 12, ex + o, ey - 20);
+          g.quadraticCurveTo((cx + e.x) / 2 + o, (y + e.y) / 2 - 12, e.x + o, e.y - 20);
           g.stroke();
         }
       }
@@ -1220,59 +1248,51 @@ function regionItems(items: Item[], r: () => number): void {
   });
   for (const [x, z, seed] of [[-6.5, 15.2, 1], [9.5, 16.6, 2], [-26, 11.5, 3], [-27.5, 2.5, 4]]) {
     if (!freeAt(x, z, 1)) continue;
-    push(z + 0.3, (g) => house(g, x, z, 1.0, 0.6, 0x7a6a52, 0x6a3a2a, seed * 97, seed % 2 === 1));
-    push(z - 0.6 + 0.4, (g) => {
-      const b = boxAt(g, x + 1.3, z - 0.6, 0.9, 0.8, 0.7, 0x7a4a30);
-      for (let xx = b.x0 - 1; xx <= b.x1; xx++) px(g, xx % 2 ? '#5a4a3a' : '#6a5a48', xx, b.yTop - 1, 1, b.yFront - b.yTop);
-      px(g, '#1a1410', b.x0 + 3, b.yFront + 2, 4, b.yBase - b.yFront - 2);
+    push(x + z, (g) => house(g, x, z, 1.0, 0.6, 0x7a6a52, 0x6a3a2a, seed * 97, seed % 2 === 1));
+    push(x + 1.3 + z - 0.6, (g) => {
+      const info = isoBox(g, x + 1.3, z - 0.6, 0.9, 0.8, 0.7, 0x7a4a30, 0, true, (X, bt, tp, south, t, len) => {
+        if (south && t > len / 2 - 3 && t < len / 2 + 2) px(g, '#1a1410', X, bt - 7, 1, 7);
+        for (let y = tp; y < bt - Math.round(0.7 * LIFT); y++) if ((X + y) % 3 === 0) px(g, '#5a4a3a', X, y, 1, 1);
+      });
+      void info;
     });
   }
 }
 
-function rails(g: Ctx2D, xa: number, xb: number, z: number): void {
-  for (let x = xa; x < xb; x += 0.14) {
-    const cx = fx(x), y = groundY(x, z);
-    px(g, '#4a3a2e', cx, y - 3, 1, 5);
-  }
-  for (const dz of [-0.1, 0.1]) for (let x = xa; x < xb; x += 0.07) px(g, '#7a7470', fx(x), groundY(x, z + dz) - 1, 1, 1);
-}
-
-/** Autostrada Przystań -> brama (te same próbki co trasa do ruin): pobocza, asfalt z ubytkami, linie, bariery, słupy. */
+/** Autostrada Przystań -> brama (te same próbki co trasa do ruin): pobocza, asfalt z ubytkami, linie, słupy, wraki. */
 function paintHighway(g: Ctx2D, items: Item[]): void {
   const rt = buildRoute(PLAZAS[0], 'ruins', 0), n = rt.trackFrom;
-  const P = (i: number): [number, number] => [scrX(rt.x[i]), scrY(rt.x[i], rt.z[i])];
+  const Pt = (i: number): [number, number] => [scrX(rt.x[i], rt.z[i]), scrY(rt.x[i], rt.z[i])];
+  const gap = (i: number): boolean => i % 40 === 18 || i % 40 === 31;
   const stroke = (col: string, wdt: number, skip: (i: number) => boolean): void => {
     g.strokeStyle = col;
     g.lineWidth = wdt;
     g.lineCap = 'round';
     for (let i = 0; i < n; i++) {
       if (skip(i)) continue;
-      const [ax, ay] = P(i), [bx, by] = P(i + 1);
+      const [ax, ay] = Pt(i), [bx, by] = Pt(i + 1);
       g.beginPath();
       g.moveTo(ax, ay);
       g.lineTo(bx, by);
       g.stroke();
     }
     g.lineCap = 'butt';
+    g.lineWidth = 1;
   };
-  stroke('rgba(120,104,84,0.8)', 15, () => false);
-  stroke('#3c3836', 11, (i) => i % 40 === 18 || i % 40 === 31);
-  g.lineWidth = 1;
+  stroke('rgba(120,104,84,0.8)', 11, () => false);
+  stroke('#3c3836', 8, gap);
   for (let i = 0; i < n; i++) {
-    if (i % 40 === 18 || i % 40 === 31) continue;
-    const [x, y] = P(i);
+    if (gap(i)) continue;
+    const [x, y] = Pt(i);
     if (i % 4 < 2) px(g, '#c8b068', x, y, 2, 1);
-    px(g, '#8a8478', x, y - 4, 2, 1);
-    px(g, '#8a8478', x, y + 4, 2, 1);
     if (hash(i, 77) < 0.25) px(g, '#2a2624', x - 2, y - 2 + Math.floor(hash(77, i) * 4), 4, 1);
   }
   for (let i = 6; i < n - 2; i += 16) {
     const x = rt.x[i] / WQ, z = rt.z[i] / WQ + 0.9, lean = i === 54;
-    items.push({ key: z, draw: (gg) => {
-      const cx = fx(x), y = groundY(x, z);
+    items.push({ key: x + z, draw: (gg) => {
+      const { x: cx, y } = P(x, z);
       if (lean) {
-        px(gg, '#4a4a4e', cx, y - 2, 12, 1);
-        px(gg, '#4a4a4e', cx + 11, y - 5, 1, 4);
+        seg(gg, [cx, y], [cx + 12, y - 3], '#4a4a4e');
       } else {
         px(gg, '#4a4a4e', cx, y - 20, 1, 20);
         px(gg, '#4a4a4e', cx - 5, y - 19, 11, 1);
@@ -1281,15 +1301,14 @@ function paintHighway(g: Ctx2D, items: Item[]): void {
       }
     } });
   }
-  // wraki porzucone na poboczu i tablica
   for (let i = 12; i < n - 6; i += 23) {
     const x = rt.x[i] / WQ + 0.3, z = rt.z[i] / WQ + (i % 2 ? 0.55 : -0.5), col = [0x6a4a3a, 0x4a5a6a, 0x7a6a3a][i % 3];
-    items.push({ key: z, draw: (gg) => car(gg, x, z, false, col, i % 3 === 0) });
+    items.push({ key: x + z, draw: (gg) => car(gg, x, z, false, col, i % 3 === 0) });
   }
   {
     const i = Math.floor(n * 0.45), x = rt.x[i] / WQ, z = rt.z[i] / WQ - 0.8;
-    items.push({ key: z, draw: (gg) => {
-      const cx = fx(x), y = groundY(x, z);
+    items.push({ key: x + z, draw: (gg) => {
+      const { x: cx, y } = P(x, z);
       px(gg, '#3a3430', cx - 6, y - 16, 1, 16);
       px(gg, '#3a3430', cx + 7, y - 16, 1, 16);
       px(gg, '#2a6a3a', cx - 8, y - 24, 18, 9);
@@ -1302,10 +1321,12 @@ function paintHighway(g: Ctx2D, items: Item[]): void {
 
 /** Roślinność i kamienie według stref (port reguł flory z worldterrain.js w skali mapy). */
 function floraItems(items: Item[], r: () => number): void {
-  for (let i = 0; i < 520; i++) {
-    const x = -32 + r() * 64, z = -20 + r() * 42, t = r(), v = r();
+  for (let i = 0; i < 640; i++) {
+    const x = -40 + r() * 80, z = -26 + r() * 56, t = r(), v = r();
+    const sx = OX + (x - z) * A, sy = OY + (x + z) * B;
+    if (sx < -10 || sx > MAP_W + 10 || sy < 0 || sy > MAP_H + 20) continue;
     if (havenE(x, z) < 1.6 || inPad(x, z)) continue;
-    const h = heightQ8(W(x), W(z)) / WQ, dc = Math.hypot(x - KRX, z - KRZ), dr = riverDistF(x, z);
+    const h = th(x, z), dc = Math.hypot(x - KRX, z - KRZ), dr = riverDistF(x, z);
     if (h > 4.2 || dc < 2.6 || !freeAt(x, z, 0.5)) continue;
     const e = ((x - CX) / CRX) ** 2 + ((z - CZ) / CRZ) ** 2;
     if (e < 1.15) continue;
@@ -1315,8 +1336,8 @@ function floraItems(items: Item[], r: () => number): void {
     else if (dr < 2.4) kind = v < 0.5 ? 'grass' : v < 0.85 ? 'bush' : 'tree';
     else if (x > 15) kind = v < 0.5 ? 'cactus' : v < 0.75 ? 'bush' : v < 0.9 ? 'rock' : 'bones';
     else kind = v < 0.35 ? 'grass' : v < 0.6 ? 'bush' : v < 0.82 ? 'tree' : v < 0.96 ? 'rock' : 'bones';
-    items.push({ key: z, draw: (g) => {
-      const cx = fx(x), y = groundY(x, z);
+    items.push({ key: x + z, draw: (g) => {
+      const { x: cx, y } = P(x, z);
       switch (kind) {
         case 'grass':
           for (let k = 0; k < 6; k++) px(g, k % 3 ? '#a08a4a' : '#7a6a38', cx + k - 3, y - (k % 2 ? 4 : 3), 1, k % 2 ? 4 : 3);
@@ -1330,14 +1351,16 @@ function floraItems(items: Item[], r: () => number): void {
         case 'tree':
           deadTree(g, x, z, t, i);
           break;
-        case 'cactus':
-          px(g, t < 0.5 ? '#5a7a3a' : '#7a8a4a', cx, y - 9, 3, 9);
+        case 'cactus': {
+          const c1 = t < 0.5 ? '#5a7a3a' : '#7a8a4a';
+          px(g, c1, cx, y - 9, 3, 9);
           px(g, '#4a6a2a', cx + 2, y - 9, 1, 9);
-          px(g, t < 0.5 ? '#5a7a3a' : '#7a8a4a', cx - 3, y - 7, 1, 3);
-          px(g, t < 0.5 ? '#5a7a3a' : '#7a8a4a', cx - 2, y - 5, 2, 1);
-          px(g, t < 0.5 ? '#5a7a3a' : '#7a8a4a', cx + 3, y - 4, 2, 1);
-          px(g, t < 0.5 ? '#5a7a3a' : '#7a8a4a', cx + 5, y - 7, 1, 4);
+          px(g, c1, cx - 3, y - 7, 1, 3);
+          px(g, c1, cx - 2, y - 5, 2, 1);
+          px(g, c1, cx + 3, y - 4, 2, 1);
+          px(g, c1, cx + 5, y - 7, 1, 4);
           break;
+        }
         case 'shroom':
           px(g, '#6a5a3a', cx, y - 3, 1, 3);
           px(g, v < 0.3 ? '#c8ff60' : '#9adf50', cx - 2, y - 5, 5, 2);
@@ -1376,7 +1399,7 @@ export function paintRegion(scene: Phaser.Scene, key: string, w = MAP_W, h = MAP
     floraItems(items, seeded(31));
     items.sort((a, b) => a.key - b.key);
     for (const it of items) it.draw(g);
-    const grad = g.createRadialGradient(w / 2, h / 2, h * 0.42, w / 2, h / 2, h * 1.0);
+    const grad = g.createRadialGradient(w / 2, h / 2, h * 0.45, w / 2, h / 2, h * 1.0);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, 'rgba(24,10,4,0.5)');
     g.fillStyle = grad;
@@ -1384,16 +1407,20 @@ export function paintRegion(scene: Phaser.Scene, key: string, w = MAP_W, h = MAP
   });
 }
 
-/** Miejsca animowanych ognisk (ruiny w mieście, obóz Nomadów, Przystań) - w pikselach mapy. */
+/** Miejsca animowanych ognisk (płonące beczki na ulicach, obóz Nomadów, Przystań) - w pikselach mapy. */
 export function regionFires(): { x: number; y: number; size: number }[] {
   const pts: [number, number][] = [[1, -1], [-2, 1], [3, 2], [-1, -3], [4, 0], [-4, -1], [2, 3]];
   const out = pts.map(([gx, gz]) => {
-    const x = CX + (gx + 0.5) * G - 0.6, z = CZ + (gz + 0.5) * G + 0.05;
-    return { x: fx(x), y: groundY(x, z), size: 0.4 };
+    const p = P(CX + (gx + 0.5) * G - 0.6, CZ + (gz + 0.5) * G + 0.05);
+    return { x: p.x, y: p.y, size: 0.4 };
   });
-  out.push({ x: fx(22), y: groundY(22, 9.5), size: 0.55 }, { x: fx(HX - 0.4), y: groundY(HX - 0.4, HZ + 0.05), size: 0.45 });
+  const camp = P(22, 9.5), home = P(HX - 0.4, HZ + 0.05);
+  out.push({ x: camp.x, y: camp.y, size: 0.55 }, { x: home.x, y: home.y, size: 0.45 });
   return out;
 }
 
 /** Czubek masztu przy bunkrze (czerwona latarnia). */
-export const beaconPos = (): { x: number; y: number } => ({ x: fx(-10.6), y: groundY(-10.6, -9.0, 4) - 1 });
+export const beaconPos = (): { x: number; y: number } => {
+  const p = P(-10.6, -9.0, 4);
+  return { x: p.x, y: p.y - 1 };
+};
