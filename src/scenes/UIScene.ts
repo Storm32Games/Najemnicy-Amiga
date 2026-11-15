@@ -16,12 +16,15 @@ import {
   classLabel,
   conditionChips,
   equipmentRows,
+  itemStatLine,
   hpRatio,
   hpTone,
   stateLabel,
   statPairs,
 } from '../core/HudState';
-import type { Character } from '../core/rules/types';
+import type { Character, EquipSlot } from '../core/rules/types';
+import { itemDef } from '../core/rules/lookup';
+import { normWeapon } from '../core/rules/stats';
 import { TurnPhase } from '../core/TurnManager';
 import { BASE_H, BASE_W, PAL, ZOOM, button as kitButton, fitCamera, label, parseColor } from './ui/Kit';
 import { fitText } from './ui/FontGlyphs';
@@ -99,6 +102,9 @@ const AB_W = BASE_W - M - LOG_W - 4 - AB_X;
 const AB_COLS = 2;
 const AB_BW = Math.floor((AB_W - 2) / AB_COLS);
 const AB_BH = 11;
+/** Panele broni (główna / zapasowa) nad paskiem akcji. */
+const WP_H = 30;
+const WP_W = Math.floor((AB_W - 3) / 2);
 
 type BtnVariant = 'normal' | 'primary' | 'danger';
 
@@ -149,7 +155,6 @@ export class UIScene extends Phaser.Scene {
   private roundText!: PixelText;
 
   private btnInv!: Button;
-  private btnSwap!: Button;
   private btnHelp!: Button;
   private btnGroup!: Button;
   private btnSpeed!: Button;
@@ -160,6 +165,7 @@ export class UIScene extends Phaser.Scene {
   private objLayer!: Phaser.GameObjects.Container;
   private initLayer!: Phaser.GameObjects.Container;
   private actionLayer!: Phaser.GameObjects.Container;
+  private weaponLayer!: Phaser.GameObjects.Container;
   private rollBox: Phaser.GameObjects.Container | null = null;
   private helpBox: Phaser.GameObjects.Container | null = null;
   private shownPrompt = 0;
@@ -241,11 +247,11 @@ export class UIScene extends Phaser.Scene {
     this.btnGroup = this.button(bx2, row(1), BTN_W, '', () => this.hud.command({ kind: 'toggleGroup' }));
     this.btnZoomOut = this.button(bx, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1 / 1.25 }));
     this.btnZoomIn = this.button(bx2, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }));
-    this.btnInv = this.button(bx, row(3), BTN_W, '', () => this.toggleSheet());
-    this.btnSwap = this.button(bx2, row(3), BTN_W, '', () => this.hud.command({ kind: 'swapWeapons' }));
+    this.btnInv = this.button(bx, row(3), RCOL_W, '', () => this.toggleSheet());
     this.btnRetreat = this.button(bx, row(4), RCOL_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger');
     this.objLayer = this.add.container(RCOL_X, OBJ_Y);
     this.actionLayer = this.add.container(0, 0);
+    this.weaponLayer = this.add.container(0, 0);
 
     // ---- lewy dół: opis pod kursorem
     this.hoverBg = this.panelRect(M, BASE_H - M - 12, 10, 12).setVisible(false);
@@ -541,8 +547,8 @@ export class UIScene extends Phaser.Scene {
     this.btnZoomOut.set('MAPA −', true);
     this.btnZoomIn.set('MAPA +', true);
     this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ [I]' : 'EKWIPUNEK [I]', true);
-    this.btnSwap.set('ZMIEŃ BROŃ [X]', !locked && !!hud.active?.equipment.weapon2);
     this.btnRetreat.set('ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
+    this.drawWeapons();
   }
 
   private drawFoes(): void {
@@ -652,10 +658,10 @@ export class UIScene extends Phaser.Scene {
     const L = this.actionLayer;
     L.removeAll(true);
     const list = this.hud.actions;
+    this.drawWeapons();
     if (!list.length) return;
-    const rows = Math.ceil(list.length / AB_COLS);
-    const h = 12 + rows * (AB_BH + 1) + 2;
-    const y0 = BASE_H - M - 14 - h;
+    const y0 = this.actionTop();
+    const h = BASE_H - M - 14 - y0;
     const bg = this.panelRect(AB_X, y0, AB_W, h, C.amberDim);
     const head = this.text(AB_X + 3, y0 + 1, cut((this.hud.actionsHead ?? '').toUpperCase(), 22), C.amber);
     const pipsX = AB_X + AB_W - 4;
@@ -669,6 +675,79 @@ export class UIScene extends Phaser.Scene {
       const y = y0 + 12 + Math.floor(i / AB_COLS) * (AB_BH + 1);
       L.add(this.actionButton(x, y, AB_BW - 2, b, i < 9 ? String(i + 1) : ''));
     });
+  }
+
+  /** Górna krawędź paska akcji (albo miejsca na niego, gdy pusty). */
+  private actionTop(): number {
+    const n = this.hud.actions.length;
+    if (!n) return BASE_H - M - 14;
+    const rows = Math.ceil(n / AB_COLS);
+    return BASE_H - M - 14 - (12 + rows * (AB_BH + 1) + 2);
+  }
+
+  // ================================================================== panele broni (główna / zapasowa)
+
+  /** Dwa panele nad paskiem akcji: widać, którą broń postać trzyma i na co się przełączy. Klik w panel = wybór tej broni. */
+  private drawWeapons(): void {
+    const L = this.weaponLayer;
+    if (!L) return;
+    L.removeAll(true);
+    const ch = this.hud.active;
+    if (!ch || ch.attacks) return;
+    const y = this.actionTop() - WP_H - 2;
+    const canSwap = this.hud.canAct && !!ch.equipment.weapon2;
+    L.add(this.weaponPanel(AB_X, y, ch, 'weapon', canSwap));
+    L.add(this.weaponPanel(AB_X + WP_W + 3, y, ch, 'weapon2', canSwap));
+  }
+
+  private weaponPanel(x: number, y: number, ch: Character, slot: EquipSlot, canSwap: boolean): Phaser.GameObjects.GameObject[] {
+    const main = slot === 'weapon';
+    const inst = ch.equipment[slot];
+    const def = itemDef(inst?.id);
+    const empty = !main && !inst;
+    const w = normWeapon(inst);
+    const name = empty ? '— brak —' : w.name;
+    const stat = empty ? '' : def ? itemStatLine(def, true) : `${w.dmg} ${w.range ? 'z' + w.range : 'wręcz'}`;
+    const clickable = !main && canSwap;
+    const fill = main ? C.amberDim : PAL.panel2;
+    const stroke = main ? C.amber : clickable ? PAL.edge : C.greyDim;
+    const out: Phaser.GameObjects.GameObject[] = [];
+    out.push(this.add.rectangle(x + 1, y + 1, WP_W, WP_H, 0x000000, 0.6).setOrigin(0));
+    const r = this.add.rectangle(x, y, WP_W, WP_H, fill, 0.95).setOrigin(0).setStrokeStyle(main ? 2 : 1, stroke).setInteractive({ useHandCursor: clickable });
+    out.push(r);
+    const head = main ? 'W RĘKU' : this.hud.inCombat ? 'ZAPAS · 1 AKCJA [X]' : 'ZAPASOWA [X]';
+    out.push(this.text(x + 2, y + 1, fitText(head, WP_W - 4), main ? C.amber : C.grey, 7));
+    let tx = x + 2;
+    if (inst) {
+      out.push(itemIconImage(this, tx, y + 12, inst.id, 14).setAlpha(main || clickable ? 1 : 0.5));
+      tx += 17;
+    }
+    const ink = empty ? C.grey : main ? C.white : clickable ? PAL.text : C.grey;
+    out.push(this.text(tx, y + 10, fitText(name, x + WP_W - 2 - tx), ink, 7));
+    if (stat) out.push(this.text(tx, y + 19, fitText(stat, x + WP_W - 2 - tx), main ? C.amber : C.grey, 7));
+    const tip = empty
+      ? 'Brak broni zapasowej - załóż ją w ekwipunku [I].'
+      : `${name}${def ? ' · ' + itemStatLine(def) : ''}${main ? ' · broń w ręku' : clickable ? ` · kliknij, aby dobyć${this.hud.inCombat ? ' (1 akcja)' : ''}` : ''}`;
+    r.on('pointerover', () => {
+      if (clickable) {
+        r.setFillStyle(0x3a2c1e, 1).setStrokeStyle(1, PAL.edgeHi);
+        SoundManager.sfx('hover');
+      }
+      this.hud.setHover(tip);
+    });
+    r.on('pointerout', () => {
+      r.setFillStyle(fill, 0.95).setStrokeStyle(main ? 2 : 1, stroke);
+      this.hud.setHover(null);
+    });
+    r.on('pointerdown', () => {
+      if (main) return;
+      if (!clickable) {
+        SoundManager.sfx('error', { vol: 0.4 });
+        return;
+      }
+      this.hud.command({ kind: 'swapWeapons' });
+    });
+    return out;
   }
 
   private actionButton(x: number, y: number, w: number, b: ActionButton, key: string): Phaser.GameObjects.GameObject[] {
