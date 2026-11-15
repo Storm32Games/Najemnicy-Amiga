@@ -27,6 +27,7 @@ export const GAME_TITLE = 'PYŁ I RDZA';
 export const GAME_SUBTITLE = 'NAJEMNICY';
 
 export const CREDITS: readonly (readonly [string, string])[] = [
+  ['Autor', 'Robert Magdziarz'],
   ['Studio', 'STORM 32'],
   ['Reguły', 'Pathfinder 2e (adaptacja postapokaliptyczna)'],
   ['Grafika', 'rysowana w całości w kodzie'],

@@ -94,7 +94,7 @@ export class TitleScene extends Phaser.Scene {
       return b;
     });
     this.paintFocus();
-    label(this, 6, BASE_H - 6, 'STORM 32 · v1.0 · Pathfinder 2e w świecie po zagładzie', { size: 6, color: PAL.dim }).setOrigin(0, 1).setDepth(10);
+    label(this, 6, BASE_H - 6, `Robert Magdziarz · v${__GAME_VERSION__} · Pathfinder 2e w świecie po zagładzie`, { size: 6, color: PAL.dim }).setOrigin(0, 1).setDepth(10);
 
     const kb = this.input.keyboard;
     const nav = (dir: -1 | 1) => () => {
@@ -157,13 +157,16 @@ export class TitleScene extends Phaser.Scene {
       this.credits = null;
       return;
     }
-    const w = 280, h = 34 + CREDITS.length * 14;
+    const w = 280, h = 34 + (CREDITS.length + 1) * 14;
     const box = panel(this, (BASE_W - w) / 2, (BASE_H - h) / 2, w, h, PAL.edgeHi, 0.97).setDepth(50);
-    box.add(label(this, 10, 8, 'AUTORZY — STORM 32', { size: 9, bold: true, color: PAL.amber }));
+    box.add(label(this, 10, 8, 'AUTORZY', { size: 9, bold: true, color: PAL.amber }));
     CREDITS.forEach(([a, b], i) => {
       const k = label(this, 10, 26 + i * 14, `${a}: `, { color: PAL.amber });
       box.add([k, label(this, 10 + k.displayWidth, 26 + i * 14, b, { wrap: w - 20 - k.displayWidth })]);
     });
+    const vy = 26 + CREDITS.length * 14;
+    const vk = label(this, 10, vy, 'Wersja: ', { color: PAL.amber });
+    box.add([vk, label(this, 10 + vk.displayWidth, vy, `v${__GAME_VERSION__}`)]);
     const close = button(this, w - 62, h - 20, 'Zamknij', () => this.toggleCredits(), { w: 54, size: 7 });
     box.add(close.box);
     this.credits = box;
