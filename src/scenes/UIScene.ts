@@ -33,7 +33,8 @@ import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, op
 // HUD misji - port Oldgame/src/mission/hud.js (DOM) do Phasera, w stylu terminala CRT.
 //   lewy górny:   karta drużyny (portret-skrót, PW, AP, stany)       <- H.party_
 //   środek góra:  runda + pasek widocznych wrogów z PW                 <- H.initBar
-//   prawy górny:  przyciski: koniec tury, ekwipunek, zmiana broni      <- H.menu
+//   prawy górny:  przyciski: pomoc, opcje, tempo, mapa, ekwipunek       <- H.menu
+//   panel akcji:  bronie (klik = wybór) + akcje walki; przesuwany        <- C.refreshBar
 //   lewy dół:     opis pola/wroga pod kursorem                         <- H.showInfo
 //   prawy dół:    dziennik walki (kółko = przewijanie, zwijany)        <- H.log
 //   panel (I):    karta postaci: statystyki, wyposażenie, plecak       <- H.sheet
@@ -102,11 +103,11 @@ const AB_W = BASE_W - M - LOG_W - 4 - AB_X;
 const AB_COLS = 2;
 const AB_BW = Math.floor((AB_W - 2) / AB_COLS);
 const AB_BH = 11;
-/** Panele broni (główna / zapasowa) nad paskiem akcji. */
-const WP_H = 30;
-const WP_W = Math.floor((AB_W - 3) / 2);
+/** Kafel broni w panelu akcji (ikona + nazwa + obrażenia). */
+const WT_H = 13;
 
 type BtnVariant = 'normal' | 'primary' | 'danger';
+type DragTarget = 'log' | 'sheet' | 'actions' | 'logSize' | 'logThumb';
 
 interface Button {
   bg: Phaser.GameObjects.Rectangle;
@@ -120,6 +121,7 @@ interface Button {
 /** Pozycje przesuniętych paneli (null = domyślna); na poziomie modułu, żeby przetrwały kolejne misje. */
 let logPos: { x: number; y: number } | null = null;
 let sheetPos: { x: number; y: number } | null = null;
+let actPos: { x: number; y: number } | null = null;
 /** Rozmiar dziennika (zmieniany uchwytem w prawym dolnym rogu). */
 let logSize = { w: LOG_W, h: LOG_H };
 /**
@@ -165,7 +167,6 @@ export class UIScene extends Phaser.Scene {
   private objLayer!: Phaser.GameObjects.Container;
   private initLayer!: Phaser.GameObjects.Container;
   private actionLayer!: Phaser.GameObjects.Container;
-  private weaponLayer!: Phaser.GameObjects.Container;
   private rollBox: Phaser.GameObjects.Container | null = null;
   private helpBox: Phaser.GameObjects.Container | null = null;
   private shownPrompt = 0;
@@ -187,6 +188,9 @@ export class UIScene extends Phaser.Scene {
   private logNewBtn!: PixelText;
   private logColBtn!: PixelText;
   private logScrollBar!: Phaser.GameObjects.Graphics;
+  private logUpBtn!: PixelText;
+  private logDownBtn!: PixelText;
+  private logTrack!: Phaser.GameObjects.Rectangle;
   private logNewBg!: Phaser.GameObjects.Rectangle;
   private logHeadLine!: Phaser.GameObjects.Graphics;
   private logGrip!: Phaser.GameObjects.Rectangle;
@@ -200,7 +204,9 @@ export class UIScene extends Phaser.Scene {
   private sheetFooter: PixelText | null = null;
 
   // przeciąganie paneli za nagłówek
-  private drag: { target: 'log' | 'sheet' | 'logSize'; dx: number; dy: number } | null = null;
+  private drag: { target: DragTarget; dx: number; dy: number } | null = null;
+  private logRepeat: Phaser.Time.TimerEvent | null = null;
+  private logThumb = { y: 0, h: 0, trackY: 0, trackH: 0 };
 
   private banner: Phaser.GameObjects.Container | null = null;
 
@@ -239,7 +245,7 @@ export class UIScene extends Phaser.Scene {
     this.initLayer = this.add.container(0, M + LH + 1);
 
     // ---- prawy górny: menu misji jak w Oldgame/src/mission/hud.js (H.menu: 2 kolumny, "Odwrót" na całą szerokość)
-    //      + ekwipunek / zmiana broni (w Oldgame pod kliknięciem w kartę); "Koniec tury" jest w pasku akcji walki, jak tam.
+    //      + ekwipunek; bronie wybiera się w panelu akcji; "Koniec tury" jest w pasku akcji walki, jak tam.
     const bx = RCOL_X, bx2 = RCOL_X + BTN_W + 4, row = (i: number): number => M + (BTN_H + BTN_GAP) * i;
     this.btnHelp = this.button(bx, row(0), BTN_W, '', () => this.hud.toggleHelp());
     this.btnOptions = this.button(bx2, row(0), BTN_W, '', () => !modalOpen(this) && void openOptions(this));
@@ -251,7 +257,6 @@ export class UIScene extends Phaser.Scene {
     this.btnRetreat = this.button(bx, row(4), RCOL_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger');
     this.objLayer = this.add.container(RCOL_X, OBJ_Y);
     this.actionLayer = this.add.container(0, 0);
-    this.weaponLayer = this.add.container(0, 0);
 
     // ---- lewy dół: opis pod kursorem
     this.hoverBg = this.panelRect(M, BASE_H - M - 12, 10, 12).setVisible(false);
@@ -262,7 +267,12 @@ export class UIScene extends Phaser.Scene {
 
     // ---- przeciąganie paneli (dziennik, ekwipunek) za nagłówek
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onDragMove(p));
-    this.input.on('pointerup', () => (this.drag = null));
+    this.input.on('pointerup', () => {
+      const thumb = this.drag?.target === 'logThumb';
+      this.drag = null;
+      this.stopLogRepeat();
+      if (thumb) this.drawLog();
+    });
     this.input.on('gameout', () => (this.drag = null));
 
     // ---- klawiatura (jak w starym HUD: Spacja, I, X, Esc, 1-9)
@@ -276,6 +286,11 @@ export class UIScene extends Phaser.Scene {
     kb?.on('keydown-I', () => !blocked() && this.toggleSheet());
     kb?.on('keydown-X', () => !blocked() && this.hud.command({ kind: 'swapWeapons' }));
     kb?.on('keydown-H', () => !blocked() && this.hud.toggleHelp());
+    // dziennik: PgUp / PgDn = strona, Home = najstarsze, End = najnowsze
+    kb?.on('keydown-PAGE_UP', () => !blocked() && this.scrollLog(this.logLines() - 1));
+    kb?.on('keydown-PAGE_DOWN', () => !blocked() && this.scrollLog(-(this.logLines() - 1)));
+    kb?.on('keydown-HOME', () => !blocked() && this.scrollLog(1e6));
+    kb?.on('keydown-END', () => !blocked() && this.scrollLog(-1e6));
     kb?.on('keydown-F', () => !blocked() && this.hud.command({ kind: 'cycleSpeed' }));
     kb?.on('keydown-G', () => !blocked() && this.hud.command({ kind: 'toggleGroup' }));
     kb?.on('keydown-TAB', (e: KeyboardEvent) => {
@@ -332,6 +347,7 @@ export class UIScene extends Phaser.Scene {
         this.drawParty();
         this.drawFoes();
         this.drawTurn();
+        this.drawActions();
         if (this.hud.inventoryOpen) this.drawSheet();
         break;
       case 'turn':
@@ -349,6 +365,7 @@ export class UIScene extends Phaser.Scene {
       case 'inventory':
         this.drawSheet();
         this.drawTurn();
+        this.drawActions();
         break;
       case 'banner':
         this.showBanner();
@@ -548,7 +565,6 @@ export class UIScene extends Phaser.Scene {
     this.btnZoomIn.set('MAPA +', true);
     this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ [I]' : 'EKWIPUNEK [I]', true);
     this.btnRetreat.set('ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
-    this.drawWeapons();
   }
 
   private drawFoes(): void {
@@ -654,97 +670,109 @@ export class UIScene extends Phaser.Scene {
 
   // ================================================================== pasek akcji walki (port C.refreshBar / H.abBtn)
 
+  /**
+   * Panel akcji (przesuwany za nagłówek jak dziennik, PPM na nagłówku = pozycja domyślna).
+   * Na górze dostępne bronie: klik w broń = dobycie jej (zostaje do kolejnej zmiany; w walce 1 akcja).
+   * Poza walką panel pokazuje tylko bronie.
+   */
   private drawActions(): void {
     const L = this.actionLayer;
     L.removeAll(true);
+    const ch = this.hud.active;
     const list = this.hud.actions;
-    this.drawWeapons();
-    if (!list.length) return;
-    const y0 = this.actionTop();
-    const h = BASE_H - M - 14 - y0;
-    const bg = this.panelRect(AB_X, y0, AB_W, h, C.amberDim);
-    const head = this.text(AB_X + 3, y0 + 1, cut((this.hud.actionsHead ?? '').toUpperCase(), 22), C.amber);
-    const pipsX = AB_X + AB_W - 4;
-    const g = this.add.graphics();
-    for (let k = 0; k < this.hud.maxAp; k++) {
-      g.fillStyle(k < this.hud.ap ? C.amber : C.amberDim, 1).fillRect(pipsX - (this.hud.maxAp - k) * 6, y0 + 3, 4, 5);
+    const weapons = ch && !ch.attacks ? this.weaponSlots(ch) : [];
+    if (!list.length && !weapons.length) {
+      L.setVisible(false);
+      return;
     }
-    L.add([bg, head, g]);
+    L.setVisible(true);
+    const W = AB_W;
+    const wRows = Math.ceil(weapons.length / AB_COLS);
+    const aRows = Math.ceil(list.length / AB_COLS);
+    const wy = 12;
+    const ay = wy + wRows * (WT_H + 1) + (list.length ? 3 : 0);
+    const h = ay + aRows * (AB_BH + 1) + 2;
+
+    const bg = this.panelRect(0, 0, W, h, C.amberDim);
+    const head = this.text(3, 1, cut((this.hud.actionsHead ?? (ch ? `BROŃ — ${ch.name}` : '')).toUpperCase(), 22), C.amber);
+    const g = this.add.graphics();
+    if (list.length) {
+      for (let k = 0; k < this.hud.maxAp; k++) {
+        g.fillStyle(k < this.hud.ap ? C.amber : C.amberDim, 1).fillRect(W - 4 - (this.hud.maxAp - k) * 6, 3, 4, 5);
+      }
+      g.lineStyle(1, C.amberDim, 1).lineBetween(2, ay - 1.5, W - 2, ay - 1.5);
+    }
+    const grip = this.dragHandle('actions', W - (list.length ? this.hud.maxAp * 6 + 6 : 0), 11);
+    L.add([bg, grip, head, g]);
+    weapons.forEach((slot, i) => {
+      const x = 2 + (i % AB_COLS) * AB_BW;
+      const y = wy + Math.floor(i / AB_COLS) * (WT_H + 1);
+      L.add(this.weaponTile(x, y, AB_BW - 2, ch!, slot));
+    });
     list.forEach((b, i) => {
-      const x = AB_X + 2 + (i % AB_COLS) * AB_BW;
-      const y = y0 + 12 + Math.floor(i / AB_COLS) * (AB_BH + 1);
+      const x = 2 + (i % AB_COLS) * AB_BW;
+      const y = ay + Math.floor(i / AB_COLS) * (AB_BH + 1);
       L.add(this.actionButton(x, y, AB_BW - 2, b, i < 9 ? String(i + 1) : ''));
     });
+
+    // pozycja: domyślnie nad dolną krawędzią; przesunięty panel trzyma lewy górny róg
+    if (actPos) L.setPosition(Phaser.Math.Clamp(actPos.x, 30 - W, BASE_W - 30), Phaser.Math.Clamp(actPos.y, 0, BASE_H - 12));
+    else L.setPosition(AB_X, BASE_H - M - 14 - h);
   }
 
-  /** Górna krawędź paska akcji (albo miejsca na niego, gdy pusty). */
-  private actionTop(): number {
-    const n = this.hud.actions.length;
-    if (!n) return BASE_H - M - 14;
-    const rows = Math.ceil(n / AB_COLS);
-    return BASE_H - M - 14 - (12 + rows * (AB_BH + 1) + 2);
+  /**
+   * Bronie postaci do wyboru (sloty z bronią; bez broni - sama Pięść w slocie głównym).
+   * Stała kolejność (wg uid przedmiotu), żeby kafle nie zamieniały się miejscami po wyborze.
+   */
+  private weaponSlots(ch: Character): EquipSlot[] {
+    const e = ch.equipment;
+    if (!e.weapon2) return ['weapon'];
+    return (e.weapon?.uid ?? '') <= e.weapon2.uid ? ['weapon', 'weapon2'] : ['weapon2', 'weapon'];
   }
 
-  // ================================================================== panele broni (główna / zapasowa)
-
-  /** Dwa panele nad paskiem akcji: widać, którą broń postać trzyma i na co się przełączy. Klik w panel = wybór tej broni. */
-  private drawWeapons(): void {
-    const L = this.weaponLayer;
-    if (!L) return;
-    L.removeAll(true);
-    const ch = this.hud.active;
-    if (!ch || ch.attacks) return;
-    const y = this.actionTop() - WP_H - 2;
-    const canSwap = this.hud.canAct && !!ch.equipment.weapon2;
-    L.add(this.weaponPanel(AB_X, y, ch, 'weapon', canSwap));
-    L.add(this.weaponPanel(AB_X + WP_W + 3, y, ch, 'weapon2', canSwap));
-  }
-
-  private weaponPanel(x: number, y: number, ch: Character, slot: EquipSlot, canSwap: boolean): Phaser.GameObjects.GameObject[] {
-    const main = slot === 'weapon';
+  /** Kafel broni: wybrana ma bursztynową ramkę; klik w inną = jej dobycie. */
+  private weaponTile(x: number, y: number, w: number, ch: Character, slot: EquipSlot): Phaser.GameObjects.GameObject[] {
+    const sel = slot === 'weapon';
     const inst = ch.equipment[slot];
     const def = itemDef(inst?.id);
-    const empty = !main && !inst;
-    const w = normWeapon(inst);
-    const name = empty ? '— brak —' : w.name;
-    const stat = empty ? '' : def ? itemStatLine(def, true) : `${w.dmg} ${w.range ? 'z' + w.range : 'wręcz'}`;
-    const clickable = !main && canSwap;
-    const fill = main ? C.amberDim : PAL.panel2;
-    const stroke = main ? C.amber : clickable ? PAL.edge : C.greyDim;
-    const out: Phaser.GameObjects.GameObject[] = [];
-    out.push(this.add.rectangle(x + 1, y + 1, WP_W, WP_H, 0x000000, 0.6).setOrigin(0));
-    const r = this.add.rectangle(x, y, WP_W, WP_H, fill, 0.95).setOrigin(0).setStrokeStyle(main ? 2 : 1, stroke).setInteractive({ useHandCursor: clickable });
-    out.push(r);
-    const head = main ? 'W RĘKU' : this.hud.inCombat ? 'ZAPAS · 1 AKCJA [X]' : 'ZAPASOWA [X]';
-    out.push(this.text(x + 2, y + 1, fitText(head, WP_W - 4), main ? C.amber : C.grey, 7));
+    const wp = normWeapon(inst);
+    const stat = def ? itemStatLine(def, true) : `${wp.dmg} ${wp.range ? 'z' + wp.range : 'wręcz'}`;
+    const on = sel || this.hud.canAct;
+    const fill = sel ? C.amberDim : PAL.panel2;
+    const stroke = sel ? C.amber : on ? PAL.edge : C.greyDim;
+    const r = this.add.rectangle(x, y, w, WT_H, fill, 0.95).setOrigin(0).setStrokeStyle(1, stroke).setInteractive({ useHandCursor: !sel && on });
+    const out: Phaser.GameObjects.GameObject[] = [r];
     let tx = x + 2;
     if (inst) {
-      out.push(itemIconImage(this, tx, y + 12, inst.id, 14).setAlpha(main || clickable ? 1 : 0.5));
-      tx += 17;
+      out.push(itemIconImage(this, tx, y + 1, inst.id, 11).setAlpha(on ? 1 : 0.5));
+      tx += 13;
     }
-    const ink = empty ? C.grey : main ? C.white : clickable ? PAL.text : C.grey;
-    out.push(this.text(tx, y + 10, fitText(name, x + WP_W - 2 - tx), ink, 7));
-    if (stat) out.push(this.text(tx, y + 19, fitText(stat, x + WP_W - 2 - tx), main ? C.amber : C.grey, 7));
-    const tip = empty
-      ? 'Brak broni zapasowej - załóż ją w ekwipunku [I].'
-      : `${name}${def ? ' · ' + itemStatLine(def) : ''}${main ? ' · broń w ręku' : clickable ? ` · kliknij, aby dobyć${this.hud.inCombat ? ' (1 akcja)' : ''}` : ''}`;
+    const cost = !sel && this.hud.inCombat;
+    const right = x + w - (cost ? 6 : 2);
+    const nm = this.text(tx, y + 2, '', sel ? C.white : on ? PAL.text : C.grey, 7);
+    const st = this.text(right, y + 2, stat, sel ? C.amber : C.grey, 7).setOrigin(1, 0);
+    nm.setText(fitText(wp.name, Math.max(12, right - st.width - 3 - tx)));
+    out.push(nm, st);
+    if (cost) out.push(this.add.graphics().fillStyle(on ? C.amber : C.greyDim, 1).fillRect(x + w - 4, y + 5, 3, 3));
+    const tip = `${wp.name}${def ? ' · ' + itemStatLine(def) : ''} · ${sel ? 'wybrana broń' : `kliknij, aby dobyć${this.hud.inCombat ? ' (1 akcja)' : ''} [X]`}`;
     r.on('pointerover', () => {
-      if (clickable) {
+      if (!sel && on) {
         r.setFillStyle(0x3a2c1e, 1).setStrokeStyle(1, PAL.edgeHi);
         SoundManager.sfx('hover');
       }
       this.hud.setHover(tip);
     });
     r.on('pointerout', () => {
-      r.setFillStyle(fill, 0.95).setStrokeStyle(main ? 2 : 1, stroke);
+      r.setFillStyle(fill, 0.95).setStrokeStyle(1, stroke);
       this.hud.setHover(null);
     });
     r.on('pointerdown', () => {
-      if (main) return;
-      if (!clickable) {
+      if (sel) return;
+      if (!on) {
         SoundManager.sfx('error', { vol: 0.4 });
         return;
       }
+      SoundManager.sfx('click');
       this.hud.command({ kind: 'swapWeapons' });
     });
     return out;
@@ -960,7 +988,7 @@ export class UIScene extends Phaser.Scene {
       ['KAMERA', 'WASD / strzałki lub PPM / środkowy + przeciągnięcie = przesuwanie; kółko, + / - = zoom, 0 = reset; Q/E obrót kamery; Spacja w eksploracji = wycentruj.'],
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
-      ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
+      ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni (albo klik w broń w panelu akcji), PgUp/PgDn/Home/End = przewijanie dziennika, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
       ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: róg prawy dolny = zmiana rozmiaru, A- / A+ = czcionka. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
@@ -1001,7 +1029,7 @@ export class UIScene extends Phaser.Scene {
   // ================================================================== przesuwane panele
 
   /** Niewidoczny uchwyt na nagłówku panelu: LPM + przeciągnięcie = przesuń, PPM = pozycja domyślna. */
-  private dragHandle(target: 'log' | 'sheet', w: number, h: number): Phaser.GameObjects.Rectangle {
+  private dragHandle(target: 'log' | 'sheet' | 'actions', w: number, h: number): Phaser.GameObjects.Rectangle {
     const r = this.add.rectangle(0, 0, w, h, C.amber, 0).setOrigin(0).setInteractive({ cursor: 'move' });
     r.on('pointerover', () => r.setFillStyle(C.amber, 0.08));
     r.on('pointerout', () => r.setFillStyle(C.amber, 0));
@@ -1012,6 +1040,9 @@ export class UIScene extends Phaser.Scene {
           logPos = null;
           logSize = { w: LOG_W, h: LOG_H };
           this.drawLog();
+        } else if (target === 'actions') {
+          actPos = null;
+          this.drawActions();
         } else {
           sheetPos = null;
           this.sheet.setPosition(M, SHEET_Y);
@@ -1019,7 +1050,7 @@ export class UIScene extends Phaser.Scene {
         SoundManager.sfx('click');
         return;
       }
-      const box = target === 'log' ? this.logPanel : this.sheet;
+      const box = target === 'log' ? this.logPanel : target === 'actions' ? this.actionLayer : this.sheet;
       this.drag = { target, dx: p.worldX - box.x, dy: p.worldY - box.y };
     });
     return r;
@@ -1044,18 +1075,33 @@ export class UIScene extends Phaser.Scene {
       }
       return;
     }
+    if (d.target === 'logThumb') {
+      // przeciąganie suwaka dziennika: góra toru = najstarsze, dół = najnowsze
+      const t = this.logThumb;
+      const maxScroll = Math.max(0, this.logDisplayLines().length - this.logLines());
+      const free = Math.max(1, t.trackH - t.h);
+      const pos = Phaser.Math.Clamp((p.worldY - this.logPanel.y - d.dy - t.trackY) / free, 0, 1);
+      const next = Math.round((1 - pos) * maxScroll);
+      if (next !== this.logScroll) {
+        this.logScroll = next;
+        this.drawLog();
+      }
+      return;
+    }
     const isLog = d.target === 'log';
-    const box = isLog ? this.logPanel : this.sheet;
+    const isAct = d.target === 'actions';
+    const box = isLog ? this.logPanel : isAct ? this.actionLayer : this.sheet;
     if (!box.visible) {
       this.drag = null;
       return;
     }
-    const w = isLog ? logSize.w : SHEET_W;
+    const w = isLog ? logSize.w : isAct ? AB_W : SHEET_W;
     // panel może wyjechać częściowo poza ekran, ale nagłówek i 30 px szerokości zostają widoczne
     const x = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), 30 - w, BASE_W - 30);
     const y = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), 0, BASE_H - 12);
     box.setPosition(x, y);
     if (isLog) logPos = { x, y };
+    else if (isAct) actPos = { x, y };
     else sheetPos = { x, y };
   }
 
@@ -1085,6 +1131,32 @@ export class UIScene extends Phaser.Scene {
     this.logMeasure = this.text(0, 0, '', C.grey).setVisible(false);
     this.logScrollBar = this.add.graphics();
 
+    // przewijanie: ▲ / ▼ (przytrzymanie = powtarzanie), klik w tor = strona, suwak do przeciągania
+    const arrow = (glyph: string, dir: number): PixelText => {
+      const b = this.text(0, 0, glyph, PAL.dim, 7).setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
+      b.on('pointerdown', () => {
+        SoundManager.sfx('click', { vol: 0.5 });
+        this.scrollLog(dir);
+        this.logRepeat?.remove();
+        this.logRepeat = this.time.addEvent({
+          delay: 70, startAt: -230, loop: true,
+          callback: () => (this.input.activePointer.isDown ? this.scrollLog(dir) : this.stopLogRepeat()),
+        });
+      });
+      b.on('pointerout', () => this.stopLogRepeat());
+      b.on('pointerup', () => this.stopLogRepeat());
+      return b;
+    };
+    this.logUpBtn = arrow('▲', 1);
+    this.logDownBtn = arrow('▼', -1);
+    this.logTrack = this.add.rectangle(0, 0, 7, 10, C.amber, 0).setOrigin(0).setInteractive({ useHandCursor: true });
+    this.logTrack.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      const t = this.logThumb;
+      const ly = p.worldY - this.logPanel.y;
+      if (ly >= t.y && ly <= t.y + t.h) this.drag = { target: 'logThumb', dx: 0, dy: ly - t.y };
+      else this.scrollLog(ly < t.y ? this.logLines() - 1 : -(this.logLines() - 1));
+    });
+
     // ciemny tekst na bursztynie: bez obrysu (jasne tło samo daje kontrast)
     this.logNewBg = this.add.rectangle(0, 0, 10, 10, C.amber, 1).setOrigin(0.5, 0).setVisible(false);
     this.logNewBtn = this.text(0, 0, '', C.bg)
@@ -1111,7 +1183,7 @@ export class UIScene extends Phaser.Scene {
       this.drag = { target: 'logSize', dx: p.worldX - logSize.w, dy: p.worldY - logSize.h };
     });
 
-    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logFontBtns, this.logScrollBar, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResize]);
+    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logFontBtns, this.logScrollBar, this.logTrack, this.logUpBtn, this.logDownBtn, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResize]);
   }
 
   private logScale(): number {
@@ -1164,6 +1236,11 @@ export class UIScene extends Phaser.Scene {
     }
     this.logMeasure.setWordWrapWidth(Math.floor((w - 14) / sc));
     this.logWrapCache.clear();
+
+    this.logUpBtn.setPosition(w - 4, LOG_HEAD - 1);
+    this.logDownBtn.setPosition(w - 4, h - 19);
+    this.logTrack.setPosition(w - 7, LOG_HEAD + 8).setSize(7, Math.max(2, h - 19 - LOG_HEAD - 8));
+    this.logTrack.input?.hitArea.setSize(7, Math.max(2, h - 19 - LOG_HEAD - 8));
 
     this.logNewBg.setPosition(w / 2, h - 12);
     this.logNewBtn.setPosition(w / 2, h - 11);
@@ -1242,12 +1319,18 @@ export class UIScene extends Phaser.Scene {
 
     // pasek przewijania
     const g = this.logScrollBar.clear();
-    if (!this.logCollapsed && all.length > lines) {
-      const trackY = LOG_HEAD, trackH = Math.min(H - LOG_HEAD - 10, Math.round(lines * this.logLH()));
-      const thumbH = Math.max(4, Math.round((trackH * lines) / all.length));
+    const scrollable = !this.logCollapsed && all.length > lines;
+    this.logUpBtn.setVisible(!this.logCollapsed).setColor(scrollable && this.logScroll < maxScroll ? C.amber : C.greyDim);
+    this.logDownBtn.setVisible(!this.logCollapsed).setColor(scrollable && this.logScroll > 0 ? C.amber : C.greyDim);
+    this.logTrack.setVisible(scrollable);
+    if (scrollable) {
+      const trackY = LOG_HEAD + 8, trackH = Math.max(2, H - 19 - trackY);
+      const thumbH = Math.min(trackH, Math.max(5, Math.round((trackH * lines) / all.length)));
       const pos = maxScroll ? 1 - this.logScroll / maxScroll : 1;
+      const thumbY = trackY + Math.round((trackH - thumbH) * pos);
+      this.logThumb = { y: thumbY, h: thumbH, trackY, trackH };
       g.fillStyle(PAL.edge, 0.5).fillRect(W - 5, trackY, 2, trackH);
-      g.fillStyle(PAL.edge, 1).fillRect(W - 5, trackY + Math.round((trackH - thumbH) * pos), 2, thumbH);
+      g.fillStyle(this.drag?.target === 'logThumb' ? C.amber : PAL.edgeHi, 1).fillRect(W - 6, thumbY, 4, thumbH);
     }
 
     const showNew = !this.logCollapsed && this.logScroll > 0;
@@ -1260,8 +1343,16 @@ export class UIScene extends Phaser.Scene {
   }
 
   private scrollLog(delta: number): void {
+    if (this.logCollapsed) return;
+    const before = this.logScroll;
     this.logScroll += delta;
     this.drawLog();
+    if (this.logScroll === before) this.stopLogRepeat();
+  }
+
+  private stopLogRepeat(): void {
+    this.logRepeat?.remove();
+    this.logRepeat = null;
   }
 
   // ================================================================== karta postaci / ekwipunek (port H.sheet)
