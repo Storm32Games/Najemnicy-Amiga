@@ -31,8 +31,8 @@ import { fitText } from './ui/FontGlyphs';
 import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
 
 // HUD misji - port Oldgame/src/mission/hud.js (DOM) do Phasera, w stylu terminala CRT.
-//   lewy górny:   karta drużyny (portret-skrót, PW, AP, stany)       <- H.party_
-//   środek góra:  runda + pasek widocznych wrogów z PW                 <- H.initBar
+//   góra:         karty drużyny (portret, PW, AP, stany), w walce + karty wrogów  <- H.party_ / H.initBar
+//   środek góra:  runda / tura                                         <- H.initBar
 //   prawy górny:  przyciski: pomoc, opcje, tempo, mapa, ekwipunek       <- H.menu
 //   panel akcji:  bronie (klik = wybór) + akcje walki; przesuwany        <- C.refreshBar
 //   lewy dół:     opis pola/wroga pod kursorem                         <- H.showInfo
@@ -40,8 +40,9 @@ import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, op
 //   panel (I):    karta postaci: statystyki, wyposażenie, plecak       <- H.sheet
 // Menu, pasek rundy, panel akcji, karta postaci i dziennik mają własną skalę (−/+ w nagłówku; kółko nad nagłówkiem
 // poza dziennikiem) i dają się przesuwać za nagłówek; PPM na nagłówku = pozycja i skala domyślna.
-// Karty drużyny się nie skalują; przesuwa się je za listwę nad kartami, a przy górnej / dolnej krawędzi ekranu
-// układają się poziomo.
+// Karty drużyny (w walce razem z kartami wrogów) przesuwa się, przeciągając kartę / ramkę; skala: kółko nad kartami
+// albo −/+ za ostatnią kartą. Domyślnie leżą poziomo przy górnej krawędzi; upuszczone dalej od górnej / dolnej
+// krawędzi układają się pionowo, a przyciągnięte z powrotem do krawędzi - znowu poziomo.
 // Cały stan pochodzi z HudState (src/core); polecenia wracają przez hud.command().
 
 // ------------------------------------------------------------------ paleta / czcionka
@@ -63,7 +64,6 @@ const C = {
 
 /** Kolory dziennika w palecie Oldgame (.m-log). */
 const TONE: Record<LogTone, number> = { dim: 0x9c958a, good: PAL.good, bad: PAL.bad, amber: PAL.amber, hd: PAL.text };
-const HP_TONE = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 /** Kolory paska PW na kartach drużyny (hpCol('pc') z Oldgame/src/mission/hud.js). */
 const HP_FILL = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 
@@ -79,8 +79,10 @@ const PARTY_W = PC_PT + 4;
 const PC_HPB = 9;
 const PARTY_H = 2 + PC_PT + 1 + PC_HPB + 2;
 const PC_GAP = 3;
-/** Listwa nad kartami drużyny (uchwyt do przesuwania). */
-const PARTY_GRIP = 6;
+/** Przesunięcie kursora (px projektowe), od którego wciśnięcie karty staje się przeciąganiem, a nie kliknięciem. */
+const PARTY_DRAG_MIN = 3;
+/** Miejsce na −/+ za ostatnią kartą. */
+const PARTY_BTN = 9;
 /** Odległość kursora od górnej / dolnej krawędzi, przy której karty drużyny przechodzą w układ poziomy. */
 const PARTY_EDGE = 14;
 /** Menu po prawej (port .m-menu): siatka 2 kolumn + szeroki "Odwrót". */
@@ -93,8 +95,6 @@ const LOG_LINES = 9;
 const LOG_H = 13 + LOG_LINES * LH + 3;
 const SHEET_W = 186;
 const SHEET_X = M + PARTY_W + 4;
-const FOE_W = 44;
-const FOE_H = 17;
 /** Prawa kolumna: siatka przycisków 2 x 4 + panel celów. */
 const RCOL_W = BTN_W * 2 + 4;
 /** Nagłówek menu (uchwyt do przesuwania + przyciski skali). */
@@ -104,11 +104,9 @@ const OBJ_Y = MENU_HEAD + (BTN_H + BTN_GAP) * MENU_ROWS + 2;
 const MID_X0 = M + PARTY_W + 4;
 const MID_X1 = BASE_W - M - RCOL_W - 4;
 const TOP_W = MID_X1 - MID_X0;
-const INIT_W = 30;
-const INIT_H = 19;
-const SHEET_Y = M + LH + 1 + INIT_H + 8;
-/** Pasek rundy + wrogowie / inicjatywa (wysokość ze strzałką bieżącej postaci). */
-const TOP_H = LH + 1 + INIT_H + 8;
+const SHEET_Y = M + LH + 6;
+/** Pasek rundy (sam napis; wrogowie są kartami obok drużyny). */
+const TOP_H = LH;
 /** Pasek akcji: dół, między kartami drużyny a dziennikiem. */
 const AB_X = M + PARTY_W + 4;
 const AB_W = BASE_W - M - LOG_W - 4 - AB_X;
@@ -121,7 +119,7 @@ const WT_H = 13;
 type BtnVariant = 'normal' | 'primary' | 'danger';
 /** Panele ze skalą i pozycją (bez kart drużyny - te tylko się przesuwają). */
 type PanelId = 'menu' | 'top' | 'actions' | 'sheet' | 'log';
-type DragTarget = PanelId | 'party' | 'logSize' | 'logThumb';
+type DragTarget = PanelId | 'party' | 'logSize' | 'logH' | 'logThumb';
 
 interface Button {
   bg: Phaser.GameObjects.Rectangle;
@@ -138,7 +136,8 @@ const panelPos: Record<PanelId, { x: number; y: number } | null> = { menu: null,
 const panelScale: Record<PanelId, number> = { menu: 1, top: 1, actions: 1, sheet: 1, log: 1 };
 /** Karty drużyny: pozycja (null = lewy górny róg) i układ (poziomy po upuszczeniu przy górnej / dolnej krawędzi). */
 let partyPos: { x: number; y: number } | null = null;
-let partyHoriz = false;
+let partyHoriz = true;
+let partyScale = 1;
 /**
  * Dostępne skale paneli: k / ZOOM (1 piksel projektowy = k pikseli płótna), żeby czcionka bitmapowa i ramki
  * trafiały w siatkę ekranu. Zakres ~0.5x - 1.5x; liczone na bieżąco, bo ZOOM może się zmienić między misjami.
@@ -181,8 +180,8 @@ export class UIScene extends Phaser.Scene {
   private hud!: HudState;
 
   private partyLayer!: Phaser.GameObjects.Container;
-  private partyGrip!: Phaser.GameObjects.Container;
-  private foeLayer!: Phaser.GameObjects.Container;
+  /** Wciśnięta karta: kliknięcie (bez przesunięcia) wykonuje `click`, przesunięcie = przeciąganie drużyny. */
+  private partyPress: { x: number; y: number; moved: boolean; click: (() => void) | null } | null = null;
   private roundText!: PixelText;
   private topPanel!: Phaser.GameObjects.Container;
   private topGrip!: Phaser.GameObjects.Rectangle;
@@ -202,7 +201,6 @@ export class UIScene extends Phaser.Scene {
   private btnZoomOut!: Button;
   private btnZoomIn!: Button;
   private objLayer!: Phaser.GameObjects.Container;
-  private initLayer!: Phaser.GameObjects.Container;
   private actionLayer!: Phaser.GameObjects.Container;
   private rollBox: Phaser.GameObjects.Container | null = null;
   private helpBox: Phaser.GameObjects.Container | null = null;
@@ -234,6 +232,8 @@ export class UIScene extends Phaser.Scene {
   private logScaleBtns: PixelText[] = [];
   private logResize!: Phaser.GameObjects.Rectangle;
   private logResizeMark!: Phaser.GameObjects.Graphics;
+  /** Dolna krawędź dziennika: przeciągnięcie = rozciąganie w dół / w górę (sama wysokość). */
+  private logResizeB!: Phaser.GameObjects.Rectangle;
   private logLayoutKey = '';
 
   // karta postaci / ekwipunek
@@ -275,17 +275,14 @@ export class UIScene extends Phaser.Scene {
 
     // ---- lewy górny: drużyna
     this.partyLayer = this.add.container(M, M);
-    this.partyGrip = this.partyHandle();
+    this.partyPress = null;
 
-    // ---- środek góra: runda + wrogowie / inicjatywa
-    //      (warstwy wrogów liczą x w układzie ekranu, stąd przesunięcie o -MID_X0 w panelu)
+    // ---- środek góra: runda / tura (wrogowie są kartami obok drużyny)
     this.topPanel = this.add.container(MID_X0, M);
     this.roundText = this.text(TOP_W / 2, 0, '').setOrigin(0.5, 0);
-    this.foeLayer = this.add.container(-MID_X0, LH + 1);
-    this.initLayer = this.add.container(-MID_X0, LH + 1);
     this.topGrip = this.dragHandle('top', 10, LH);
     this.topScaleBtns = this.scaleButtons('top', 0, 0);
-    this.topPanel.add([this.foeLayer, this.initLayer, this.topGrip, this.roundText, ...this.topScaleBtns]);
+    this.topPanel.add([this.topGrip, this.roundText, ...this.topScaleBtns]);
 
     // ---- prawy górny: menu misji jak w Oldgame/src/mission/hud.js (H.menu: 2 kolumny, "Odwrót" na całą szerokość)
     //      + ekwipunek; bronie wybiera się w panelu akcji; "Koniec tury" jest w pasku akcji walki, jak tam.
@@ -323,6 +320,9 @@ export class UIScene extends Phaser.Scene {
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onDragMove(p));
     this.input.on('pointerup', () => {
       const thumb = this.drag?.target === 'logThumb';
+      const press = this.partyPress;
+      this.partyPress = null;
+      if (this.drag?.target === 'party' && press && !press.moved) press.click?.();
       this.drag = null;
       this.stopLogRepeat();
       if (thumb) this.drawLog();
@@ -387,7 +387,6 @@ export class UIScene extends Phaser.Scene {
 
 
     this.drawParty();
-    this.drawFoes();
     this.placePanel('top');
     this.drawTurn();
     this.drawLog();
@@ -400,7 +399,6 @@ export class UIScene extends Phaser.Scene {
     switch (c) {
       case 'stats':
         this.drawParty();
-        this.drawFoes();
         this.drawTurn();
         this.drawActions();
         if (this.hud.inventoryOpen) this.drawSheet();
@@ -432,7 +430,7 @@ export class UIScene extends Phaser.Scene {
         this.drawActions();
         break;
       case 'initiative':
-        this.drawFoes();
+        this.drawParty();
         this.drawTurn();
         break;
       case 'roll':
@@ -466,10 +464,7 @@ export class UIScene extends Phaser.Scene {
     return this.add.rectangle(x, y, w, h, C.bg, 0.92).setOrigin(0).setStrokeStyle(1, stroke).setInteractive();
   }
 
-  private bar(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, ratio: number, color: number, dim: number): void {
-    g.fillStyle(dim, 1).fillRect(x, y, w, h);
-    g.fillStyle(color, 1).fillRect(x, y, Math.round(w * Math.max(0, Math.min(1, ratio))), h);
-  }
+
 
   /** Przycisk menu w stylu starego .btn (Oldgame/index.html): brązowe tło, rdzawa ramka, twardy cień. */
   private button(x: number, y: number, w: number, label: string, onClick: () => void, variant: BtnVariant = 'normal', parent?: Phaser.GameObjects.Container): Button {
@@ -522,30 +517,24 @@ export class UIScene extends Phaser.Scene {
 
   private drawParty(): void {
     const L = this.partyLayer;
-    L.remove(this.partyGrip);
     L.removeAll(true);
     const hud = this.hud;
-    const { w: gw } = this.partySize();
-    const gripBg = this.partyGrip.getAt(0) as Phaser.GameObjects.Rectangle;
-    gripBg.setSize(gw, PARTY_GRIP);
-    gripBg.input?.hitArea.setSize(gw, PARTY_GRIP);
-    const dots = this.partyGrip.getAt(1) as Phaser.GameObjects.Graphics;
-    dots.clear().fillStyle(PAL.edgeHi, 1);
-    for (let x = 3; x < gw - 2; x += 3) dots.fillRect(x, 2, 1, 1).fillRect(x + 1, 3, 1, 1);
-    L.add(this.partyGrip);
-    hud.party.forEach((ch, i) => {
+    const { cells, btn } = this.partyLayout();
+    this.partyCards().forEach((it, i) => {
+      const { ch, foe, init } = it;
       const y = 0;
-      const card = partyHoriz ? { x: i * (PARTY_W + PC_GAP), y: PARTY_GRIP + 1 } : { x: 0, y: PARTY_GRIP + 1 + i * (PARTY_H + PC_GAP) };
-      const isCurrent = ch === hud.active;
-      const turn = isCurrent && hud.inCombat && hud.phase !== TurnPhase.ENEMY_TURN && ch.hp > 0;
+      const card = cells[i]!;
+      const isCurrent = foe ? !!init?.current : ch === hud.active;
+      const turn = foe ? isCurrent : isCurrent && hud.inCombat && hud.phase !== TurnPhase.ENEMY_TURN && ch.hp > 0;
       const st = stateLabel(ch);
-      const dead = !!ch.conditions.dead;
-      // ramka jak .m-card / .sel / .act / .down
-      const edge = turn || isCurrent ? PAL.amber : ch.hp <= 0 ? PAL.blood : PAL.edge;
+      const dead = !!ch.conditions.dead || (foe && ch.hp <= 0);
+      // ramka jak .m-card / .sel / .act / .down; wrogowie w czerwonej ramce
+      const edge = turn || isCurrent ? PAL.amber : foe ? C.red : ch.hp <= 0 ? PAL.blood : PAL.edge;
       const shadow = this.add.rectangle(2, y + 2, PARTY_W, PARTY_H, 0x000000, 0.5).setOrigin(0);
-      const bg = this.add.rectangle(0, y, PARTY_W, PARTY_H, 0x120e0b, 0.92).setOrigin(0).setStrokeStyle(2, edge).setInteractive({ useHandCursor: true });
-      bg.on('pointerdown', () => this.hud.command({ kind: 'selectMember', index: i }));
-      bg.on('pointerover', () => this.hud.setHover(this.memberTip(ch)));
+      const bg = this.add.rectangle(0, y, PARTY_W, PARTY_H, foe ? 0x1a0d0a : 0x120e0b, 0.92).setOrigin(0).setStrokeStyle(2, edge).setInteractive({ cursor: 'move' });
+      const pi = hud.party.indexOf(ch);
+      this.partyGrab(bg, foe || pi < 0 ? null : () => this.hud.command({ kind: 'selectMember', index: pi }));
+      bg.on('pointerover', () => this.hud.setHover(foe ? this.foeTip(ch, init) : this.memberTip(ch)));
       bg.on('pointerout', () => this.hud.setHover(null));
       const parts: Phaser.GameObjects.GameObject[] = [shadow, bg];
       if (turn) parts.push(this.add.rectangle(-1, y - 1, PARTY_W + 2, PARTY_H + 2).setOrigin(0).setStrokeStyle(1, PAL.amber, 0.45));
@@ -558,7 +547,7 @@ export class UIScene extends Phaser.Scene {
 
       // imię na dole portretu (.m-nm)
       parts.push(this.add.rectangle(px, py + PC_PT - LH, PC_PT, LH, 0x000000, 0.72).setOrigin(0));
-      const nameCol = turn || isCurrent ? PAL.amber : parseColor(ch.nameColor, PAL.text);
+      const nameCol = turn || isCurrent ? PAL.amber : foe ? C.red : parseColor(ch.nameColor, PAL.text);
       parts.push(this.text(px + 1, py + PC_PT - LH + 1, fitText(ch.name, PC_PT - 2), nameCol));
 
       // stan (POLEGŁ / NIEPRZYT.) na środku portretu (.m-pt .st)
@@ -571,7 +560,7 @@ export class UIScene extends Phaser.Scene {
       const g = this.add.graphics();
       parts.push(g);
       let cx = px + 1;
-      if (turn) {
+      if (turn && !foe) {
         for (let k = 0; k < hud.maxAp; k++) {
           g.fillStyle(0x000000, 1).fillCircle(cx + 2.5, py + 3.5, 3);
           g.lineStyle(1, PAL.amber, 1).strokeCircle(cx + 2.5, py + 3.5, 2);
@@ -581,10 +570,11 @@ export class UIScene extends Phaser.Scene {
         cx += 1;
       }
       const chips = conditionChips(ch);
-      const maxChips = turn ? 1 : 3;
+      const pips = turn && !foe;
+      const maxChips = pips ? 1 : 3;
       chips.slice(0, maxChips).forEach((chip, k) => {
         const col = chip.bad ? PAL.bad : PAL.amber;
-        const rowY = turn ? py + 8 : py + 1 + k * (LH + 1);
+        const rowY = pips ? py + 8 : py + 1 + k * (LH + 1);
         const t = this.text(px + 2, rowY + 1, chip.label, col);
         const r = this.add.rectangle(px + 1, rowY, t.width + 3, LH, 0x000000, 0.7).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
         r.on('pointerover', () => this.hud.setHover(`${chip.name}${chip.value > 1 ? ' ' + chip.value : ''}: ${chip.desc}`));
@@ -602,71 +592,144 @@ export class UIScene extends Phaser.Scene {
 
       L.add(this.add.container(card.x, card.y, parts));
     });
+    // −/+ skali za ostatnią kartą pierwszego rzędu
+    [-1, 1].forEach((dir, k) => {
+      const b = this.text(btn.x + (partyHoriz ? 1 : k * PARTY_BTN), btn.y + (partyHoriz ? k * PARTY_BTN : 0), dir < 0 ? '−' : '+', PAL.dim).setInteractive({ useHandCursor: true });
+      b.on('pointerdown', (p: Phaser.Input.Pointer) => !p.rightButtonDown() && this.setPartyScale(dir));
+      b.on('pointerover', () => {
+        b.setColor(C.amber);
+        this.hud.setHover(`${dir < 0 ? 'Zmniejsz' : 'Powiększ'} karty (skala ${Math.round(partyScale * 100)}%) · przeciągnij kartę: przesuń · PPM na karcie: domyślnie`);
+      });
+      b.on('pointerout', () => {
+        b.setColor(PAL.dim);
+        this.hud.setHover(null);
+      });
+      L.add(b);
+    });
     this.placeParty();
   }
 
-  /** Rozmiar kart drużyny (z listwą) w bieżącym układzie. */
-  private partySize(): { w: number; h: number } {
-    const n = Math.max(1, this.hud.party.length);
-    if (partyHoriz) return { w: n * (PARTY_W + PC_GAP) - PC_GAP, h: PARTY_GRIP + 1 + PARTY_H };
-    return { w: PARTY_W, h: PARTY_GRIP + 1 + n * (PARTY_H + PC_GAP) - PC_GAP };
+  /** Karty w panelu drużyny: najemnicy, a w walce za nimi wrogowie (w kolejności inicjatywy, jeśli jest). */
+  private partyCards(): { ch: Character; foe: boolean; init: InitEntry | null }[] {
+    const hud = this.hud;
+    const out: { ch: Character; foe: boolean; init: InitEntry | null }[] = hud.party.map((ch) => ({ ch, foe: false, init: hud.initiative.find((e) => e.ch === ch) ?? null }));
+    if (!hud.inCombat) return out;
+    const fromInit = hud.initiative.filter((e) => e.side === 'enemy');
+    if (fromInit.length) for (const e of fromInit) out.push({ ch: e.ch, foe: true, init: e });
+    else for (const ch of hud.foes) out.push({ ch, foe: true, init: null });
+    return out;
   }
 
-  /** Karty drużyny w całości na ekranie; domyślnie lewy górny róg. */
+  /**
+   * Rozkład kart: rzędy (poziomo) albo kolumny (pionowo), zawijane, żeby panel mieścił się na ekranie
+   * (domyślnie poziomy kończy się przed menu). `btn` = miejsce −/+ za ostatnią kartą pierwszego rzędu.
+   */
+  private partyLayout(): { cells: { x: number; y: number }[]; btn: { x: number; y: number }; w: number; h: number } {
+    const n = Math.max(1, this.partyCards().length);
+    const sx = PARTY_W + PC_GAP, sy = PARTY_H + PC_GAP;
+    const avail = partyHoriz ? (partyPos ? BASE_W - 2 * M : MID_X1 - M) - PARTY_BTN * partyScale : BASE_H - 2 * M - PARTY_BTN * partyScale;
+    const per = Math.max(1, Math.floor((avail / partyScale + PC_GAP) / (partyHoriz ? sx : sy)));
+    const cells = Array.from({ length: n }, (_, i) => {
+      const a = i % per, b = Math.floor(i / per);
+      return partyHoriz ? { x: a * sx, y: b * sy } : { x: b * sx, y: a * sy };
+    });
+    const first = Math.min(n, per), lines = Math.ceil(n / per);
+    if (partyHoriz) return { cells, btn: { x: first * sx - PC_GAP + 1, y: 0 }, w: first * sx - PC_GAP + PARTY_BTN, h: lines * sy - PC_GAP };
+    return { cells, btn: { x: 0, y: first * sy - PC_GAP + 1 }, w: lines * sx - PC_GAP, h: first * sy - PC_GAP + PARTY_BTN };
+  }
+
+  /** Rozmiar panelu drużyny na ekranie (po skali). */
+  private partySize(): { w: number; h: number } {
+    const { w, h } = this.partyLayout();
+    return { w: w * partyScale, h: h * partyScale };
+  }
+
+  /** Karty w całości na ekranie; domyślnie poziomo przy górnej krawędzi. Pasek rundy i karta postaci idą pod nie. */
   private placeParty(): void {
     const { w, h } = this.partySize();
     const pos = partyPos ?? { x: M, y: M };
-    this.partyLayer.setPosition(
-      Phaser.Math.Clamp(Math.round(pos.x), 0, Math.max(0, BASE_W - w)),
-      Phaser.Math.Clamp(Math.round(pos.y), 0, Math.max(0, BASE_H - h)),
+    this.partyLayer.setScale(partyScale).setPosition(
+      Phaser.Math.Clamp(Math.round(pos.x), 0, Math.max(0, Math.round(BASE_W - w))),
+      Phaser.Math.Clamp(Math.round(pos.y), 0, Math.max(0, Math.round(BASE_H - h))),
     );
+    if (!panelPos.top) this.placePanel('top');
+    if (!panelPos.sheet && this.sheet) this.placePanel('sheet');
   }
 
-  /** Listwa nad kartami drużyny: LPM + przeciągnięcie = przesuń, PPM = miejsce domyślne (pionowo, lewy górny róg). */
-  private partyHandle(): Phaser.GameObjects.Container {
-    const r = this.add.rectangle(0, 0, PARTY_W, PARTY_GRIP, PAL.panel, 0.92).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive({ cursor: 'move' });
-    r.on('pointerover', () => {
-      r.setFillStyle(0x3a2c1e, 0.95);
-      this.hud.setHover('Przeciągnij: przesuń drużynę · przy górnej / dolnej krawędzi: poziomo · PPM: domyślnie');
-    });
-    r.on('pointerout', () => {
-      r.setFillStyle(PAL.panel, 0.92);
-      this.hud.setHover(null);
-    });
+  /** Dół kart, gdy leżą w miejscu domyślnym (górna krawędź) - tam zaczynają się pasek rundy i karta postaci. */
+  private partyBottom(): number {
+    return partyPos ? M : Math.round(this.partyLayer.y + this.partySize().h + 2);
+  }
+
+  /** Karta / ramka: LPM + przeciągnięcie = przesuń panel, LPM bez ruchu = `click`, PPM = miejsce i skala domyślne, kółko = skala. */
+  private partyGrab(r: Phaser.GameObjects.Rectangle, click: (() => void) | null): void {
+    r.on('wheel', (_p: Phaser.Input.Pointer, _dx: number, dy: number) => dy && this.setPartyScale(dy > 0 ? -1 : 1));
     r.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (p.rightButtonDown()) {
         this.drag = null;
         partyPos = null;
-        partyHoriz = false;
+        partyHoriz = true;
+        partyScale = 1;
         this.drawParty();
         SoundManager.sfx('click');
         return;
       }
-      this.children.bringToTop(this.partyLayer);
+      this.partyPress = { x: p.worldX, y: p.worldY, moved: false, click };
       this.drag = { target: 'party', dx: p.worldX - this.partyLayer.x, dy: p.worldY - this.partyLayer.y };
     });
-    return this.add.container(0, 0, [r, this.add.graphics()]);
   }
 
-  /** Przeciąganie kart drużyny: przy górnej / dolnej krawędzi układ poziomy (przyklejony do krawędzi), dalej pionowy. */
+  private setPartyScale(dir: number): void {
+    const list = panelScales();
+    const i = nearestScale(list, partyScale);
+    const n = Phaser.Math.Clamp(i + dir, 0, list.length - 1);
+    if (n === i) {
+      SoundManager.sfx('error', { vol: 0.3 });
+      return;
+    }
+    const { w: w0, h: h0 } = this.partySize();
+    partyScale = list[n]!;
+    const { w: w1, h: h1 } = this.partySize();
+    if (partyPos) partyPos = { x: keepAnchor(this.partyLayer.x, w0, w1, BASE_W), y: keepAnchor(this.partyLayer.y, h0, h1, BASE_H) };
+    SoundManager.sfx('click');
+    this.drawParty();
+    this.hud.setHover(`Skala kart: ${Math.round(partyScale * 100)}%`);
+  }
+
+  /**
+   * Przeciąganie kart: przy górnej / dolnej krawędzi układ poziomy (przyklejony do krawędzi), dalej pionowy.
+   * Do pierwszych PARTY_DRAG_MIN px to jeszcze kliknięcie (wybór najemnika).
+   */
   private dragParty(p: Phaser.Input.Pointer, d: { dx: number; dy: number }): void {
+    const press = this.partyPress;
+    if (press && !press.moved) {
+      if (Math.hypot(p.worldX - press.x, p.worldY - press.y) < PARTY_DRAG_MIN) return;
+      press.moved = true;
+      this.children.bringToTop(this.partyLayer);
+    }
     const nearEdge = p.worldY < PARTY_EDGE || p.worldY > BASE_H - PARTY_EDGE;
     const far = p.worldY > PARTY_EDGE * 3 && p.worldY < BASE_H - PARTY_EDGE * 3;
     const flip = nearEdge !== partyHoriz && (nearEdge || far);
     if (flip) {
       partyHoriz = nearEdge;
-      // listwa zostaje pod kursorem
-      d.dx = Phaser.Math.Clamp(d.dx, 2, this.partySize().w - 2);
-      d.dy = Phaser.Math.Clamp(d.dy, 0, PARTY_GRIP);
+      // chwycona karta zostaje mniej więcej pod kursorem
+      const { w, h } = this.partySize();
+      d.dx = Phaser.Math.Clamp(d.dx, 2, w - 2);
+      d.dy = Phaser.Math.Clamp(d.dy, 2, Math.min(h, PARTY_H * partyScale) - 2);
       SoundManager.sfx('click', { vol: 0.5 });
     }
+    partyPos = { x: p.worldX - d.dx, y: p.worldY - d.dy };
     const { h } = this.partySize();
-    let y = p.worldY - d.dy;
-    if (partyHoriz && nearEdge) y = p.worldY < BASE_H / 2 ? M : BASE_H - M - h;
-    partyPos = { x: p.worldX - d.dx, y };
+    if (partyHoriz && nearEdge) partyPos.y = p.worldY < BASE_H / 2 ? M : BASE_H - M - h;
     if (flip) this.drawParty();
     else this.placeParty();
     partyPos = { x: this.partyLayer.x, y: this.partyLayer.y };
+  }
+
+  /** Opis wroga pod kursorem (dawny pasek wrogów / inicjatywy). */
+  private foeTip(ch: Character, e: InitEntry | null): string {
+    const ini = e ? ` · inicjatywa ${e.init}${e.down ? ' · powalony' : ''}${e.done ? ' · już działał' : ''}` : '';
+    return `${ch.name} (${classLabel(ch)}) · PW ${Math.max(0, ch.hp)}/${ch.maxHp}${ch.hp <= 0 ? ' · martwy' : ''}${ini}`;
   }
 
   /** Opis najemnika pod kursorem (podpowiedź karty z Oldgame: imię, poziom, KP, percepcja, prędkość, stany). */
@@ -703,79 +766,6 @@ export class UIScene extends Phaser.Scene {
     this.btnZoomIn.set('MAPA +', true);
     this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ [I]' : 'EKWIPUNEK [I]', true);
     this.btnRetreat.set('ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
-  }
-
-  private drawFoes(): void {
-    const L = this.foeLayer;
-    L.removeAll(true);
-    this.drawInitiative();
-    if (this.hud.inCombat && this.hud.initiative.length) return;
-    const max = Math.floor((MID_X1 - MID_X0 + 3) / (FOE_W + 3));
-    const foes = this.hud.foes.slice(0, max);
-    if (!foes.length) return;
-    const total = foes.length * FOE_W + (foes.length - 1) * 3;
-    let x = Math.round((MID_X0 + MID_X1) / 2 - total / 2);
-    for (const f of foes) {
-      L.add(this.foeCard(x, 0, f));
-      x += FOE_W + 3;
-    }
-  }
-
-  private foeCard(x: number, y: number, ch: Character): Phaser.GameObjects.GameObject[] {
-    const dead = ch.hp <= 0;
-    const bg = this.panelRect(x, y, FOE_W, FOE_H, dead ? C.greyDim : C.redDim);
-    const name = this.text(x + 2, y, cut(ch.name, 8), dead ? C.grey : C.red);
-    const g = this.add.graphics();
-    this.bar(g, x + 2, y + 10, FOE_W - 4, 4, hpRatio(ch), HP_TONE[hpTone(ch)], C.redDim);
-    bg.on('pointerover', () => this.hud.setHover(`${ch.name} (${classLabel(ch)}) · PW ${Math.max(0, ch.hp)}/${ch.maxHp}${dead ? ' · martwy' : ''}`));
-    bg.on('pointerout', () => this.hud.setHover(null));
-    return [bg, name, g];
-  }
-
-  // ================================================================== inicjatywa (port H.initBar)
-
-  private drawInitiative(): void {
-    const L = this.initLayer;
-    L.removeAll(true);
-    const list = this.hud.inCombat ? this.hud.initiative : [];
-    if (!list.length) return;
-    const max = Math.floor((MID_X1 - MID_X0 + 2) / (INIT_W + 2));
-    // okno wokół bieżącej postaci
-    const ci = Math.max(0, list.findIndex((e) => e.current));
-    const start = Math.max(0, Math.min(list.length - max, ci - 1));
-    const shown = list.slice(start, start + max);
-    const total = shown.length * (INIT_W + 2) - 2;
-    const x0 = Math.round((MID_X0 + MID_X1) / 2 - total / 2);
-    let x = x0;
-    for (const e of shown) {
-      L.add(this.initChip(x, 0, e));
-      x += INIT_W + 2;
-    }
-    if (start > 0) L.add(this.text(x0 - 6, 4, '‹', C.grey));
-    if (start + max < list.length) L.add(this.text(x, 4, '›', C.grey));
-  }
-
-  private initChip(x: number, y: number, e: InitEntry): Phaser.GameObjects.GameObject[] {
-    const enemy = e.side === 'enemy';
-    const stroke = e.current ? C.amber : enemy ? PAL.blood : PAL.steel;
-    const bg = this.panelRect(x, y, INIT_W, INIT_H, stroke);
-    if (e.current) bg.setStrokeStyle(2, C.amber);
-    const g = this.add.graphics();
-    const col = e.done ? C.grey : enemy ? C.red : C.white;
-    const nm = this.text(x + 2, y, cut(e.ch.name, 5), col);
-    const ini = this.text(x + INIT_W - 2, y + 8, String(e.init), C.grey, 7).setOrigin(1, 0);
-    this.bar(g, x + 2, y + INIT_H - 4, INIT_W - 4, 2, hpRatio(e.ch), HP_TONE[hpTone(e.ch)], 0x000000);
-    const extra: Phaser.GameObjects.GameObject[] = [];
-    if (e.down) extra.push(this.text(x + 2, y + 8, '!', C.red, 7));
-    if (e.current) extra.push(this.text(x + INIT_W / 2, y + INIT_H, '▲', C.amber, 7).setOrigin(0.5, 0));
-    bg.on('pointerover', () => this.hud.setHover(`${e.ch.name} (${classLabel(e.ch)}) · PW ${Math.max(0, e.ch.hp)}/${e.ch.maxHp} · inicjatywa ${e.init}${e.down ? ' · powalony' : ''}${e.done ? ' · już działał' : ''}`));
-    bg.on('pointerout', () => this.hud.setHover(null));
-    if (!enemy) {
-      const i = this.hud.party.indexOf(e.ch);
-      bg.on('pointerdown', () => i >= 0 && this.hud.command({ kind: 'selectMember', index: i }));
-    }
-    if (e.done) [nm, ini].forEach((t) => t.setAlpha(0.6));
-    return [bg, g, nm, ini, ...extra];
   }
 
   // ================================================================== cele zlecenia (port H.objective)
@@ -1135,7 +1125,7 @@ export class UIScene extends Phaser.Scene {
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
       ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni (albo klik w broń w panelu akcji), PgUp/PgDn/Home/End = przewijanie dziennika, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
-      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: róg prawy dolny = zmiana rozmiaru, − / + = skala (czcionka maleje razem z panelem). Karty drużyny przesuwa się za listwę nad nimi; przy górnej / dolnej krawędzi ekranu układają się poziomo. PPM na nagłówku = domyślne miejsce i rozmiar.'],
+      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar, − / + = skala (czcionka maleje razem z panelem). Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; kółko nad kartami albo − / + za nimi = skala; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
     const box = this.add.container(BASE_W / 2 - W / 2, 30).setDepth(950);
@@ -1254,9 +1244,10 @@ export class UIScene extends Phaser.Scene {
     if (pos) {
       box.setPosition(Phaser.Math.Clamp(Math.round(pos.x), Math.round(30 - sw), BASE_W - 30), Phaser.Math.Clamp(Math.round(pos.y), 0, Math.round(BASE_H - 12 * s)));
     } else if (id === 'menu') box.setPosition(Math.round(BASE_W - M - sw), M);
-    else if (id === 'top') box.setPosition(Math.round(MID_X0 + (TOP_W - sw) / 2), M);
+    else if (id === 'top') box.setPosition(Math.round(MID_X0 + (TOP_W - sw) / 2), this.partyBottom());
     else if (id === 'actions') box.setPosition(AB_X, Math.round(BASE_H - M - 14 * s - sh));
-    else box.setPosition(SHEET_X, SHEET_Y);
+    else if (partyPos) box.setPosition(SHEET_X, SHEET_Y);
+    else box.setPosition(M, this.partyBottom() + LH + 4);
     if (id === 'actions') this.drawHover();
   }
 
@@ -1289,11 +1280,11 @@ export class UIScene extends Phaser.Scene {
       this.dragParty(p, d);
       return;
     }
-    if (d.target === 'logSize') {
+    if (d.target === 'logSize' || d.target === 'logH') {
       // prawy dolny róg: lewy górny stoi w miejscu, panel nie wychodzi poza ekran (rozmiar w pikselach panelu przed skalą)
       const x0 = this.logPanel.x, y0 = this.logPanel.y, s = panelScale.log;
       const minH = LOG_HEAD + 3 * LH + 3;
-      const w = Phaser.Math.Clamp(Math.round((p.worldX - d.dx - x0) / s), LOG_MIN_W, Math.max(LOG_MIN_W, Math.floor((BASE_W - x0) / s)));
+      const w = d.target === 'logH' ? logSize.w : Phaser.Math.Clamp(Math.round((p.worldX - d.dx - x0) / s), LOG_MIN_W, Math.max(LOG_MIN_W, Math.floor((BASE_W - x0) / s)));
       const h = Phaser.Math.Clamp(Math.round((p.worldY - d.dy - y0) / s), minH, Math.max(minH, Math.floor((BASE_H - y0) / s)));
       if (w !== logSize.w || h !== logSize.h) {
         logSize = { w, h };
@@ -1404,7 +1395,23 @@ export class UIScene extends Phaser.Scene {
       this.drag = { target: 'logSize', dx: p.worldX - x0 - logSize.w * s, dy: p.worldY - y0 - logSize.h * s };
     });
 
-    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logScaleBtns, this.logScrollBar, this.logTrack, this.logUpBtn, this.logDownBtn, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResize]);
+    this.logResizeB = this.add.rectangle(0, 0, 10, 3, C.amber, 0).setOrigin(0, 1).setInteractive({ cursor: 'ns-resize' });
+    this.logResizeB.on('pointerover', () => {
+      this.logResizeB.setFillStyle(C.amber, 0.25);
+      this.hud.setHover('Przeciągnij: wysokość dziennika · róg: szerokość i wysokość');
+    });
+    this.logResizeB.on('pointerout', () => {
+      this.logResizeB.setFillStyle(C.amber, 0);
+      this.hud.setHover(null);
+    });
+    this.logResizeB.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonDown()) return;
+      const x0 = this.logPanel.x, y0 = this.logPanel.y, s = panelScale.log;
+      panelPos.log = { x: x0, y: y0 };
+      this.drag = { target: 'logH', dx: 0, dy: p.worldY - y0 - logSize.h * s };
+    });
+
+    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logScaleBtns, this.logScrollBar, this.logTrack, this.logUpBtn, this.logDownBtn, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResizeB, this.logResize]);
   }
 
   /** Ile linii mieści dziennik przy bieżącym rozmiarze i czcionce. */
@@ -1447,6 +1454,8 @@ export class UIScene extends Phaser.Scene {
     this.logNewBg.setPosition(w / 2, h - 12);
     this.logNewBtn.setPosition(w / 2, h - 11);
     this.logResize.setPosition(w, h);
+    this.logResizeB.setPosition(0, h).setSize(w - 9, 3);
+    this.logResizeB.input?.hitArea.setSize(w - 9, 3);
     this.logResizeMark.clear().fillStyle(C.greenDim, 1);
     for (let i = 0; i < 3; i++) for (let j = 0; j <= i; j++) this.logResizeMark.fillRect(w - 3 - j * 2, h - 7 + i * 2, 1, 1);
   }
@@ -1505,6 +1514,7 @@ export class UIScene extends Phaser.Scene {
     else this.logPanel.setPosition(Math.round(BASE_W - M - W * s), Math.round(BASE_H - M - h * s));
     this.logColBtn.setText(this.logCollapsed ? '[+]' : '[-]');
     this.logResize.setVisible(!this.logCollapsed);
+    this.logResizeB.setVisible(!this.logCollapsed);
     this.logResizeMark.setVisible(!this.logCollapsed);
 
 
