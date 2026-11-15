@@ -95,6 +95,10 @@ interface Button {
   set(label: string, enabled: boolean, color?: number): void;
 }
 
+/** Pozycje przesuniętych paneli (null = domyślna); na poziomie modułu, żeby przetrwały kolejne misje. */
+let logPos: { x: number; y: number } | null = null;
+let sheetPos: { x: number; y: number } | null = null;
+
 interface DisplayLine {
   text: string;
   tone: LogTone;
@@ -152,6 +156,9 @@ export class UIScene extends Phaser.Scene {
   private sheet!: Phaser.GameObjects.Container;
   private sheetFooter: PixelText | null = null;
 
+  // przeciąganie paneli za nagłówek
+  private drag: { target: 'log' | 'sheet'; dx: number; dy: number } | null = null;
+
   private banner: Phaser.GameObjects.Container | null = null;
 
   constructor() {
@@ -166,6 +173,7 @@ export class UIScene extends Phaser.Scene {
     this.logUnseen = 0;
     this.logSeenId = 0;
     this.sheetFooter = null;
+    this.drag = null;
     this.banner = null;
     this.rollBox = null;
     this.helpBox = null;
@@ -204,7 +212,12 @@ export class UIScene extends Phaser.Scene {
     this.hoverText = this.text(M + 3, BASE_H - M - 11, '').setVisible(false);
 
     this.createLog();
-    this.sheet = this.add.container(M, SHEET_Y).setVisible(false);
+    this.sheet = this.add.container(sheetPos?.x ?? M, sheetPos?.y ?? SHEET_Y).setVisible(false);
+
+    // ---- przeciąganie paneli (dziennik, ekwipunek) za nagłówek
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onDragMove(p));
+    this.input.on('pointerup', () => (this.drag = null));
+    this.input.on('gameout', () => (this.drag = null));
 
     // ---- klawiatura (jak w starym HUD: Spacja, I, X, Esc, 1-9)
     // (Oldgame/src/scenes/mission.js:640-651: H, F, G, Tab, Spacja, Esc, 1-9)
@@ -736,6 +749,7 @@ export class UIScene extends Phaser.Scene {
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
       ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
+      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). PPM na nagłówku = powrót na domyślne miejsce.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
     const box = this.add.container(BASE_W / 2 - W / 2, 30).setDepth(950);
@@ -772,6 +786,54 @@ export class UIScene extends Phaser.Scene {
     this.hoverBg.setStrokeStyle(1, C.greenDim);
   }
 
+  // ================================================================== przesuwane panele
+
+  /** Niewidoczny uchwyt na nagłówku panelu: LPM + przeciągnięcie = przesuń, PPM = pozycja domyślna. */
+  private dragHandle(target: 'log' | 'sheet', w: number, h: number): Phaser.GameObjects.Rectangle {
+    const r = this.add.rectangle(0, 0, w, h, C.amber, 0).setOrigin(0).setInteractive({ cursor: 'move' });
+    r.on('pointerover', () => r.setFillStyle(C.amber, 0.08));
+    r.on('pointerout', () => r.setFillStyle(C.amber, 0));
+    r.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonDown()) {
+        this.drag = null;
+        if (target === 'log') {
+          logPos = null;
+          this.drawLog();
+        } else {
+          sheetPos = null;
+          this.sheet.setPosition(M, SHEET_Y);
+        }
+        SoundManager.sfx('click');
+        return;
+      }
+      const box = target === 'log' ? this.logPanel : this.sheet;
+      this.drag = { target, dx: p.worldX - box.x, dy: p.worldY - box.y };
+    });
+    return r;
+  }
+
+  private onDragMove(p: Phaser.Input.Pointer): void {
+    const d = this.drag;
+    if (!d) return;
+    if (!p.isDown) {
+      this.drag = null;
+      return;
+    }
+    const isLog = d.target === 'log';
+    const box = isLog ? this.logPanel : this.sheet;
+    if (!box.visible) {
+      this.drag = null;
+      return;
+    }
+    const w = isLog ? LOG_W : SHEET_W;
+    // panel może wyjechać częściowo poza ekran, ale nagłówek i 30 px szerokości zostają widoczne
+    const x = Phaser.Math.Clamp(Math.round(p.worldX - d.dx), 30 - w, BASE_W - 30);
+    const y = Phaser.Math.Clamp(Math.round(p.worldY - d.dy), 0, BASE_H - 12);
+    box.setPosition(x, y);
+    if (isLog) logPos = { x, y };
+    else sheetPos = { x, y };
+  }
+
   // ================================================================== dziennik (port H.log)
 
   private createLog(): void {
@@ -784,6 +846,7 @@ export class UIScene extends Phaser.Scene {
 
     const head = this.text(3, 1, 'DZIENNIK', C.amber);
     const line = this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, 11.5, LOG_W - 2, 11.5);
+    const grip = this.dragHandle('log', LOG_W - 22, 12);
     this.logColBtn = this.text(LOG_W - 3, 1, '[-]', C.green).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     this.logColBtn.on('pointerdown', () => {
       SoundManager.sfx('click');
@@ -809,7 +872,7 @@ export class UIScene extends Phaser.Scene {
       this.drawLog();
     });
 
-    this.logPanel.add([this.logBg, head, line, this.logColBtn, ...this.logLineTexts, this.logScrollBar, this.scanlines(LOG_W, LOG_H), this.logNewBg, this.logNewBtn]);
+    this.logPanel.add([this.logBg, grip, head, line, this.logColBtn, ...this.logLineTexts, this.logScrollBar, this.scanlines(LOG_W, LOG_H), this.logNewBg, this.logNewBtn]);
   }
 
   /** Wszystkie wpisy złamane na linie (z pamięcią podręczną zawijania). */
@@ -857,7 +920,8 @@ export class UIScene extends Phaser.Scene {
     const h = this.logCollapsed ? 12 : LOG_H;
     this.logBg.setSize(LOG_W, h);
     this.logBg.input?.hitArea.setSize(LOG_W, h);
-    this.logPanel.setY(BASE_H - M - h);
+    if (logPos) this.logPanel.setPosition(logPos.x, logPos.y);
+    else this.logPanel.setPosition(BASE_W - M - LOG_W, BASE_H - M - h);
     this.logColBtn.setText(this.logCollapsed ? '[+]' : '[-]');
 
     const start = all.length - LOG_LINES - this.logScroll;
@@ -995,7 +1059,8 @@ export class UIScene extends Phaser.Scene {
     // nieprzezroczyste tło: karta zasłania karty drużyny pod spodem
     const solid = this.add.rectangle(0, 0, SHEET_W, y, C.bg, 1).setOrigin(0);
     const bg = this.panelRect(0, 0, SHEET_W, y, C.amber);
-    S.add([solid, bg, ...items, this.scanlines(SHEET_W, y)]);
+    S.setPosition(sheetPos?.x ?? M, sheetPos?.y ?? SHEET_Y);
+    S.add([solid, bg, this.dragHandle('sheet', SHEET_W - 20, LH * 2 + 2), ...items, this.scanlines(SHEET_W, y)]);
   }
 
   private itemRow(row: InventoryRow, y: number, key: number | null): Phaser.GameObjects.GameObject[] {
