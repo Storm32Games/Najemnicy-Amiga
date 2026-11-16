@@ -1,0 +1,6040 @@
+{
+ "_info": "Wygenerowane przez tools/amiga/export_data.ts z src/core. Nie edytuj ręcznie.",
+ "rules": {
+  "ACTIONS_PER_TURN": 3,
+  "XP_PER_LEVEL": 1000,
+  "MAX_LEVEL": 10,
+  "BASE_AC": 10,
+  "DYING_MAX": 4,
+  "PERSISTENT_END_DC": 15,
+  "MAP": {
+   "normal": [
+    0,
+    -5,
+    -10
+   ],
+   "agile": [
+    0,
+    -4,
+    -8
+   ]
+  },
+  "COVER_AC": {
+   "1": 2,
+   "2": 4
+  },
+  "DC_TABLE": [
+   14,
+   15,
+   16,
+   18,
+   19,
+   20,
+   22,
+   23,
+   24,
+   26,
+   27,
+   28,
+   30,
+   31,
+   32,
+   34
+  ],
+  "ENCOUNTER_XP": {
+   "0": 40,
+   "1": 60,
+   "2": 80,
+   "3": 120,
+   "4": 160,
+   "-4": 10,
+   "-3": 15,
+   "-2": 20,
+   "-1": 30
+  },
+  "ATTRS": [
+   "str",
+   "dex",
+   "con",
+   "int",
+   "wis",
+   "cha"
+  ],
+  "ATTR_NAMES": {
+   "str": "Siła",
+   "dex": "Zręczność",
+   "con": "Kondycja",
+   "int": "Inteligencja",
+   "wis": "Mądrość",
+   "cha": "Charyzma"
+  },
+  "SKILLS": {
+   "athletics": {
+    "name": "Atletyka",
+    "attr": "str"
+   },
+   "acrobatics": {
+    "name": "Akrobatyka",
+    "attr": "dex"
+   },
+   "stealth": {
+    "name": "Skradanie",
+    "attr": "dex"
+   },
+   "thievery": {
+    "name": "Złodziejstwo",
+    "attr": "dex"
+   },
+   "crafting": {
+    "name": "Technika",
+    "attr": "int"
+   },
+   "society": {
+    "name": "Wiedza",
+    "attr": "int"
+   },
+   "medicine": {
+    "name": "Medycyna",
+    "attr": "wis"
+   },
+   "survival": {
+    "name": "Przetrwanie",
+    "attr": "wis"
+   },
+   "nature": {
+    "name": "Natura",
+    "attr": "wis"
+   },
+   "perception": {
+    "name": "Percepcja",
+    "attr": "wis"
+   },
+   "intimidation": {
+    "name": "Zastraszanie",
+    "attr": "cha"
+   },
+   "diplomacy": {
+    "name": "Dyplomacja",
+    "attr": "cha"
+   },
+   "deception": {
+    "name": "Oszustwo",
+    "attr": "cha"
+   }
+  },
+  "CONDITIONS": {
+   "off_guard": {
+    "name": "Odsłonięty",
+    "desc": "-2 do KP.",
+    "kind": "flag"
+   },
+   "frightened": {
+    "name": "Przerażony",
+    "desc": "Wszystkie rzuty kością dzielone na 2 (w górę); maleje co turę.",
+    "kind": "decay",
+    "valued": true
+   },
+   "sickened": {
+    "name": "Chory",
+    "desc": "Kara -X do wszystkich testów i WT; maleje co turę.",
+    "kind": "decay",
+    "valued": true
+   },
+   "clumsy": {
+    "name": "Niezdarny",
+    "desc": "Kara -X do Zręczności (KP, Refleks, strzały).",
+    "kind": "decay",
+    "valued": true
+   },
+   "enfeebled": {
+    "name": "Osłabiony",
+    "desc": "Kara -X do Siły.",
+    "kind": "decay",
+    "valued": true
+   },
+   "distracted": {
+    "name": "Zdezorientowany",
+    "desc": "Odsłonięty (-2 KP) przez krótki czas.",
+    "kind": "timed"
+   },
+   "prone": {
+    "name": "Powalony",
+    "desc": "-2 do KP i ataków. Wstań (1 akcja).",
+    "kind": "flag"
+   },
+   "bleeding": {
+    "name": "Krwawienie",
+    "desc": "Obrażenia ciągłe (test płaski WT 15 kończy).",
+    "kind": "persistent",
+    "dmgType": "bleed"
+   },
+   "burning": {
+    "name": "Płonie",
+    "desc": "Obrażenia ogniowe ciągłe.",
+    "kind": "persistent",
+    "dmgType": "fire"
+   },
+   "poisoned": {
+    "name": "Zatruty",
+    "desc": "Obrażenia od trucizny ciągłe.",
+    "kind": "persistent",
+    "dmgType": "poison"
+   },
+   "stunned": {
+    "name": "Ogłuszony",
+    "desc": "Traci X akcji w następnej turze.",
+    "kind": "consume",
+    "valued": true
+   },
+   "slowed": {
+    "name": "Spowolniony",
+    "desc": "Traci X akcji w następnej turze.",
+    "kind": "consume",
+    "valued": true
+   },
+   "quickened": {
+    "name": "Przyspieszony",
+    "desc": "+1 akcja w turze.",
+    "kind": "timed"
+   },
+   "dying": {
+    "name": "Umierający",
+    "desc": "Test ratunkowy WT 10+X co turę. 4 = śmierć.",
+    "kind": "flag",
+    "valued": true
+   },
+   "wounded": {
+    "name": "Ranny",
+    "desc": "Kolejne umieranie zaczyna się od wyższego poziomu.",
+    "kind": "flag",
+    "valued": true
+   },
+   "unconscious": {
+    "name": "Nieprzytomny",
+    "desc": "Nie działa.",
+    "kind": "flag"
+   },
+   "dead": {
+    "name": "Martwy",
+    "desc": "",
+    "kind": "flag"
+   },
+   "hidden": {
+    "name": "Ukryty",
+    "desc": "Rzut na trafienie w ukrytego dzielony na 2; następny atak z ukrycia uderza w odsłoniętego.",
+    "kind": "flag"
+   },
+   "raised_shield": {
+    "name": "Tarcza w górze",
+    "desc": "+KP z tarczy do początku następnej tury.",
+    "kind": "short"
+   },
+   "dodging": {
+    "name": "Unik",
+    "desc": "+2 do KP do początku następnej tury.",
+    "kind": "short"
+   },
+   "in_cover": {
+    "name": "W osłonie",
+    "desc": "+2 KP (1) lub +4 (2) przeciw atakom dystansowym.",
+    "kind": "flag",
+    "valued": true
+   },
+   "hunted": {
+    "name": "Wyznaczony cel",
+    "desc": "Zwiadowca zadaje mu więcej obrażeń.",
+    "kind": "timed"
+   },
+   "raging": {
+    "name": "Szał",
+    "desc": "+obrażenia w walce wręcz, -1 do KP.",
+    "kind": "timed"
+   },
+   "stimmed": {
+    "name": "Pobudzony",
+    "desc": "+1 do trafienia.",
+    "kind": "timed"
+   },
+   "tuned": {
+    "name": "Ulepszona broń",
+    "desc": "+2 do obrażeń.",
+    "kind": "timed"
+   },
+   "reinforced": {
+    "name": "Wzmocniony pancerz",
+    "desc": "+1 do KP.",
+    "kind": "timed"
+   },
+   "dem_imm": {
+    "name": "Odporny na zastraszanie",
+    "desc": "",
+    "kind": "timed",
+    "hidden": true
+   }
+  },
+  "PERSISTENT": [
+   "bleeding",
+   "burning",
+   "poisoned"
+  ],
+  "UNIVERSAL_ABILITIES": [
+   "strike",
+   "raise_shield",
+   "take_cover",
+   "demoralize",
+   "first_aid",
+   "stand"
+  ],
+  "DMG_ADJ": {
+   "P": "kłutych",
+   "S": "ciętych",
+   "B": "obuchowych",
+   "fire": "ogniowych",
+   "acid": "żrących",
+   "elec": "elektrycznych",
+   "poison": "trujących",
+   "bleed": "od krwawienia",
+   "rad": "radiacyjnych"
+  },
+  "PROF_NAMES": [
+   "Nieszkolony",
+   "Wyszkolony",
+   "Ekspert",
+   "Mistrz",
+   "Legenda"
+  ],
+  "DEGREE_NAMES": [
+   "Krytyczna porażka",
+   "Porażka",
+   "Sukces",
+   "Krytyczny sukces"
+  ],
+  "IMPROVISED_PENALTY": -2,
+  "CRATE_SKILLS": [
+   "thievery",
+   "crafting",
+   "athletics"
+  ],
+  "LOCK_SKILLS": [
+   "thievery",
+   "athletics"
+  ],
+  "HACK_SKILLS": [
+   "crafting",
+   "thievery"
+  ],
+  "LOCKS": {
+   "poor": {
+    "name": "Lichy zamek",
+    "level": 0,
+    "dc": 15,
+    "successes": 2
+   },
+   "simple": {
+    "name": "Prosty zamek",
+    "level": 1,
+    "dc": 20,
+    "successes": 3
+   },
+   "average": {
+    "name": "Przeciętny zamek",
+    "level": 3,
+    "dc": 25,
+    "successes": 4
+   },
+   "good": {
+    "name": "Dobry zamek",
+    "level": 9,
+    "dc": 30,
+    "successes": 5
+   },
+   "superior": {
+    "name": "Doskonały zamek",
+    "level": 17,
+    "dc": 40,
+    "successes": 6
+   }
+  },
+  "DEVICES": {
+   "terminal": {
+    "name": "Terminal",
+    "levelOffset": 0,
+    "successes": 1
+   },
+   "computer": {
+    "name": "Komputer",
+    "levelOffset": 0,
+    "successes": 2
+   },
+   "server": {
+    "name": "Serwer",
+    "levelOffset": 2,
+    "successes": 3
+   },
+   "security": {
+    "name": "Panel zabezpieczeń",
+    "levelOffset": 1,
+    "successes": 2
+   },
+   "robot": {
+    "name": "Sterownik robota",
+    "levelOffset": 3,
+    "successes": 3
+   }
+  }
+ },
+ "ancestries": {
+  "human": {
+   "id": "human",
+   "name": "Człowiek",
+   "pf2e": "człowiek",
+   "desc": "Najbardziej uniwersalni ocaleńcy. Adaptują się do wszystkiego.",
+   "hp": 8,
+   "attrBoosts": {
+    "free": 2
+   },
+   "speed": 5,
+   "traits": [
+    "human"
+   ],
+   "skills": {
+    "society": 1
+   },
+   "perk": "Dwie dowolne premie do cech (przydzielane wg klasy), dodatkowa umiejętność.",
+   "look": {
+    "skin": [
+     "#e0b48a",
+     "#c68e66",
+     "#8d5a3b",
+     "#f0c9a0"
+    ],
+    "hair": [
+     "#2b1d12",
+     "#5a3a1e",
+     "#8a6a3a",
+     "#111"
+    ]
+   }
+  },
+  "humanoid": {
+   "id": "humanoid",
+   "name": "Humanoid",
+   "pf2e": "elf",
+   "desc": "Potomkowie ludzi z przedwojennych programów genetycznych: smukli, długowieczni, o bladosinej skórze i wyostrzonych zmysłach. Szybcy i bystrzy, ale delikatni.",
+   "hp": 6,
+   "attrBoosts": {
+    "dex": 1,
+    "int": 1
+   },
+   "attrFlaw": {
+    "con": -1
+   },
+   "speed": 6,
+   "traits": [
+    "humanoid"
+   ],
+   "skills": {
+    "stealth": 1
+   },
+   "perk": "Prędkość 6, +Zręczność i +Inteligencja, −Kondycja; wyszkolony w Skradaniu.",
+   "look": {
+    "skin": [
+     "#c8d4e0",
+     "#b4c4d8",
+     "#d8dce8"
+    ],
+    "hair": [
+     "#e8e8f0",
+     "#b8c8e0",
+     "#6a7aa0"
+    ]
+   }
+  },
+  "mutant": {
+   "id": "mutant",
+   "name": "Mutant",
+   "pf2e": "krasnolud",
+   "desc": "Skażeni promieniowaniem: krępi, twardzi jak skała i uparci. Odporni na toksyny, ale powolni i odpychający.",
+   "hp": 10,
+   "attrBoosts": {
+    "con": 1,
+    "wis": 1
+   },
+   "attrFlaw": {
+    "cha": -1
+   },
+   "speed": 4,
+   "traits": [
+    "mutant"
+   ],
+   "resist": {
+    "poison": 2
+   },
+   "skills": {
+    "athletics": 1
+   },
+   "perk": "PW rasy 10, odporność na truciznę 2, +Kondycja i +Mądrość, −Charyzma; Prędkość 4.",
+   "look": {
+    "skin": [
+     "#7ea060",
+     "#98a86a",
+     "#a88a9a",
+     "#6f8f7a"
+    ],
+    "hair": [
+     "#222",
+     "#3a4a2a"
+    ],
+    "mutation": true
+   }
+  },
+  "cyborg": {
+   "id": "cyborg",
+   "name": "Cyborg",
+   "pf2e": "android",
+   "desc": "Ciało połatane implantami z ruin. Precyzyjny i chłodny, ale wrażliwy na impuls elektromagnetyczny.",
+   "hp": 8,
+   "attrBoosts": {
+    "dex": 1,
+    "int": 1
+   },
+   "attrFlaw": {
+    "cha": -1
+   },
+   "speed": 5,
+   "traits": [
+    "cyborg",
+    "machine"
+   ],
+   "acBonus": 1,
+   "weak": {
+    "elec": 3
+   },
+   "skills": {
+    "crafting": 1
+   },
+   "perk": "+1 KP (płyty), słabość na prąd 3, +Zręczność i +Inteligencja, −Charyzma.",
+   "look": {
+    "skin": [
+     "#b8a89a",
+     "#9a9a9a"
+    ],
+    "hair": [
+     "#111",
+     "#555"
+    ],
+    "cyber": true
+   }
+  },
+  "nomad": {
+   "id": "nomad",
+   "name": "Dziecko Pustkowi",
+   "pf2e": "niziołek",
+   "desc": "Urodzony w karawanie: drobny, zwinny i czujny. Zna pustkowia jak własną kieszeń.",
+   "hp": 6,
+   "attrBoosts": {
+    "dex": 1,
+    "wis": 1
+   },
+   "attrFlaw": {
+    "str": -1
+   },
+   "speed": 5,
+   "traits": [
+    "human",
+    "nomad"
+   ],
+   "skills": {
+    "survival": 1
+   },
+   "perk": "+Zręczność i +Mądrość, −Siła; wyszkolony w Przetrwaniu.",
+   "look": {
+    "skin": [
+     "#c9966a",
+     "#a87648",
+     "#8d5a3b"
+    ],
+    "hair": [
+     "#2b1d12",
+     "#7a5a2a",
+     "#ddd"
+    ]
+   }
+  },
+  "vault": {
+   "id": "vault",
+   "name": "Dziecko Schronu",
+   "pf2e": "gnom",
+   "desc": "Wychowany pod ziemią: niski, blady, ciekawski i wygadany. Zaskakująco żywotny, ale słaby fizycznie.",
+   "hp": 8,
+   "attrBoosts": {
+    "con": 1,
+    "cha": 1
+   },
+   "attrFlaw": {
+    "str": -1
+   },
+   "speed": 5,
+   "traits": [
+    "human"
+   ],
+   "skills": {
+    "society": 1,
+    "crafting": 1
+   },
+   "perk": "+Kondycja i +Charyzma, −Siła; wyszkolony w Technice i Wiedzy.",
+   "look": {
+    "skin": [
+     "#f0dccb",
+     "#e8d0b8"
+    ],
+    "hair": [
+     "#2b1d12",
+     "#a8782a",
+     "#d8c8a0"
+    ]
+   }
+  },
+  "ratling": {
+   "id": "ratling",
+   "name": "Szczurak",
+   "pf2e": "goblin",
+   "desc": "Mali, żylaści mieszkańcy kanałów i wysypisk. Sprytni, bezczelni i wszędobylscy; rozsądek nie jest ich mocną stroną.",
+   "hp": 6,
+   "attrBoosts": {
+    "dex": 1,
+    "cha": 1
+   },
+   "attrFlaw": {
+    "wis": -1
+   },
+   "speed": 5,
+   "traits": [
+    "ratling"
+   ],
+   "skills": {
+    "thievery": 1
+   },
+   "perk": "+Zręczność i +Charyzma, −Mądrość; wyszkolony w Złodziejstwie.",
+   "look": {
+    "skin": [
+     "#9a8a7a",
+     "#8a8f84",
+     "#a89a8a"
+    ],
+    "hair": [
+     "#3a3430",
+     "#5a4a3a",
+     "#222"
+    ]
+   }
+  },
+  "ogrin": {
+   "id": "ogrin",
+   "name": "Ogrzyn",
+   "pf2e": "ork",
+   "desc": "Olbrzymi potomkowie żołnierzy karmionych stymulantami bojowymi. Silni, wytrzymali i budzący respekt.",
+   "hp": 10,
+   "attrBoosts": {
+    "str": 1,
+    "free": 1
+   },
+   "speed": 5,
+   "traits": [
+    "ogrin"
+   ],
+   "skills": {
+    "intimidation": 1
+   },
+   "perk": "PW rasy 10, +Siła i jedna dowolna premia (wg klasy); wyszkolony w Zastraszaniu.",
+   "look": {
+    "skin": [
+     "#8a7a6a",
+     "#7a8a7a",
+     "#9a8a70"
+    ],
+    "hair": [
+     "#1a1410",
+     "#3a2a20"
+    ]
+   }
+  }
+ },
+ "ancestryAliases": {
+  "nomad-born": "nomad",
+  "nomadborn": "nomad",
+  "dziecko": "nomad",
+  "vault-born": "vault",
+  "schron": "vault",
+  "elf": "humanoid",
+  "dwarf": "mutant",
+  "halfling": "nomad",
+  "gnome": "vault",
+  "goblin": "ratling",
+  "szczurak": "ratling",
+  "orc": "ogrin",
+  "ogrzyn": "ogrin",
+  "android": "cyborg"
+ },
+ "classes": {
+  "soldier": {
+   "id": "soldier",
+   "pf2e": "wojownik",
+   "name": "Żołnierz",
+   "role": "Walka / obrona",
+   "keyAttr": "str",
+   "hpPerLevel": 10,
+   "color": "#6a7a4a",
+   "desc": "Wyszkolony w boju. Najlepszy w trafianiu i noszeniu pancerza. Potrafi przygwoździć wrogów ogniem.",
+   "attrs": {
+    "str": 3,
+    "dex": 3,
+    "con": 2,
+    "int": 0,
+    "wis": 1,
+    "cha": 0
+   },
+   "boostOrder": [
+    "str",
+    "dex",
+    "con",
+    "wis"
+   ],
+   "prof": {
+    "perception": 1,
+    "fortitude": 2,
+    "reflex": 1,
+    "will": 1,
+    "classDC": 1,
+    "skills": {
+     "athletics": 1,
+     "intimidation": 1,
+     "survival": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 2,
+     "advanced": 0,
+     "unarmed": 2
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 2,
+     "medium": 2,
+     "heavy": 1
+    }
+   },
+   "startGear": [
+    "rifle",
+    "pistol",
+    "kevlar",
+    "stimpak",
+    "frag_grenade"
+   ],
+   "abilities": [
+    "suppressive_fire",
+    "double_strike",
+    "charge",
+    "rally"
+   ],
+   "unlocks": {
+    "suppressive_fire": 1,
+    "double_strike": 1,
+    "charge": 2,
+    "rally": 5
+   },
+   "progression": {
+    "3": {
+     "fortitude": 3,
+     "skills": {
+      "athletics": 2
+     }
+    },
+    "5": {
+     "attacks": {
+      "martial": 3,
+      "simple": 3
+     },
+     "defense": {
+      "medium": 3,
+      "light": 3
+     },
+     "will": 2
+    }
+   }
+  },
+  "scout": {
+   "id": "scout",
+   "pf2e": "łowca",
+   "name": "Zwiadowca",
+   "role": "Strzelec / tropiciel",
+   "keyAttr": "dex",
+   "hpPerLevel": 8,
+   "color": "#8a6a3a",
+   "desc": "Cichy łowca pustkowi. Wyznacza cel i trafia z daleka.",
+   "attrs": {
+    "str": 0,
+    "dex": 4,
+    "con": 2,
+    "int": 0,
+    "wis": 2,
+    "cha": 0
+   },
+   "boostOrder": [
+    "dex",
+    "wis",
+    "con",
+    "str"
+   ],
+   "prof": {
+    "perception": 2,
+    "fortitude": 1,
+    "reflex": 2,
+    "will": 1,
+    "classDC": 1,
+    "skills": {
+     "stealth": 1,
+     "survival": 2,
+     "nature": 1,
+     "athletics": 1,
+     "acrobatics": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 2,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 1,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "bow",
+    "knife",
+    "nomad_cloak",
+    "bandage",
+    "bandage"
+   ],
+   "abilities": [
+    "mark_target",
+    "precise_shot",
+    "crippling_shot",
+    "volley"
+   ],
+   "unlocks": {
+    "mark_target": 1,
+    "precise_shot": 1,
+    "crippling_shot": 3,
+    "volley": 5
+   },
+   "progression": {
+    "3": {
+     "reflex": 3,
+     "skills": {
+      "stealth": 2
+     }
+    },
+    "5": {
+     "attacks": {
+      "martial": 3,
+      "simple": 3
+     },
+     "perception": 3
+    }
+   }
+  },
+  "medic": {
+   "id": "medic",
+   "pf2e": "kleryk",
+   "name": "Medyk",
+   "role": "Wsparcie / leczenie",
+   "keyAttr": "wis",
+   "hpPerLevel": 8,
+   "color": "#5a9a7a",
+   "desc": "Utrzymuje drużynę przy życiu: opatrunki, stymulanty i adrenalina.",
+   "attrs": {
+    "str": 0,
+    "dex": 2,
+    "con": 2,
+    "int": 1,
+    "wis": 4,
+    "cha": 1
+   },
+   "boostOrder": [
+    "wis",
+    "con",
+    "dex",
+    "int"
+   ],
+   "prof": {
+    "perception": 1,
+    "fortitude": 1,
+    "reflex": 1,
+    "will": 2,
+    "classDC": 1,
+    "skills": {
+     "medicine": 2,
+     "society": 1,
+     "crafting": 1,
+     "diplomacy": 1,
+     "survival": 1
+    },
+    "attacks": {
+     "simple": 1,
+     "martial": 0,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 0,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "pistol",
+    "knife",
+    "leather",
+    "bandage",
+    "bandage",
+    "stimpak",
+    "antirad"
+   ],
+   "abilities": [
+    "field_dressing",
+    "stimulant",
+    "adrenaline",
+    "field_clinic"
+   ],
+   "unlocks": {
+    "field_dressing": 1,
+    "stimulant": 1,
+    "adrenaline": 3,
+    "field_clinic": 5
+   },
+   "progression": {
+    "3": {
+     "skills": {
+      "medicine": 3
+     },
+     "fortitude": 2
+    },
+    "5": {
+     "attacks": {
+      "simple": 2
+     },
+     "will": 3,
+     "skills": {
+      "medicine": 3
+     }
+    }
+   }
+  },
+  "techie": {
+   "id": "techie",
+   "pf2e": "wynalazca",
+   "name": "Technik",
+   "role": "Gadżety / kontrola",
+   "keyAttr": "int",
+   "hpPerLevel": 8,
+   "color": "#4a8aaa",
+   "desc": "Majsterkowicz z lutownicą. Drony, granaty EMP i naprawa pancerzy.",
+   "attrs": {
+    "str": 0,
+    "dex": 2,
+    "con": 2,
+    "int": 4,
+    "wis": 1,
+    "cha": 0
+   },
+   "boostOrder": [
+    "int",
+    "dex",
+    "con",
+    "wis"
+   ],
+   "prof": {
+    "perception": 1,
+    "fortitude": 1,
+    "reflex": 1,
+    "will": 2,
+    "classDC": 1,
+    "skills": {
+     "crafting": 2,
+     "society": 1,
+     "thievery": 1,
+     "medicine": 1,
+     "acrobatics": 1
+    },
+    "attacks": {
+     "simple": 1,
+     "martial": 0,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 0,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "pistol",
+    "pipe",
+    "scrap_armor",
+    "emp_grenade",
+    "battery"
+   ],
+   "abilities": [
+    "combat_drone",
+    "emp_grenade",
+    "repair_armor",
+    "weapon_tune"
+   ],
+   "unlocks": {
+    "combat_drone": 1,
+    "emp_grenade": 1,
+    "repair_armor": 2,
+    "weapon_tune": 4
+   },
+   "progression": {
+    "3": {
+     "skills": {
+      "crafting": 3
+     },
+     "reflex": 2
+    },
+    "5": {
+     "attacks": {
+      "simple": 2
+     },
+     "classDC": 2,
+     "skills": {
+      "crafting": 3
+     }
+    }
+   }
+  },
+  "scavenger": {
+   "id": "scavenger",
+   "pf2e": "łotrzyk",
+   "name": "Szczur",
+   "role": "Zabójca / złodziej",
+   "keyAttr": "dex",
+   "hpPerLevel": 8,
+   "color": "#7a5a8a",
+   "desc": "Zwinny szabrownik z instynktem. Atak z ukrycia, uniki i lepkie palce.",
+   "attrs": {
+    "str": 0,
+    "dex": 4,
+    "con": 2,
+    "int": 1,
+    "wis": 1,
+    "cha": 1
+   },
+   "boostOrder": [
+    "dex",
+    "con",
+    "wis",
+    "int"
+   ],
+   "prof": {
+    "perception": 2,
+    "fortitude": 1,
+    "reflex": 2,
+    "will": 1,
+    "classDC": 1,
+    "skills": {
+     "stealth": 2,
+     "thievery": 2,
+     "acrobatics": 1,
+     "deception": 1,
+     "society": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 1,
+     "advanced": 0,
+     "unarmed": 2
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 0,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "knife",
+    "pistol",
+    "leather",
+    "smoke_grenade"
+   ],
+   "abilities": [
+    "sneak_attack",
+    "dodge",
+    "steal",
+    "dirty_trick"
+   ],
+   "unlocks": {
+    "sneak_attack": 1,
+    "dodge": 1,
+    "steal": 1,
+    "dirty_trick": 3
+   },
+   "progression": {
+    "3": {
+     "skills": {
+      "stealth": 3,
+      "thievery": 3
+     },
+     "reflex": 3
+    },
+    "5": {
+     "attacks": {
+      "simple": 3,
+      "martial": 2
+     },
+     "perception": 3
+    }
+   }
+  },
+  "brute": {
+   "id": "brute",
+   "pf2e": "barbarzyńca",
+   "name": "Brutal",
+   "role": "Siła / pierwsza linia",
+   "keyAttr": "str",
+   "hpPerLevel": 12,
+   "color": "#aa4a3a",
+   "desc": "Walczy z furią. Szał, ryk i rozpłatanie. Najwięcej PW w drużynie.",
+   "attrs": {
+    "str": 4,
+    "dex": 1,
+    "con": 3,
+    "int": -1,
+    "wis": 1,
+    "cha": 0
+   },
+   "boostOrder": [
+    "str",
+    "con",
+    "dex",
+    "wis"
+   ],
+   "prof": {
+    "perception": 1,
+    "fortitude": 2,
+    "reflex": 1,
+    "will": 1,
+    "classDC": 1,
+    "skills": {
+     "athletics": 2,
+     "intimidation": 2,
+     "survival": 1
+    },
+    "attacks": {
+     "simple": 1,
+     "martial": 2,
+     "advanced": 0,
+     "unarmed": 2
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 2,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "sledgehammer",
+    "machete",
+    "scrap_plate",
+    "bandage"
+   ],
+   "abilities": [
+    "rage",
+    "rend",
+    "roar",
+    "shove",
+    "second_wind"
+   ],
+   "unlocks": {
+    "rage": 1,
+    "rend": 1,
+    "roar": 2,
+    "shove": 3,
+    "second_wind": 5
+   },
+   "progression": {
+    "3": {
+     "fortitude": 3,
+     "skills": {
+      "athletics": 3
+     }
+    },
+    "5": {
+     "attacks": {
+      "martial": 3,
+      "simple": 2
+     },
+     "defense": {
+      "medium": 3
+     },
+     "will": 2
+    }
+   }
+  },
+  "gunslinger": {
+   "id": "gunslinger",
+   "pf2e": "rewolwerowiec",
+   "name": "Rewolwerowiec",
+   "role": "Strzelec / pojedynki",
+   "keyAttr": "dex",
+   "hpPerLevel": 8,
+   "color": "#a8823a",
+   "desc": "Szybka ręka i zimna krew. Celny strzał, unik i brudne sztuczki w zwarciu.",
+   "attrs": {
+    "str": 0,
+    "dex": 4,
+    "con": 2,
+    "int": 0,
+    "wis": 1,
+    "cha": 1
+   },
+   "boostOrder": [
+    "dex",
+    "con",
+    "wis",
+    "cha"
+   ],
+   "prof": {
+    "perception": 2,
+    "fortitude": 2,
+    "reflex": 2,
+    "will": 1,
+    "classDC": 1,
+    "skills": {
+     "acrobatics": 1,
+     "intimidation": 1,
+     "stealth": 1,
+     "deception": 1,
+     "survival": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 2,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 1,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "revolver",
+    "knife",
+    "leather",
+    "bandage"
+   ],
+   "abilities": [
+    "precise_shot",
+    "dodge",
+    "dirty_trick",
+    "volley"
+   ],
+   "unlocks": {
+    "precise_shot": 1,
+    "dodge": 1,
+    "dirty_trick": 2,
+    "volley": 4
+   },
+   "progression": {
+    "3": {
+     "reflex": 3,
+     "skills": {
+      "acrobatics": 2
+     }
+    },
+    "5": {
+     "attacks": {
+      "martial": 3,
+      "simple": 3
+     },
+     "perception": 3
+    }
+   }
+  },
+  "champion": {
+   "id": "champion",
+   "pf2e": "czempion",
+   "name": "Strażnik",
+   "role": "Obrońca / tarcza",
+   "keyAttr": "str",
+   "hpPerLevel": 10,
+   "color": "#8a8f9a",
+   "desc": "Żywa tarcza drużyny: ciężki pancerz, tarcza i głos, który stawia rannych na nogi.",
+   "attrs": {
+    "str": 3,
+    "dex": 1,
+    "con": 3,
+    "int": 0,
+    "wis": 1,
+    "cha": 1
+   },
+   "boostOrder": [
+    "str",
+    "con",
+    "cha",
+    "wis"
+   ],
+   "prof": {
+    "perception": 1,
+    "fortitude": 2,
+    "reflex": 1,
+    "will": 2,
+    "classDC": 1,
+    "skills": {
+     "athletics": 1,
+     "diplomacy": 1,
+     "medicine": 1,
+     "intimidation": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 2,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 2,
+     "medium": 2,
+     "heavy": 2
+    }
+   },
+   "startGear": [
+    "machete",
+    "pistol",
+    "scrap_plate",
+    "scrap_shield",
+    "bandage"
+   ],
+   "abilities": [
+    "rally",
+    "shove",
+    "charge",
+    "second_wind"
+   ],
+   "unlocks": {
+    "rally": 1,
+    "shove": 1,
+    "charge": 2,
+    "second_wind": 4
+   },
+   "progression": {
+    "3": {
+     "fortitude": 3,
+     "skills": {
+      "athletics": 2
+     }
+    },
+    "5": {
+     "attacks": {
+      "martial": 3,
+      "simple": 3
+     },
+     "defense": {
+      "medium": 3,
+      "heavy": 3
+     },
+     "will": 3
+    }
+   }
+  },
+  "alchemist": {
+   "id": "alchemist",
+   "pf2e": "alchemik",
+   "name": "Chemik",
+   "role": "Bomby / mikstury",
+   "keyAttr": "int",
+   "hpPerLevel": 8,
+   "color": "#7aa23a",
+   "desc": "Warzy ogień i lekarstwa z tego samego kanistra. Koktajle Mołotowa, stymulanty i zastrzyk adrenaliny.",
+   "attrs": {
+    "str": 0,
+    "dex": 3,
+    "con": 2,
+    "int": 4,
+    "wis": 0,
+    "cha": 0
+   },
+   "boostOrder": [
+    "int",
+    "dex",
+    "con",
+    "wis"
+   ],
+   "prof": {
+    "perception": 1,
+    "fortitude": 2,
+    "reflex": 2,
+    "will": 1,
+    "classDC": 1,
+    "skills": {
+     "crafting": 2,
+     "medicine": 1,
+     "nature": 1,
+     "society": 1,
+     "thievery": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 1,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 1,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "sawedoff",
+    "knife",
+    "leather",
+    "molotov",
+    "molotov",
+    "antirad",
+    "stimpak"
+   ],
+   "abilities": [
+    "throw_molotov",
+    "stimulant",
+    "field_dressing",
+    "adrenaline"
+   ],
+   "unlocks": {
+    "throw_molotov": 1,
+    "stimulant": 1,
+    "field_dressing": 2,
+    "adrenaline": 3
+   },
+   "progression": {
+    "3": {
+     "skills": {
+      "crafting": 3
+     },
+     "reflex": 2
+    },
+    "5": {
+     "attacks": {
+      "simple": 2
+     },
+     "classDC": 2,
+     "skills": {
+      "medicine": 2
+     }
+    }
+   }
+  },
+  "herald": {
+   "id": "herald",
+   "pf2e": "bard",
+   "name": "Herold",
+   "role": "Dowodzenie / morale",
+   "keyAttr": "cha",
+   "hpPerLevel": 8,
+   "color": "#c0508a",
+   "desc": "Głos drużyny. Podrywa swoich do walki, łamie ducha wrogów i nie gardzi brudną sztuczką.",
+   "attrs": {
+    "str": 0,
+    "dex": 2,
+    "con": 1,
+    "int": 1,
+    "wis": 1,
+    "cha": 4
+   },
+   "boostOrder": [
+    "cha",
+    "dex",
+    "con",
+    "wis"
+   ],
+   "prof": {
+    "perception": 2,
+    "fortitude": 1,
+    "reflex": 1,
+    "will": 2,
+    "classDC": 1,
+    "skills": {
+     "diplomacy": 2,
+     "intimidation": 2,
+     "deception": 1,
+     "society": 1,
+     "medicine": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 1,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 0,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "smg",
+    "knife",
+    "leather",
+    "stimpak",
+    "smoke_grenade"
+   ],
+   "abilities": [
+    "rally",
+    "roar",
+    "dirty_trick",
+    "adrenaline"
+   ],
+   "unlocks": {
+    "rally": 1,
+    "roar": 1,
+    "dirty_trick": 2,
+    "adrenaline": 4
+   },
+   "progression": {
+    "3": {
+     "skills": {
+      "diplomacy": 3
+     },
+     "fortitude": 2
+    },
+    "5": {
+     "attacks": {
+      "simple": 3
+     },
+     "will": 3,
+     "skills": {
+      "intimidation": 3
+     }
+    }
+   }
+  },
+  "monk": {
+   "id": "monk",
+   "pf2e": "mnich",
+   "name": "Pięściarz",
+   "role": "Walka wręcz / zwinność",
+   "keyAttr": "str",
+   "hpPerLevel": 10,
+   "color": "#c87a3a",
+   "desc": "Walczy bez pancerza: seria ciosów, uniki i rzuty, których nie uczą w żadnej armii.",
+   "attrs": {
+    "str": 3,
+    "dex": 3,
+    "con": 2,
+    "int": 0,
+    "wis": 1,
+    "cha": 0
+   },
+   "boostOrder": [
+    "str",
+    "dex",
+    "con",
+    "wis"
+   ],
+   "prof": {
+    "perception": 1,
+    "fortitude": 2,
+    "reflex": 2,
+    "will": 2,
+    "classDC": 1,
+    "skills": {
+     "athletics": 2,
+     "acrobatics": 2,
+     "stealth": 1,
+     "intimidation": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 1,
+     "advanced": 0,
+     "unarmed": 2
+    },
+    "defense": {
+     "unarmored": 2,
+     "light": 1,
+     "medium": 0,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "pipe",
+    "knife",
+    "bandage",
+    "stimpak"
+   ],
+   "abilities": [
+    "double_strike",
+    "dodge",
+    "shove",
+    "second_wind"
+   ],
+   "unlocks": {
+    "double_strike": 1,
+    "dodge": 1,
+    "shove": 2,
+    "second_wind": 4
+   },
+   "progression": {
+    "3": {
+     "reflex": 3,
+     "skills": {
+      "acrobatics": 3
+     }
+    },
+    "5": {
+     "attacks": {
+      "simple": 3,
+      "martial": 2
+     },
+     "defense": {
+      "unarmored": 3
+     },
+     "fortitude": 3
+    }
+   }
+  },
+  "hacker": {
+   "id": "hacker",
+   "pf2e": "śledczy",
+   "name": "Haker",
+   "role": "Analiza / sabotaż",
+   "keyAttr": "int",
+   "hpPerLevel": 8,
+   "color": "#40b8c8",
+   "desc": "Czyta wroga jak otwarty port. Uderza w słaby punkt, smaży elektronikę i przejmuje cudze drony.",
+   "attrs": {
+    "str": 0,
+    "dex": 3,
+    "con": 1,
+    "int": 4,
+    "wis": 1,
+    "cha": 0
+   },
+   "boostOrder": [
+    "int",
+    "dex",
+    "wis",
+    "con"
+   ],
+   "prof": {
+    "perception": 2,
+    "fortitude": 1,
+    "reflex": 2,
+    "will": 2,
+    "classDC": 1,
+    "skills": {
+     "thievery": 2,
+     "society": 2,
+     "crafting": 1,
+     "stealth": 1,
+     "deception": 1
+    },
+    "attacks": {
+     "simple": 2,
+     "martial": 0,
+     "advanced": 0,
+     "unarmed": 1
+    },
+    "defense": {
+     "unarmored": 1,
+     "light": 1,
+     "medium": 0,
+     "heavy": 0
+    }
+   },
+   "startGear": [
+    "revolver",
+    "knife",
+    "leather",
+    "emp_grenade",
+    "battery"
+   ],
+   "abilities": [
+    "sneak_attack",
+    "emp_grenade",
+    "combat_drone",
+    "steal",
+    "weapon_tune"
+   ],
+   "unlocks": {
+    "sneak_attack": 1,
+    "emp_grenade": 1,
+    "combat_drone": 1,
+    "steal": 2,
+    "weapon_tune": 3
+   },
+   "progression": {
+    "3": {
+     "skills": {
+      "thievery": 3
+     },
+     "reflex": 3
+    },
+    "5": {
+     "attacks": {
+      "simple": 3
+     },
+     "classDC": 2,
+     "perception": 3
+    }
+   }
+  }
+ },
+ "items": {
+  "knife": {
+   "id": "knife",
+   "name": "Nóż",
+   "desc": "Zwinny, łatwy do ukrycia. Dobry do ataku z ukrycia.",
+   "type": "weapon",
+   "price": 15,
+   "level": 0,
+   "icon": "knife",
+   "weapon": {
+    "dmgType": "P",
+    "range": 0,
+    "category": "simple",
+    "hands": 1,
+    "traits": [
+     "agile",
+     "finesse"
+    ],
+    "group": "melee",
+    "sfx": "melee",
+    "potency": 0,
+    "damage": "1d4"
+   }
+  },
+  "pipe": {
+   "id": "pipe",
+   "name": "Rura",
+   "desc": "Kawał rury od hydrauliki. Boli.",
+   "type": "weapon",
+   "price": 10,
+   "level": 0,
+   "icon": "pipe",
+   "weapon": {
+    "dmgType": "B",
+    "range": 0,
+    "category": "simple",
+    "hands": 1,
+    "traits": [],
+    "group": "melee",
+    "sfx": "melee",
+    "potency": 0,
+    "damage": "1d6"
+   }
+  },
+  "machete": {
+   "id": "machete",
+   "name": "Maczeta",
+   "desc": "Pustkowiowy klasyk. Tnie krzaki i ludzi.",
+   "type": "weapon",
+   "price": 35,
+   "level": 0,
+   "icon": "machete",
+   "weapon": {
+    "dmgType": "S",
+    "range": 0,
+    "category": "simple",
+    "hands": 1,
+    "traits": [
+     "forceful"
+    ],
+    "group": "melee",
+    "sfx": "melee",
+    "potency": 0,
+    "damage": "1d6"
+   }
+  },
+  "fire_axe": {
+   "id": "fire_axe",
+   "name": "Topór strażacki",
+   "desc": "Czerwony, ciężki, wciąż ostry.",
+   "type": "weapon",
+   "price": 60,
+   "level": 1,
+   "icon": "axe",
+   "weapon": {
+    "dmgType": "S",
+    "range": 0,
+    "category": "martial",
+    "hands": 1,
+    "traits": [
+     "sweep"
+    ],
+    "group": "melee",
+    "sfx": "melee",
+    "potency": 0,
+    "damage": "1d8"
+   }
+  },
+  "sledgehammer": {
+   "id": "sledgehammer",
+   "name": "Młot kowalski",
+   "desc": "Obuch dwuręczny. Miażdży kości i drzwi.",
+   "type": "weapon",
+   "price": 90,
+   "level": 1,
+   "icon": "hammer",
+   "weapon": {
+    "dmgType": "B",
+    "range": 0,
+    "category": "martial",
+    "hands": 2,
+    "traits": [
+     "shove"
+    ],
+    "group": "melee",
+    "sfx": "melee",
+    "potency": 0,
+    "damage": "1d12"
+   }
+  },
+  "monoblade": {
+   "id": "monoblade",
+   "name": "Ostrze monomolekularne",
+   "desc": "Rzadka technologia sprzed wojny. Przecina stal.",
+   "type": "weapon",
+   "price": 900,
+   "level": 5,
+   "icon": "monoblade",
+   "weapon": {
+    "dmgType": "S",
+    "range": 0,
+    "category": "martial",
+    "hands": 1,
+    "traits": [
+     "agile",
+     "finesse"
+    ],
+    "group": "melee",
+    "sfx": "melee",
+    "potency": 1,
+    "damage": "2d6",
+    "tech": true
+   }
+  },
+  "bow": {
+   "id": "bow",
+   "name": "Łuk",
+   "desc": "Cichy i tani. Strzały można zbierać.",
+   "type": "weapon",
+   "price": 40,
+   "level": 0,
+   "icon": "bow",
+   "weapon": {
+    "dmgType": "P",
+    "range": 10,
+    "category": "martial",
+    "hands": 2,
+    "traits": [
+     "deadly:10"
+    ],
+    "group": "bow",
+    "sfx": "melee",
+    "potency": 0,
+    "damage": "1d6"
+   }
+  },
+  "crossbow": {
+   "id": "crossbow",
+   "name": "Kusza",
+   "desc": "Prosta, mocna, powolna.",
+   "type": "weapon",
+   "price": 50,
+   "level": 0,
+   "icon": "crossbow",
+   "weapon": {
+    "dmgType": "P",
+    "range": 10,
+    "category": "simple",
+    "hands": 2,
+    "traits": [],
+    "group": "bow",
+    "sfx": "melee",
+    "potency": 0,
+    "damage": "1d8"
+   }
+  },
+  "pistol": {
+   "id": "pistol",
+   "name": "Pistolet 9mm",
+   "desc": "Zwykły, niezawodny, ostatni argument.",
+   "type": "weapon",
+   "price": 70,
+   "level": 0,
+   "icon": "pistol",
+   "weapon": {
+    "dmgType": "P",
+    "range": 8,
+    "category": "simple",
+    "hands": 1,
+    "traits": [],
+    "group": "firearm",
+    "sfx": "shot_pistol",
+    "potency": 0,
+    "damage": "1d8",
+    "ammo": true
+   }
+  },
+  "revolver": {
+   "id": "revolver",
+   "name": "Rewolwer",
+   "desc": "Ciężki kaliber. Krytyki bolą.",
+   "type": "weapon",
+   "price": 120,
+   "level": 1,
+   "icon": "revolver",
+   "weapon": {
+    "dmgType": "P",
+    "range": 9,
+    "category": "martial",
+    "hands": 1,
+    "traits": [
+     "fatal:12"
+    ],
+    "group": "firearm",
+    "sfx": "shot_pistol",
+    "potency": 0,
+    "damage": "1d8",
+    "ammo": true
+   }
+  },
+  "sawedoff": {
+   "id": "sawedoff",
+   "name": "Obrzyn",
+   "desc": "Ucięta dubeltówka. Strach pomyśleć co robi z bliska.",
+   "type": "weapon",
+   "price": 90,
+   "level": 0,
+   "icon": "sawedoff",
+   "weapon": {
+    "dmgType": "P",
+    "range": 3,
+    "category": "simple",
+    "hands": 1,
+    "traits": [
+     "scatter"
+    ],
+    "group": "firearm",
+    "sfx": "shot_shotgun",
+    "potency": 0,
+    "damage": "2d4",
+    "ammo": true
+   }
+  },
+  "shotgun": {
+   "id": "shotgun",
+   "name": "Strzelba",
+   "desc": "Dwie lufy, jedna decyzja.",
+   "type": "weapon",
+   "price": 180,
+   "level": 1,
+   "icon": "shotgun",
+   "weapon": {
+    "dmgType": "P",
+    "range": 5,
+    "category": "martial",
+    "hands": 2,
+    "traits": [
+     "scatter"
+    ],
+    "group": "firearm",
+    "sfx": "shot_shotgun",
+    "potency": 0,
+    "damage": "2d6",
+    "ammo": true
+   }
+  },
+  "smg": {
+   "id": "smg",
+   "name": "Pistolet maszynowy",
+   "desc": "Szybki, hałaśliwy, żre amunicję.",
+   "type": "weapon",
+   "price": 150,
+   "level": 1,
+   "icon": "smg",
+   "weapon": {
+    "dmgType": "P",
+    "range": 7,
+    "category": "martial",
+    "hands": 1,
+    "traits": [
+     "automatic"
+    ],
+    "group": "firearm",
+    "sfx": "shot_smg",
+    "potency": 0,
+    "damage": "1d6",
+    "ammo": true
+   }
+  },
+  "rifle": {
+   "id": "rifle",
+   "name": "Karabin",
+   "desc": "Dalekosiężny i solidny. Klasyk Żołnierzy.",
+   "type": "weapon",
+   "price": 200,
+   "level": 1,
+   "icon": "rifle",
+   "weapon": {
+    "dmgType": "P",
+    "range": 14,
+    "category": "martial",
+    "hands": 2,
+    "traits": [],
+    "group": "firearm",
+    "sfx": "shot_rifle",
+    "potency": 0,
+    "damage": "1d10",
+    "ammo": true
+   }
+  },
+  "hunting_rifle": {
+   "id": "hunting_rifle",
+   "name": "Sztucer",
+   "desc": "Precyzyjny, z lunetą. Dla cierpliwych.",
+   "type": "weapon",
+   "price": 260,
+   "level": 2,
+   "icon": "sniper",
+   "weapon": {
+    "dmgType": "P",
+    "range": 18,
+    "category": "martial",
+    "hands": 2,
+    "traits": [
+     "deadly:10"
+    ],
+    "group": "firearm",
+    "sfx": "shot_rifle",
+    "potency": 0,
+    "damage": "1d10",
+    "ammo": true
+   }
+  },
+  "assault_rifle": {
+   "id": "assault_rifle",
+   "name": "Karabin szturmowy",
+   "desc": "Wojskowy zapas, który cudem przetrwał.",
+   "type": "weapon",
+   "price": 450,
+   "level": 3,
+   "icon": "assault",
+   "weapon": {
+    "dmgType": "P",
+    "range": 14,
+    "category": "martial",
+    "hands": 2,
+    "traits": [
+     "automatic"
+    ],
+    "group": "firearm",
+    "sfx": "shot_smg",
+    "potency": 1,
+    "damage": "1d10",
+    "ammo": true
+   }
+  },
+  "laser_pistol": {
+   "id": "laser_pistol",
+   "name": "Pistolet laserowy",
+   "desc": "Rzadka technologia. Pali powietrze i skórę.",
+   "type": "weapon",
+   "price": 600,
+   "level": 4,
+   "icon": "laser_pistol",
+   "weapon": {
+    "dmgType": "fire",
+    "range": 10,
+    "category": "martial",
+    "hands": 1,
+    "traits": [],
+    "group": "laser",
+    "sfx": "shot_laser",
+    "potency": 1,
+    "damage": "2d6",
+    "tech": true
+   }
+  },
+  "laser_rifle": {
+   "id": "laser_rifle",
+   "name": "Karabin laserowy",
+   "desc": "Skarb pustkowi. Warty więcej niż cała osada.",
+   "type": "weapon",
+   "price": 1500,
+   "level": 6,
+   "icon": "laser_rifle",
+   "weapon": {
+    "dmgType": "fire",
+    "range": 16,
+    "category": "martial",
+    "hands": 2,
+    "traits": [],
+    "group": "laser",
+    "sfx": "shot_laser",
+    "potency": 1,
+    "damage": "3d6",
+    "tech": true
+   }
+  },
+  "leather": {
+   "id": "leather",
+   "name": "Skórzany kombinezon",
+   "desc": "Łatwy i lekki. Ochrona symboliczna.",
+   "type": "armor",
+   "price": 40,
+   "level": 0,
+   "icon": "leather",
+   "armor": {
+    "checkPenalty": 0,
+    "speedPenalty": 0,
+    "ac": 1,
+    "dexCap": 4,
+    "category": "light"
+   }
+  },
+  "nomad_cloak": {
+   "id": "nomad_cloak",
+   "name": "Płaszcz Nomada",
+   "desc": "Pylisty płaszcz z wstawkami. Pozwala dobrze się ruszać.",
+   "type": "armor",
+   "price": 60,
+   "level": 1,
+   "icon": "cloak",
+   "armor": {
+    "checkPenalty": 0,
+    "speedPenalty": 0,
+    "ac": 1,
+    "dexCap": 5,
+    "category": "light"
+   }
+  },
+  "scrap_armor": {
+   "id": "scrap_armor",
+   "name": "Pancerz ze złomu",
+   "desc": "Blachy z samochodów, sznurek, wiara.",
+   "type": "armor",
+   "price": 80,
+   "level": 1,
+   "icon": "scrap_armor",
+   "armor": {
+    "checkPenalty": 1,
+    "speedPenalty": 0,
+    "ac": 2,
+    "dexCap": 3,
+    "category": "light"
+   }
+  },
+  "scrap_plate": {
+   "id": "scrap_plate",
+   "name": "Pancerz płytowy ze złomu",
+   "desc": "Ciężki i hałaśliwy, ale trzyma kulę.",
+   "type": "armor",
+   "price": 160,
+   "level": 1,
+   "icon": "scrap_plate",
+   "armor": {
+    "checkPenalty": 1,
+    "speedPenalty": 0,
+    "ac": 2,
+    "dexCap": 2,
+    "category": "medium"
+   }
+  },
+  "kevlar": {
+   "id": "kevlar",
+   "name": "Kamizelka kewlarowa",
+   "desc": "Wojskowy zapas. Zatrzymuje kule.",
+   "type": "armor",
+   "price": 260,
+   "level": 2,
+   "icon": "vest",
+   "armor": {
+    "checkPenalty": 1,
+    "speedPenalty": 0,
+    "ac": 2,
+    "dexCap": 2,
+    "category": "medium"
+   }
+  },
+  "riot_armor": {
+   "id": "riot_armor",
+   "name": "Pancerz szturmowy",
+   "desc": "Płyty ceramiczne, hełm, nakolanniki.",
+   "type": "armor",
+   "price": 520,
+   "level": 3,
+   "icon": "riot",
+   "armor": {
+    "checkPenalty": 2,
+    "speedPenalty": 0,
+    "ac": 4,
+    "dexCap": 1,
+    "category": "medium"
+   }
+  },
+  "power_armor": {
+   "id": "power_armor",
+   "name": "Pancerz wspomagany",
+   "desc": "Mechaniczny szkielet ze starej bazy. Rzadkość.",
+   "type": "armor",
+   "price": 1800,
+   "level": 6,
+   "icon": "power_armor",
+   "armor": {
+    "checkPenalty": 3,
+    "speedPenalty": 1,
+    "ac": 6,
+    "dexCap": 0,
+    "category": "heavy",
+    "tech": true
+   }
+  },
+  "scrap_shield": {
+   "id": "scrap_shield",
+   "name": "Tarcza ze złomu",
+   "desc": "Blacha od znaku drogowego.",
+   "type": "shield",
+   "price": 25,
+   "level": 0,
+   "icon": "shield",
+   "shield": {
+    "ac": 2,
+    "hardness": 2,
+    "hp": 16
+   }
+  },
+  "riot_shield": {
+   "id": "riot_shield",
+   "name": "Tarcza szturmowa",
+   "desc": "Przezroczysty poliwęglan. Zatrzymuje kule i kamienie.",
+   "type": "shield",
+   "price": 130,
+   "level": 2,
+   "icon": "riot_shield",
+   "shield": {
+    "ac": 2,
+    "hardness": 5,
+    "hp": 30
+   }
+  },
+  "stimpak": {
+   "id": "stimpak",
+   "name": "Stymulant",
+   "desc": "Strzykawka z mieszanką leczniczą. Leczy 2k6+4.",
+   "type": "consumable",
+   "price": 50,
+   "level": 0,
+   "icon": "stim",
+   "consumable": {
+    "actions": 1,
+    "target": "ally",
+    "range": 1,
+    "effect": "heal",
+    "amount": "2d6+4"
+   }
+  },
+  "bandage": {
+   "id": "bandage",
+   "name": "Bandaż",
+   "desc": "Zatamuje krwawienie i trochę podleczy (1k6+2).",
+   "type": "consumable",
+   "price": 15,
+   "level": 0,
+   "icon": "bandage",
+   "consumable": {
+    "actions": 1,
+    "target": "ally",
+    "range": 1,
+    "effect": "heal",
+    "amount": "1d6+2",
+    "cures": [
+     "bleeding"
+    ]
+   }
+  },
+  "medkit": {
+   "id": "medkit",
+   "name": "Apteczka polowa",
+   "desc": "Pełny zestaw. Leczy 4k6+6.",
+   "type": "consumable",
+   "price": 130,
+   "level": 3,
+   "icon": "medkit",
+   "consumable": {
+    "actions": 2,
+    "target": "ally",
+    "range": 1,
+    "effect": "heal",
+    "amount": "4d6+6",
+    "cures": [
+     "bleeding",
+     "poisoned"
+    ]
+   }
+  },
+  "antirad": {
+   "id": "antirad",
+   "name": "Antyrad",
+   "desc": "Usuwa mdłości i zatrucie.",
+   "type": "consumable",
+   "price": 30,
+   "level": 0,
+   "icon": "antirad",
+   "consumable": {
+    "actions": 1,
+    "target": "ally",
+    "range": 1,
+    "effect": "cleanse",
+    "cures": [
+     "sickened",
+     "poisoned",
+     "burning"
+    ]
+   }
+  },
+  "frag_grenade": {
+   "id": "frag_grenade",
+   "name": "Granat odłamkowy",
+   "desc": "2k6 obrażeń kłutych w promieniu 2 (Refleks WT 17).",
+   "type": "consumable",
+   "price": 55,
+   "level": 1,
+   "icon": "grenade",
+   "consumable": {
+    "actions": 1,
+    "target": "area",
+    "range": 6,
+    "effect": "damage",
+    "amount": "2d6",
+    "dmgType": "P",
+    "save": "reflex",
+    "dc": 17,
+    "radius": 2
+   }
+  },
+  "molotov": {
+   "id": "molotov",
+   "name": "Koktajl Mołotowa",
+   "desc": "1k6 ognia + podpalenie (Refleks WT 15).",
+   "type": "consumable",
+   "price": 30,
+   "level": 0,
+   "icon": "molotov",
+   "consumable": {
+    "actions": 1,
+    "target": "area",
+    "range": 6,
+    "effect": "damage",
+    "amount": "1d6",
+    "dmgType": "fire",
+    "save": "reflex",
+    "dc": 15,
+    "radius": 1,
+    "condition": {
+     "id": "burning",
+     "value": "1d4"
+    }
+   }
+  },
+  "smoke_grenade": {
+   "id": "smoke_grenade",
+   "name": "Granat dymny",
+   "desc": "Dym w promieniu 2: cele są ukryte do końca tury.",
+   "type": "consumable",
+   "price": 25,
+   "level": 0,
+   "icon": "smoke",
+   "consumable": {
+    "actions": 1,
+    "target": "area",
+    "range": 6,
+    "effect": "smoke",
+    "radius": 2
+   }
+  },
+  "emp_grenade": {
+   "id": "emp_grenade",
+   "name": "Granat EMP",
+   "desc": "3k6 elektr. maszynom i cyborgom + ogłuszenie (Refleks WT 18).",
+   "type": "consumable",
+   "price": 80,
+   "level": 2,
+   "icon": "emp",
+   "consumable": {
+    "actions": 1,
+    "target": "area",
+    "range": 6,
+    "effect": "damage",
+    "amount": "3d6",
+    "dmgType": "elec",
+    "save": "reflex",
+    "dc": 18,
+    "radius": 2,
+    "only": "machine",
+    "condition": {
+     "id": "stunned",
+     "value": 1
+    }
+   }
+  },
+  "combat_stim": {
+   "id": "combat_stim",
+   "name": "Bojowy wzmacniacz",
+   "desc": "+1 do trafienia i +2 do obrażeń przez 4 rundy.",
+   "type": "consumable",
+   "price": 60,
+   "level": 1,
+   "icon": "combat_stim",
+   "consumable": {
+    "actions": 1,
+    "target": "self",
+    "range": 1,
+    "effect": "buff",
+    "buffs": [
+     {
+      "id": "stimmed",
+      "value": 4
+     },
+     {
+      "id": "tuned",
+      "value": 4
+     }
+    ]
+   }
+  },
+  "scrap_metal": {
+   "id": "scrap_metal",
+   "name": "Złom metalowy",
+   "desc": "Garść przydatnego żelastwa.",
+   "type": "junk",
+   "price": 5,
+   "level": 0,
+   "icon": "scrap"
+  },
+  "copper_wire": {
+   "id": "copper_wire",
+   "name": "Zwój miedzi",
+   "desc": "Cenny dla Techników.",
+   "type": "junk",
+   "price": 8,
+   "level": 0,
+   "icon": "cable"
+  },
+  "canned_food": {
+   "id": "canned_food",
+   "name": "Konserwa",
+   "desc": "Data ważności: sprzed wojny.",
+   "type": "junk",
+   "price": 6,
+   "level": 0,
+   "icon": "food"
+  },
+  "old_watch": {
+   "id": "old_watch",
+   "name": "Stary zegarek",
+   "desc": "Nadal tyka. Zadziwiające.",
+   "type": "junk",
+   "price": 15,
+   "level": 0,
+   "icon": "watch"
+  },
+  "trophy_teeth": {
+   "id": "trophy_teeth",
+   "name": "Szczęka-trofeum",
+   "desc": "Znak gangu Żelaznych Szczęk. Handlarze płacą za dowód.",
+   "type": "junk",
+   "price": 20,
+   "level": 1,
+   "icon": "teeth"
+  },
+  "mutant_gland": {
+   "id": "mutant_gland",
+   "name": "Gruczoł mutanta",
+   "desc": "Śmierdzi, ale alchemicy płacą.",
+   "type": "junk",
+   "price": 30,
+   "level": 1,
+   "icon": "gland"
+  },
+  "fuel_can": {
+   "id": "fuel_can",
+   "name": "Kanister paliwa",
+   "desc": "Płynne złoto pustkowi.",
+   "type": "junk",
+   "price": 35,
+   "level": 1,
+   "icon": "fuel"
+  },
+  "battery": {
+   "id": "battery",
+   "name": "Akumulator",
+   "desc": "Jeszcze trzyma ładunek.",
+   "type": "tech",
+   "price": 25,
+   "level": 1,
+   "icon": "battery"
+  },
+  "lockpick": {
+   "id": "lockpick",
+   "name": "Wytrychy",
+   "desc": "Narzędzia złodziejskie: otwieranie zamków bez kary -2. Pękają przy krytycznej porażce.",
+   "type": "tech",
+   "price": 30,
+   "level": 1,
+   "icon": "lockpick"
+  },
+  "gas_mask": {
+   "id": "gas_mask",
+   "name": "Maska gazowa",
+   "desc": "Starego typu, z filtrem.",
+   "type": "junk",
+   "price": 50,
+   "level": 1,
+   "icon": "gas_mask"
+  },
+  "memory_card": {
+   "id": "memory_card",
+   "name": "Karta pamięci",
+   "desc": "Dane sprzed końca świata.",
+   "type": "tech",
+   "price": 35,
+   "level": 1,
+   "icon": "memory_card"
+  },
+  "radio_part": {
+   "id": "radio_part",
+   "name": "Część radiowa",
+   "desc": "Do naprawy nadajnika.",
+   "type": "tech",
+   "price": 40,
+   "level": 1,
+   "icon": "radio"
+  },
+  "circuit": {
+   "id": "circuit",
+   "name": "Układ scalony",
+   "desc": "Rzadki, delikatny, drogi.",
+   "type": "tech",
+   "price": 45,
+   "level": 2,
+   "icon": "chip"
+  },
+  "vacuum_tube": {
+   "id": "vacuum_tube",
+   "name": "Lampa próżniowa",
+   "desc": "Kolekcjonerzy płacą nieźle.",
+   "type": "tech",
+   "price": 45,
+   "level": 2,
+   "icon": "tube"
+  },
+  "drone_parts": {
+   "id": "drone_parts",
+   "name": "Części drona",
+   "desc": "Serwa, optyka, procesor.",
+   "type": "tech",
+   "price": 60,
+   "level": 2,
+   "icon": "drone"
+  },
+  "power_core": {
+   "id": "power_core",
+   "name": "Rdzeń zasilający",
+   "desc": "Zasila generatory przez lata.",
+   "type": "tech",
+   "price": 120,
+   "level": 4,
+   "icon": "power_core"
+  },
+  "ammo_box": {
+   "id": "ammo_box",
+   "name": "Skrzynka amunicji",
+   "desc": "Do wymiany z handlarzem.",
+   "type": "ammo",
+   "price": 20,
+   "level": 0,
+   "icon": "ammo"
+  }
+ },
+ "enemies": {
+  "rat_mutant": {
+   "id": "rat_mutant",
+   "ai": "beast",
+   "faction": "beast",
+   "abilities": [],
+   "loot": [
+    {
+     "id": "mutant_gland",
+     "chance": 0.25,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    0,
+    3
+   ],
+   "traits": [
+    "animal"
+   ],
+   "speed": 6,
+   "name": "Szczur-mutant",
+   "acc": "Szczura-mutanta",
+   "desc": "Wielki jak pies, wygłodniały i skażony.",
+   "level": 0,
+   "hp": 15,
+   "ac": 14,
+   "saves": {
+    "fort": 5,
+    "ref": 6,
+    "will": 2
+   },
+   "perception": 5,
+   "attacks": [
+    {
+     "name": "Ugryzienie",
+     "bonus": 7,
+     "damage": "1d6+3",
+     "dmgType": "P",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "quad",
+    "skin": "#6a5a4a",
+    "accent": "#cc4444",
+    "scale": 0.8
+   }
+  },
+  "dog_mutant": {
+   "id": "dog_mutant",
+   "ai": "beast",
+   "faction": "beast",
+   "abilities": [
+    "bite_trip"
+   ],
+   "loot": [
+    {
+     "id": "mutant_gland",
+     "chance": 0.35,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    0,
+    4
+   ],
+   "traits": [
+    "animal"
+   ],
+   "speed": 8,
+   "name": "Zmutowany pies",
+   "acc": "zmutowanego psa",
+   "desc": "Gnat zamiast sierści, kły zamiast rozumu. Powala ofiary.",
+   "level": 1,
+   "hp": 25,
+   "ac": 16,
+   "saves": {
+    "fort": 7,
+    "ref": 8,
+    "will": 3
+   },
+   "perception": 7,
+   "attacks": [
+    {
+     "name": "Ugryzienie",
+     "bonus": 9,
+     "damage": "1d8+5",
+     "dmgType": "P",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "quad",
+    "skin": "#7a6a5a",
+    "accent": "#aaff44",
+    "scale": 1
+   }
+  },
+  "fly_swarm": {
+   "id": "fly_swarm",
+   "ai": "beast",
+   "faction": "beast",
+   "abilities": [
+    "swarm_cloud"
+   ],
+   "loot": [
+    {
+     "id": "mutant_gland",
+     "chance": 0.4,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    0,
+    2
+   ],
+   "traits": [
+    "animal",
+    "swarm"
+   ],
+   "speed": 6,
+   "name": "Rój much",
+   "acc": "rój much",
+   "desc": "Chmara mutantów z toksycznym jadem. Odporny na ciosy, boi się ognia.",
+   "level": 1,
+   "hp": 24,
+   "ac": 15,
+   "saves": {
+    "fort": 6,
+    "ref": 7,
+    "will": 3
+   },
+   "perception": 5,
+   "resist": {
+    "P": 4,
+    "S": 4,
+    "B": 4
+   },
+   "weak": {
+    "fire": 4
+   },
+   "immune": [
+    "poison"
+   ],
+   "attacks": [
+    {
+     "name": "Użądlenia",
+     "bonus": 8,
+     "damage": "1d6+4",
+     "dmgType": "P",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "swarm",
+    "skin": "#2a3a1a",
+    "accent": "#aaff44",
+    "scale": 1.1
+   }
+  },
+  "scorpion": {
+   "id": "scorpion",
+   "ai": "beast",
+   "faction": "beast",
+   "abilities": [
+    "poison_sting"
+   ],
+   "loot": [
+    {
+     "id": "mutant_gland",
+     "chance": 0.5,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    0,
+    5
+   ],
+   "traits": [
+    "animal"
+   ],
+   "speed": 6,
+   "name": "Skorpion pustynny",
+   "acc": "skorpiona pustynnego",
+   "desc": "Pancerz z chityny i jad w ogonie.",
+   "level": 2,
+   "hp": 37,
+   "ac": 18,
+   "saves": {
+    "fort": 9,
+    "ref": 8,
+    "will": 4
+   },
+   "perception": 8,
+   "attacks": [
+    {
+     "name": "Kleszcze",
+     "bonus": 11,
+     "damage": "1d8+6",
+     "dmgType": "S",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "quad",
+    "skin": "#a8783a",
+    "accent": "#ffaa22",
+    "scale": 1.2
+   }
+  },
+  "kretowij": {
+   "id": "kretowij",
+   "ai": "beast",
+   "faction": "beast",
+   "abilities": [
+    "quake"
+   ],
+   "loot": [
+    {
+     "id": "mutant_gland",
+     "chance": 0.8,
+     "qty": 2
+    }
+   ],
+   "scrap": [
+    5,
+    20
+   ],
+   "traits": [
+    "animal"
+   ],
+   "speed": 5,
+   "name": "Kretowij",
+   "acc": "Kretowija",
+   "desc": "Podziemny drapieżnik wielkości samochodu. Wynurza się znienacka i trzęsie ziemią.",
+   "level": 3,
+   "hp": 67,
+   "ac": 19,
+   "saves": {
+    "fort": 12,
+    "ref": 7,
+    "will": 8
+   },
+   "perception": 9,
+   "attacks": [
+    {
+     "name": "Pazury",
+     "bonus": 13,
+     "damage": "1d12+8",
+     "dmgType": "S",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "big",
+    "skin": "#5a4a3a",
+    "accent": "#ffcc88",
+    "scale": 1.6
+   }
+  },
+  "ghoul": {
+   "id": "ghoul",
+   "ai": "melee",
+   "faction": "mutant",
+   "abilities": [
+    "rad_touch"
+   ],
+   "loot": [
+    {
+     "id": "old_watch",
+     "chance": 0.2,
+     "qty": 1
+    },
+    {
+     "id": "gas_mask",
+     "chance": 0.15,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    2,
+    12
+   ],
+   "traits": [
+    "mutant"
+   ],
+   "speed": 5,
+   "name": "Ghul",
+   "acc": "ghula",
+   "desc": "Napromieniowany zmutowany człowiek. Dotyk zatruwa.",
+   "level": 2,
+   "hp": 39,
+   "ac": 17,
+   "saves": {
+    "fort": 9,
+    "ref": 7,
+    "will": 6
+   },
+   "perception": 7,
+   "resist": {
+    "poison": 6
+   },
+   "attacks": [
+    {
+     "name": "Szpony",
+     "bonus": 10,
+     "damage": "1d6+6",
+     "dmgType": "S",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "light",
+    "skin": "#8a9a6a",
+    "cloth": "#4a4a3a",
+    "accent": "#aaff44",
+    "mutation": true
+   }
+  },
+  "mutant_brute": {
+   "id": "mutant_brute",
+   "ai": "melee",
+   "faction": "mutant",
+   "abilities": [
+    "frenzy"
+   ],
+   "loot": [
+    {
+     "id": "mutant_gland",
+     "chance": 0.7,
+     "qty": 2
+    },
+    {
+     "id": "fuel_can",
+     "chance": 0.2,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    8,
+    30
+   ],
+   "traits": [
+    "mutant"
+   ],
+   "speed": 5,
+   "name": "Mutant-kolos",
+   "acc": "mutanta-kolosa",
+   "desc": "Dwa metry mięśni i gniewu. Rzuca się na wszystko, co się rusza.",
+   "level": 4,
+   "hp": 97,
+   "ac": 20,
+   "saves": {
+    "fort": 14,
+    "ref": 8,
+    "will": 9
+   },
+   "perception": 9,
+   "resist": {
+    "poison": 6
+   },
+   "attacks": [
+    {
+     "name": "Pięść",
+     "bonus": 15,
+     "damage": "2d8+7",
+     "dmgType": "B",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "heavy",
+    "skin": "#7a9a5a",
+    "cloth": "#443322",
+    "accent": "#aaff44",
+    "mutation": true,
+    "scale": 1.35
+   }
+  },
+  "raider_thug": {
+   "id": "raider_thug",
+   "ai": "melee",
+   "faction": "raider",
+   "abilities": [],
+   "loot": [
+    {
+     "id": "pipe",
+     "chance": 0.15,
+     "qty": 1
+    },
+    {
+     "id": "bandage",
+     "chance": 0.25,
+     "qty": 1
+    },
+    {
+     "id": "trophy_teeth",
+     "chance": 0.3,
+     "qty": 1
+    },
+    {
+     "id": "scrap_metal",
+     "chance": 0.5,
+     "qty": 2
+    }
+   ],
+   "scrap": [
+    3,
+    12
+   ],
+   "traits": [],
+   "speed": 5,
+   "name": "Szabrownik-zbir",
+   "acc": "Szabrownika-zbira",
+   "desc": "Pałka z gwoździami i brak skrupułów.",
+   "level": 1,
+   "hp": 25,
+   "ac": 16,
+   "saves": {
+    "fort": 7,
+    "ref": 4,
+    "will": 3
+   },
+   "perception": 5,
+   "attacks": [
+    {
+     "name": "Pałka z gwoździami",
+     "bonus": 9,
+     "damage": "1d8+5",
+     "dmgType": "B",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "heavy",
+    "skin": "#b08a6a",
+    "cloth": "#5a3a2a",
+    "accent": "#cc3322",
+    "mask": true
+   }
+  },
+  "raider_gunner": {
+   "id": "raider_gunner",
+   "ai": "ranged",
+   "faction": "raider",
+   "abilities": [],
+   "loot": [
+    {
+     "id": "pistol",
+     "chance": 0.12,
+     "qty": 1
+    },
+    {
+     "id": "ammo_box",
+     "chance": 0.35,
+     "qty": 1
+    },
+    {
+     "id": "stimpak",
+     "chance": 0.12,
+     "qty": 1
+    },
+    {
+     "id": "trophy_teeth",
+     "chance": 0.25,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    3,
+    14
+   ],
+   "traits": [],
+   "speed": 5,
+   "name": "Szabrownik-strzelec",
+   "acc": "Szabrownika-strzelca",
+   "desc": "Strzela zza osłony z rozlatującego się karabinka.",
+   "level": 1,
+   "hp": 20,
+   "ac": 15,
+   "saves": {
+    "fort": 4,
+    "ref": 7,
+    "will": 3
+   },
+   "perception": 6,
+   "attacks": [
+    {
+     "name": "Karabinek",
+     "bonus": 9,
+     "damage": "1d8+4",
+     "dmgType": "P",
+     "range": 12,
+     "traits": [],
+     "sfx": "shot_rifle"
+    },
+    {
+     "name": "Kolba",
+     "bonus": 6,
+     "damage": "1d4+3",
+     "dmgType": "B",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "medium",
+    "skin": "#c09a7a",
+    "cloth": "#4a4a3a",
+    "accent": "#cc3322",
+    "mask": true
+   }
+  },
+  "raider_burner": {
+   "id": "raider_burner",
+   "ai": "ranged",
+   "faction": "raider",
+   "abilities": [
+    "throw_molotov"
+   ],
+   "loot": [
+    {
+     "id": "molotov",
+     "chance": 0.5,
+     "qty": 1
+    },
+    {
+     "id": "fuel_can",
+     "chance": 0.4,
+     "qty": 1
+    },
+    {
+     "id": "trophy_teeth",
+     "chance": 0.3,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    5,
+    18
+   ],
+   "traits": [],
+   "speed": 5,
+   "name": "Szabrownik-podpalacz",
+   "acc": "Szabrownika-podpalacza",
+   "desc": "Szaleniec z butlą paliwa i zapalniczką.",
+   "level": 2,
+   "hp": 37,
+   "ac": 17,
+   "saves": {
+    "fort": 8,
+    "ref": 7,
+    "will": 4
+   },
+   "perception": 6,
+   "attacks": [
+    {
+     "name": "Miotacz płomieni",
+     "bonus": 11,
+     "damage": "1d8+5",
+     "dmgType": "fire",
+     "range": 5,
+     "traits": [],
+     "sfx": "explosion"
+    },
+    {
+     "name": "Siekiera",
+     "bonus": 9,
+     "damage": "1d6+5",
+     "dmgType": "S",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "medium",
+    "skin": "#a07a5a",
+    "cloth": "#6a2a1a",
+    "accent": "#ff8822",
+    "mask": true
+   }
+  },
+  "raider_psycho": {
+   "id": "raider_psycho",
+   "ai": "melee",
+   "faction": "raider",
+   "abilities": [
+    "frenzy"
+   ],
+   "loot": [
+    {
+     "id": "combat_stim",
+     "chance": 0.3,
+     "qty": 1
+    },
+    {
+     "id": "machete",
+     "chance": 0.2,
+     "qty": 1
+    },
+    {
+     "id": "trophy_teeth",
+     "chance": 0.4,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    4,
+    16
+   ],
+   "traits": [],
+   "speed": 6,
+   "name": "Psychol",
+   "acc": "Psychola",
+   "desc": "Naćpany bojowym szałem Szabrownik. Nie czuje bólu.",
+   "level": 2,
+   "hp": 46,
+   "ac": 16,
+   "saves": {
+    "fort": 9,
+    "ref": 6,
+    "will": 2
+   },
+   "perception": 5,
+   "attacks": [
+    {
+     "name": "Tasak",
+     "bonus": 11,
+     "damage": "1d10+7",
+     "dmgType": "S",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "heavy",
+    "skin": "#c0a080",
+    "cloth": "#3a2a2a",
+    "accent": "#ff2222",
+    "mask": true
+   }
+  },
+  "raider_sniper": {
+   "id": "raider_sniper",
+   "ai": "ranged",
+   "faction": "raider",
+   "abilities": [
+    "headshot"
+   ],
+   "loot": [
+    {
+     "id": "hunting_rifle",
+     "chance": 0.12,
+     "qty": 1
+    },
+    {
+     "id": "ammo_box",
+     "chance": 0.5,
+     "qty": 1
+    },
+    {
+     "id": "stimpak",
+     "chance": 0.25,
+     "qty": 1
+    },
+    {
+     "id": "trophy_teeth",
+     "chance": 0.3,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    8,
+    25
+   ],
+   "traits": [],
+   "speed": 5,
+   "name": "Szabrownik-snajper",
+   "acc": "Szabrownika-snajpera",
+   "desc": "Cierpliwy strzelec z sztucerem. Celuje w najsłabszych.",
+   "level": 3,
+   "hp": 39,
+   "ac": 19,
+   "saves": {
+    "fort": 8,
+    "ref": 11,
+    "will": 7
+   },
+   "perception": 12,
+   "attacks": [
+    {
+     "name": "Sztucer",
+     "bonus": 13,
+     "damage": "1d10+6",
+     "dmgType": "P",
+     "range": 18,
+     "traits": [
+      "deadly:10"
+     ],
+     "sfx": "shot_rifle"
+    },
+    {
+     "name": "Nóż",
+     "bonus": 10,
+     "damage": "1d4+4",
+     "dmgType": "P",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "light",
+    "skin": "#b09070",
+    "cloth": "#5a5a3a",
+    "accent": "#cc3322",
+    "mask": true
+   }
+  },
+  "raider_chief": {
+   "id": "raider_chief",
+   "ai": "boss",
+   "faction": "raider",
+   "abilities": [
+    "chief_rally"
+   ],
+   "loot": [
+    {
+     "id": "revolver",
+     "chance": 0.3,
+     "qty": 1
+    },
+    {
+     "id": "riot_armor",
+     "chance": 0.1,
+     "qty": 1
+    },
+    {
+     "id": "stimpak",
+     "chance": 0.5,
+     "qty": 1
+    },
+    {
+     "id": "trophy_teeth",
+     "chance": 1,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    30,
+    80
+   ],
+   "traits": [],
+   "speed": 5,
+   "name": "Herszt Szabrowników",
+   "acc": "Herszta Szabrowników",
+   "desc": "Przywódca bandy. Pancerz, pewność siebie i dobra broń.",
+   "level": 3,
+   "hp": 71,
+   "ac": 20,
+   "saves": {
+    "fort": 11,
+    "ref": 8,
+    "will": 8
+   },
+   "perception": 9,
+   "attacks": [
+    {
+     "name": "Topór bojowy",
+     "bonus": 13,
+     "damage": "1d12+8",
+     "dmgType": "S",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    },
+    {
+     "name": "Rewolwer",
+     "bonus": 12,
+     "damage": "1d8+6",
+     "dmgType": "P",
+     "range": 9,
+     "traits": [],
+     "sfx": "shot_pistol"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "heavy",
+    "skin": "#a07a5a",
+    "cloth": "#2a2a2a",
+    "accent": "#cc3322",
+    "mask": true
+   }
+  },
+  "kostucha": {
+   "id": "kostucha",
+   "ai": "boss",
+   "faction": "raider",
+   "abilities": [
+    "kostucha_cull",
+    "kostucha_barrage",
+    "kostucha_command"
+   ],
+   "loot": [
+    {
+     "id": "laser_rifle",
+     "chance": 0.6,
+     "qty": 1
+    },
+    {
+     "id": "power_armor",
+     "chance": 0.3,
+     "qty": 1
+    },
+    {
+     "id": "medkit",
+     "chance": 1,
+     "qty": 1
+    },
+    {
+     "id": "power_core",
+     "chance": 1,
+     "qty": 1
+    },
+    {
+     "id": "trophy_teeth",
+     "chance": 1,
+     "qty": 3
+    }
+   ],
+   "scrap": [
+    200,
+    400
+   ],
+   "traits": [
+    "boss"
+   ],
+   "speed": 5,
+   "name": "Kostucha",
+   "acc": "Kostuchę",
+   "desc": "Herszt Żelaznych Szczęk. Kosa, krótkie rozkazy i brak litości. Terroryzuje całe Rdzawisko.",
+   "level": 6,
+   "hp": 125,
+   "ac": 24,
+   "saves": {
+    "fort": 14,
+    "ref": 12,
+    "will": 13
+   },
+   "perception": 14,
+   "attacks": [
+    {
+     "name": "Kosa",
+     "bonus": 17,
+     "damage": "2d8+7",
+     "dmgType": "S",
+     "range": 0,
+     "traits": [
+      "deadly:10",
+      "reach"
+     ],
+     "sfx": "melee"
+    },
+    {
+     "name": "Pistolet automatyczny",
+     "bonus": 15,
+     "damage": "2d6+4",
+     "dmgType": "P",
+     "range": 10,
+     "traits": [],
+     "sfx": "shot_smg"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "medium",
+    "skin": "#c8b8a8",
+    "cloth": "#1a1a1a",
+    "accent": "#dd2222",
+    "hair": "#eeeeee",
+    "mask": true,
+    "scale": 1.1
+   }
+  },
+  "drone": {
+   "id": "drone",
+   "ai": "ranged",
+   "faction": "machine",
+   "abilities": [
+    "self_destruct"
+   ],
+   "loot": [
+    {
+     "id": "drone_parts",
+     "chance": 0.6,
+     "qty": 1
+    },
+    {
+     "id": "circuit",
+     "chance": 0.3,
+     "qty": 1
+    },
+    {
+     "id": "battery",
+     "chance": 0.4,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    2,
+    8
+   ],
+   "traits": [
+    "machine"
+   ],
+   "speed": 6,
+   "name": "Dron strażniczy",
+   "acc": "drona strażniczego",
+   "desc": "Pływający robot z karabinkiem. Zawiera ładunek samozniszczenia.",
+   "level": 1,
+   "hp": 18,
+   "ac": 16,
+   "saves": {
+    "fort": 5,
+    "ref": 8,
+    "will": 3
+   },
+   "perception": 7,
+   "weak": {
+    "elec": 5
+   },
+   "immune": [
+    "poison",
+    "bleed"
+   ],
+   "attacks": [
+    {
+     "name": "Karabinek pokładowy",
+     "bonus": 8,
+     "damage": "1d6+2",
+     "dmgType": "P",
+     "range": 10,
+     "traits": [],
+     "sfx": "shot_smg"
+    }
+   ],
+   "look": {
+    "shape": "drone",
+    "skin": "#6a7a8a",
+    "accent": "#ff3322",
+    "cyber": true
+   }
+  },
+  "turret": {
+   "id": "turret",
+   "ai": "ranged",
+   "faction": "machine",
+   "abilities": [
+    "turret_burst"
+   ],
+   "loot": [
+    {
+     "id": "circuit",
+     "chance": 0.5,
+     "qty": 1
+    },
+    {
+     "id": "power_core",
+     "chance": 0.1,
+     "qty": 1
+    },
+    {
+     "id": "scrap_metal",
+     "chance": 0.8,
+     "qty": 3
+    }
+   ],
+   "scrap": [
+    4,
+    14
+   ],
+   "traits": [
+    "machine"
+   ],
+   "speed": 0,
+   "name": "Wieżyczka",
+   "acc": "wieżyczkę",
+   "desc": "Stacjonarne działko obronne. Nieruchoma, ale celna.",
+   "level": 2,
+   "hp": 44,
+   "ac": 18,
+   "saves": {
+    "fort": 9,
+    "ref": 5,
+    "will": 4
+   },
+   "perception": 9,
+   "weak": {
+    "elec": 5
+   },
+   "immune": [
+    "poison",
+    "bleed"
+   ],
+   "attacks": [
+    {
+     "name": "Działko",
+     "bonus": 11,
+     "damage": "1d8+6",
+     "dmgType": "P",
+     "range": 12,
+     "traits": [],
+     "sfx": "shot_smg"
+    }
+   ],
+   "look": {
+    "shape": "turret",
+    "skin": "#6a6a5a",
+    "accent": "#ffaa22",
+    "cyber": true
+   }
+  },
+  "robot": {
+   "id": "robot",
+   "ai": "melee",
+   "faction": "machine",
+   "abilities": [
+    "rocket_salvo"
+   ],
+   "loot": [
+    {
+     "id": "power_core",
+     "chance": 0.5,
+     "qty": 1
+    },
+    {
+     "id": "circuit",
+     "chance": 0.7,
+     "qty": 2
+    },
+    {
+     "id": "drone_parts",
+     "chance": 0.5,
+     "qty": 1
+    },
+    {
+     "id": "laser_pistol",
+     "chance": 0.1,
+     "qty": 1
+    }
+   ],
+   "scrap": [
+    15,
+    40
+   ],
+   "traits": [
+    "machine"
+   ],
+   "speed": 5,
+   "name": "Robot ochroniarz",
+   "acc": "robota ochroniarza",
+   "desc": "Sprzęt z dawnej bazy. Pancerz, miotacz i brak emocji.",
+   "level": 4,
+   "hp": 85,
+   "ac": 22,
+   "saves": {
+    "fort": 13,
+    "ref": 8,
+    "will": 8
+   },
+   "perception": 10,
+   "weak": {
+    "elec": 5
+   },
+   "resist": {
+    "P": 6
+   },
+   "immune": [
+    "poison",
+    "bleed"
+   ],
+   "attacks": [
+    {
+     "name": "Ramię hydrauliczne",
+     "bonus": 15,
+     "damage": "2d6+7",
+     "dmgType": "B",
+     "range": 0,
+     "traits": [],
+     "sfx": "melee"
+    },
+    {
+     "name": "Karabin pokładowy",
+     "bonus": 13,
+     "damage": "1d10+5",
+     "dmgType": "P",
+     "range": 12,
+     "traits": [],
+     "sfx": "shot_rifle"
+    }
+   ],
+   "look": {
+    "shape": "humanoid",
+    "body": "heavy",
+    "skin": "#7a8a9a",
+    "cloth": "#556677",
+    "accent": "#33ccff",
+    "cyber": true,
+    "scale": 1.3
+   }
+  }
+ },
+ "abilities": {
+  "strike": {
+   "id": "strike",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "strike",
+   "name": "Atak",
+   "desc": "Atak bronią. Każdy kolejny atak w turze ma karę (PWA -5/-10).",
+   "actions": 1
+  },
+  "raise_shield": {
+   "id": "raise_shield",
+   "target": "self",
+   "range": 0,
+   "uses": null,
+   "fx": "buff",
+   "icon": "shield",
+   "name": "Podnieś tarczę",
+   "desc": "+KP z tarczy do początku następnej tury.",
+   "actions": 1
+  },
+  "take_cover": {
+   "id": "take_cover",
+   "target": "self",
+   "range": 0,
+   "uses": null,
+   "fx": "buff",
+   "icon": "cover",
+   "name": "Schowaj się",
+   "desc": "+2 KP przeciw atakom dystansowym (+4 jeśli już w osłonie).",
+   "actions": 1
+  },
+  "demoralize": {
+   "id": "demoralize",
+   "target": "enemy",
+   "range": 6,
+   "uses": null,
+   "fx": "shout",
+   "icon": "shout",
+   "name": "Zastrasz",
+   "desc": "Zastraszanie vs Wola: cel jest przerażony (kryt. = 2).",
+   "actions": 1
+  },
+  "first_aid": {
+   "id": "first_aid",
+   "target": "ally",
+   "range": 1,
+   "uses": null,
+   "fx": "heal",
+   "icon": "aid",
+   "name": "Pierwsza pomoc",
+   "desc": "Stabilizuje umierającego, tamuje krwawienie lub lekko leczy (Medycyna).",
+   "actions": 2
+  },
+  "stand": {
+   "id": "stand",
+   "target": "self",
+   "range": 0,
+   "uses": null,
+   "fx": "buff",
+   "icon": "stand",
+   "name": "Wstań",
+   "desc": "Podnieś się z ziemi.",
+   "actions": 1
+  },
+  "suppressive_fire": {
+   "id": "suppressive_fire",
+   "target": "area",
+   "range": 12,
+   "uses": "encounter",
+   "fx": "shot",
+   "icon": "barrage",
+   "name": "Ogień zaporowy",
+   "desc": "Zasypujesz obszar pociskami. Refleks vs WT klasy: porażka = pełne obrażenia i dezorientacja, kryt. = x2 i strach.",
+   "actions": 2,
+   "radius": 2,
+   "usesMax": 2
+  },
+  "double_strike": {
+   "id": "double_strike",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "double",
+   "name": "Podwójny cios",
+   "desc": "Dwa ataki, oba z karą z bieżącego PWA (liczą się jako 2 ataki).",
+   "actions": 2
+  },
+  "charge": {
+   "id": "charge",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "charge",
+   "name": "Natarcie",
+   "desc": "Rzuć się na wroga (ruch w cenie) i uderz z impetem: +1 do trafienia, +2 obrażeń.",
+   "actions": 2,
+   "move": true
+  },
+  "rally": {
+   "id": "rally",
+   "target": "area",
+   "range": 0,
+   "uses": "encounter",
+   "fx": "shout",
+   "icon": "rally",
+   "name": "Zew dowódcy",
+   "desc": "Sojusznicy w pobliżu zrzucają strach i zyskują tymczasowe PW.",
+   "actions": 1,
+   "radius": 4,
+   "usesMax": 1
+  },
+  "mark_target": {
+   "id": "mark_target",
+   "target": "enemy",
+   "range": 12,
+   "uses": null,
+   "fx": "buff",
+   "icon": "mark",
+   "name": "Wyznacz cel",
+   "desc": "Oznacz wroga: trafienia Zwiadowcy zadają mu dodatkowe obrażenia.",
+   "actions": 1
+  },
+  "precise_shot": {
+   "id": "precise_shot",
+   "target": "enemy",
+   "range": 14,
+   "uses": null,
+   "fx": "shot",
+   "icon": "aim",
+   "name": "Precyzyjny strzał",
+   "desc": "Strzał +2 do trafienia, ignoruje osłonę, dodatkowa kość obrażeń.",
+   "actions": 2
+  },
+  "crippling_shot": {
+   "id": "crippling_shot",
+   "target": "enemy",
+   "range": 12,
+   "uses": null,
+   "fx": "shot",
+   "icon": "cripple",
+   "name": "Strzał w nogę",
+   "desc": "Strzał, który po trafieniu może spowolnić cel (Wytrzymałość vs WT klasy).",
+   "actions": 2
+  },
+  "volley": {
+   "id": "volley",
+   "target": "enemy",
+   "range": 12,
+   "uses": "encounter",
+   "fx": "shot",
+   "icon": "volley",
+   "name": "Seria strzałów",
+   "desc": "Dwa szybkie strzały z tą samą karą PWA (liczą się jako 2 ataki).",
+   "actions": 2,
+   "usesMax": 2
+  },
+  "field_dressing": {
+   "id": "field_dressing",
+   "target": "ally",
+   "range": 1,
+   "uses": "encounter",
+   "fx": "heal",
+   "icon": "bandage",
+   "name": "Opatrunek polowy",
+   "desc": "Test Medycyny (WT wg poziomu): leczy 2k6+Mąd+poz., kryt. 4k6. Tamuje krwawienie.",
+   "actions": 2,
+   "usesMax": 3
+  },
+  "stimulant": {
+   "id": "stimulant",
+   "target": "ally",
+   "range": 1,
+   "uses": "encounter",
+   "fx": "buff",
+   "icon": "stim",
+   "name": "Stymulant",
+   "desc": "Zastrzyk: tymczasowe PW (4+2/poz.) i +1 do trafienia na 4 rundy.",
+   "actions": 1,
+   "usesMax": 2
+  },
+  "adrenaline": {
+   "id": "adrenaline",
+   "target": "ally",
+   "range": 1,
+   "uses": "encounter",
+   "fx": "heal",
+   "icon": "adrenaline",
+   "name": "Adrenalina",
+   "desc": "Postaw powaloną postać na nogi (1k8+Mąd+poz. PW). Przytomnym daje dodatkową akcję.",
+   "actions": 1,
+   "usesMax": 1
+  },
+  "field_clinic": {
+   "id": "field_clinic",
+   "target": "area",
+   "range": 0,
+   "uses": "encounter",
+   "fx": "heal",
+   "icon": "clinic",
+   "name": "Punkt medyczny",
+   "desc": "Leczy wszystkich sojuszników w pobliżu (1k8+Mąd+poz.).",
+   "actions": 2,
+   "radius": 2,
+   "usesMax": 1
+  },
+  "combat_drone": {
+   "id": "combat_drone",
+   "target": "enemy",
+   "range": 8,
+   "uses": "encounter",
+   "fx": "shot",
+   "icon": "drone",
+   "name": "Dron bojowy",
+   "desc": "Dron strzela dwa razy w cel (trafienie wg Int + klasa), niezależnie od PWA.",
+   "actions": 2,
+   "usesMax": 2
+  },
+  "emp_grenade": {
+   "id": "emp_grenade",
+   "target": "area",
+   "range": 6,
+   "uses": "encounter",
+   "fx": "explosion",
+   "icon": "emp",
+   "name": "Granat EMP",
+   "desc": "Impuls elektromagnetyczny: maszynom i cyborgom zadaje obrażenia i ogłusza (Refleks vs WT klasy).",
+   "actions": 2,
+   "radius": 2,
+   "usesMax": 2
+  },
+  "repair_armor": {
+   "id": "repair_armor",
+   "target": "ally",
+   "range": 1,
+   "uses": "encounter",
+   "fx": "buff",
+   "icon": "repair",
+   "name": "Naprawa pancerza",
+   "desc": "Test Techniki: tymczasowe PW (kryt. x2) i +1 KP na 3 rundy.",
+   "actions": 2,
+   "usesMax": 3
+  },
+  "weapon_tune": {
+   "id": "weapon_tune",
+   "target": "ally",
+   "range": 6,
+   "uses": "encounter",
+   "fx": "buff",
+   "icon": "tune",
+   "name": "Strojenie broni",
+   "desc": "Sojusznik zadaje +2 obrażeń przez 3 rundy.",
+   "actions": 1,
+   "usesMax": 2
+  },
+  "sneak_attack": {
+   "id": "sneak_attack",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "ambush",
+   "name": "Atak z ukrycia",
+   "desc": "Test Skradania vs Percepcja: udany = cios w odsłoniętego (+k6 obrażeń, więcej z poziomem).",
+   "actions": 2
+  },
+  "dodge": {
+   "id": "dodge",
+   "target": "self",
+   "range": 0,
+   "uses": null,
+   "fx": "buff",
+   "icon": "dodge",
+   "name": "Unik",
+   "desc": "+2 do KP do początku następnej tury.",
+   "actions": 1
+  },
+  "steal": {
+   "id": "steal",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "steal",
+   "name": "Kradzież",
+   "desc": "Złodziejstwo vs Percepcja: zabierasz wrogowi coś z kieszeni (raz na wroga).",
+   "actions": 1
+  },
+  "dirty_trick": {
+   "id": "dirty_trick",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "dirty",
+   "name": "Rzut piaskiem",
+   "desc": "Refleks vs WT klasy: cel jest zdezorientowany i niezdarny.",
+   "actions": 1
+  },
+  "rage": {
+   "id": "rage",
+   "target": "self",
+   "range": 0,
+   "uses": null,
+   "fx": "buff",
+   "icon": "rage",
+   "name": "Szał",
+   "desc": "+2 do obrażeń w walce wręcz, tymczasowe PW, -1 KP. Trwa kilka rund.",
+   "actions": 1
+  },
+  "roar": {
+   "id": "roar",
+   "target": "area",
+   "range": 0,
+   "uses": "encounter",
+   "fx": "shout",
+   "icon": "roar",
+   "name": "Ryk",
+   "desc": "Wrogowie w pobliżu: Zastraszanie vs Wola, przerażenie (kryt. = 2).",
+   "actions": 1,
+   "radius": 3,
+   "usesMax": 1
+  },
+  "rend": {
+   "id": "rend",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "rend",
+   "name": "Rozpłatanie",
+   "desc": "Potężny cios (+1 kość obrażeń), po trafieniu cel krwawi (1k6, kryt. 2k6).",
+   "actions": 2
+  },
+  "shove": {
+   "id": "shove",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "shove",
+   "name": "Powal",
+   "desc": "Atletyka vs Refleks: cel ląduje na ziemi (kryt. dodatkowo 1k6).",
+   "actions": 1
+  },
+  "second_wind": {
+   "id": "second_wind",
+   "target": "self",
+   "range": 0,
+   "uses": "encounter",
+   "fx": "heal",
+   "icon": "breath",
+   "name": "Drugi oddech",
+   "desc": "Leczysz siebie: 1k8+Kon+poz. PW.",
+   "actions": 1,
+   "usesMax": 1
+  },
+  "bite_trip": {
+   "id": "bite_trip",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "bite_trip",
+   "name": "Powalające kły",
+   "desc": "Ugryzienie; trafiony może upaść.",
+   "actions": 2
+  },
+  "swarm_cloud": {
+   "id": "swarm_cloud",
+   "target": "area",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "swarm_cloud",
+   "name": "Chmura owadów",
+   "desc": "Rój oblepia cele: Wytrzymałość, trucizna i mdłości.",
+   "actions": 2,
+   "radius": 1
+  },
+  "poison_sting": {
+   "id": "poison_sting",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "poison_sting",
+   "name": "Jadowite żądło",
+   "desc": "Atak, po którym Wytrzymałość chroni przed zatruciem.",
+   "actions": 2
+  },
+  "quake": {
+   "id": "quake",
+   "target": "area",
+   "range": 0,
+   "uses": null,
+   "fx": "explosion",
+   "icon": "quake",
+   "name": "Wstrząs",
+   "desc": "Uderza w ziemię: Refleks, obrażenia obuchowe i upadek.",
+   "actions": 2,
+   "radius": 2
+  },
+  "rad_touch": {
+   "id": "rad_touch",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "rad_touch",
+   "name": "Skażający dotyk",
+   "desc": "Atak; po trafieniu możesz zachorować.",
+   "actions": 2
+  },
+  "frenzy": {
+   "id": "frenzy",
+   "target": "self",
+   "range": 0,
+   "uses": null,
+   "fx": "buff",
+   "icon": "frenzy",
+   "name": "Szał bojowy",
+   "desc": "Wpada w szał: +obrażenia, -1 KP, tymczasowe PW.",
+   "actions": 1
+  },
+  "throw_molotov": {
+   "id": "throw_molotov",
+   "target": "area",
+   "range": 6,
+   "uses": "encounter",
+   "fx": "explosion",
+   "icon": "throw_molotov",
+   "name": "Rzut koktajlem",
+   "desc": "Płonąca butelka: Refleks, obrażenia ogniowe i podpalenie.",
+   "actions": 2,
+   "radius": 1,
+   "usesMax": 2
+  },
+  "headshot": {
+   "id": "headshot",
+   "target": "enemy",
+   "range": 18,
+   "uses": null,
+   "fx": "shot",
+   "icon": "headshot",
+   "name": "Strzał w głowę",
+   "desc": "+2 do trafienia, ignoruje osłonę, dodatkowa kość.",
+   "actions": 2
+  },
+  "chief_rally": {
+   "id": "chief_rally",
+   "target": "area",
+   "range": 0,
+   "uses": "encounter",
+   "fx": "shout",
+   "icon": "chief_rally",
+   "name": "Zew Herszta",
+   "desc": "Szabrownicy w pobliżu dostają tymczasowe PW i +1 do trafienia.",
+   "actions": 1,
+   "radius": 5,
+   "usesMax": 1
+  },
+  "self_destruct": {
+   "id": "self_destruct",
+   "target": "area",
+   "range": 0,
+   "uses": null,
+   "fx": "explosion",
+   "icon": "self_destruct",
+   "name": "Samozniszczenie",
+   "desc": "Wybuch: Refleks, 2k8 obrażeń. Dron ulega zniszczeniu.",
+   "actions": 2,
+   "radius": 1
+  },
+  "turret_burst": {
+   "id": "turret_burst",
+   "target": "enemy",
+   "range": 12,
+   "uses": null,
+   "fx": "shot",
+   "icon": "turret_burst",
+   "name": "Seria z działka",
+   "desc": "Trzy strzały z rosnącą karą.",
+   "actions": 2
+  },
+  "rocket_salvo": {
+   "id": "rocket_salvo",
+   "target": "area",
+   "range": 12,
+   "uses": "encounter",
+   "fx": "explosion",
+   "icon": "rocket_salvo",
+   "name": "Salwa rakietowa",
+   "desc": "Rakiety w obszarze: Refleks, 3k6+4.",
+   "actions": 2,
+   "radius": 2,
+   "usesMax": 2
+  },
+  "kostucha_cull": {
+   "id": "kostucha_cull",
+   "target": "enemy",
+   "range": 1,
+   "uses": null,
+   "fx": "melee",
+   "icon": "kostucha_cull",
+   "name": "Żniwa",
+   "desc": "Kosa tnie wszystkich w zasięgu (do 2 celów).",
+   "actions": 2
+  },
+  "kostucha_barrage": {
+   "id": "kostucha_barrage",
+   "target": "area",
+   "range": 10,
+   "uses": "encounter",
+   "fx": "explosion",
+   "icon": "kostucha_barrage",
+   "name": "Gradobicie Szczęk",
+   "desc": "Salwa w obszarze: Refleks WT 22, 3k6+2; porażka = dezorientacja.",
+   "actions": 2,
+   "radius": 2,
+   "usesMax": 1
+  },
+  "kostucha_command": {
+   "id": "kostucha_command",
+   "target": "area",
+   "range": 0,
+   "uses": "encounter",
+   "fx": "shout",
+   "icon": "kostucha_command",
+   "name": "Rozkaz Kostuchy",
+   "desc": "Sojusznicy zyskują dodatkową akcję i premię do trafienia. Kostucha zyskuje tymczasowe PW.",
+   "actions": 1,
+   "radius": 6,
+   "usesMax": 1
+  }
+ },
+ "recruits": [
+  {
+   "id": "hak",
+   "gender": "m",
+   "name": "Hak \"Młot\" Zawada",
+   "ancestry": "human",
+   "classId": "soldier",
+   "look": {
+    "body": "heavy",
+    "skin": "#c99a74",
+    "hair": "#3a2a20",
+    "hairStyle": 1,
+    "cloth": "#5b6b4a",
+    "accent": "#c9a23a"
+   },
+   "bio": "Sierżant rozbitej armii. Wciąż salutuje pustym stanowiskom i nigdy nie opuścił nikogo z oddziału. Jeszcze."
+  },
+  {
+   "id": "sowa",
+   "gender": "f",
+   "name": "Sowa",
+   "ancestry": "nomad",
+   "classId": "scout",
+   "look": {
+    "body": "light",
+    "skin": "#a9785a",
+    "hair": "#d8c9a0",
+    "hairStyle": 3,
+    "cloth": "#8a7a55",
+    "accent": "#b4532a",
+    "mask": true
+   },
+   "bio": "Dziecko Pustkowi. Zna każdą studnię od Rdzawiska po Słone Płaskowyże i wyczuwa burzę pyłową dzień wcześniej."
+  },
+  {
+   "id": "igla",
+   "gender": "f",
+   "name": "Igła Wrońska",
+   "ancestry": "human",
+   "classId": "medic",
+   "look": {
+    "body": "light",
+    "skin": "#e0b896",
+    "hair": "#7a2f22",
+    "hairStyle": 4,
+    "cloth": "#d9d2c0",
+    "accent": "#c43d2f"
+   },
+   "bio": "Dawna pielęgniarka z szpitala polowego. Szyje ludzi w ciemnościach i bez znieczulenia. Nie zadaje pytań o pochodzenie ran."
+  },
+  {
+   "id": "lut",
+   "gender": "m",
+   "name": "Lut",
+   "ancestry": "cyborg",
+   "classId": "techie",
+   "look": {
+    "body": "medium",
+    "skin": "#9aa4a8",
+    "hair": "#222222",
+    "hairStyle": 0,
+    "cloth": "#3f5666",
+    "accent": "#8fd14f",
+    "cyber": true
+   },
+   "bio": "Pół człowiek, pół złom. Zdejmuje własne implanty, żeby naprawić cudze, i gada do dronów jak do starych przyjaciół."
+  },
+  {
+   "id": "szczurek",
+   "gender": "m",
+   "name": "Szczurek",
+   "ancestry": "human",
+   "classId": "scavenger",
+   "look": {
+    "body": "light",
+    "skin": "#d0a583",
+    "hair": "#1c1c1c",
+    "hairStyle": 2,
+    "cloth": "#4a3f36",
+    "accent": "#f2a93b"
+   },
+   "bio": "Wychowany w kanałach Martwego Miasta. Otworzy każdy zamek, wyniesie wszystko, co nie jest przybite — i parę rzeczy, które są."
+  },
+  {
+   "id": "bizon",
+   "gender": "m",
+   "name": "Bizon",
+   "ancestry": "mutant",
+   "classId": "brute",
+   "look": {
+    "body": "heavy",
+    "skin": "#7f9a62",
+    "hair": "#2b2b2b",
+    "hairStyle": 5,
+    "cloth": "#6b3a2a",
+    "accent": "#c43d2f",
+    "mutation": true
+   },
+   "bio": "Promieniowanie dało mu skórę jak kora i siłę dwóch chłopów. Gdy ktoś go rozzłości, ostatnie, co widzi, to pięść."
+  },
+  {
+   "id": "kruk",
+   "gender": "m",
+   "name": "Kruk Dymarski",
+   "ancestry": "nomad",
+   "classId": "gunslinger",
+   "look": {
+    "body": "medium",
+    "skin": "#8a5e44",
+    "hair": "#1a1410",
+    "hairStyle": 1,
+    "cloth": "#7a6a48",
+    "accent": "#7f9aa8",
+    "mask": true
+   },
+   "bio": "Wynajmowany przez karawany jako ochroniarz. Strzela rzadko, ale zawsze tam, gdzie zamierzył. Mówi mało, słucha wszystkiego."
+  },
+  {
+   "id": "plesn",
+   "gender": "m",
+   "name": "Doktor Pleśń",
+   "ancestry": "mutant",
+   "classId": "medic",
+   "look": {
+    "body": "medium",
+    "skin": "#6f9a74",
+    "hair": "#556b3a",
+    "hairStyle": 3,
+    "cloth": "#bdb7a0",
+    "accent": "#8fd14f",
+    "mutation": true
+   },
+   "bio": "Wyleczył się z choroby popromiennej, której nikt inny nie przeżył. Twierdzi, że to „kwestia nastawienia\". Jego mikstury lepiej nie pytać, z czego."
+  },
+  {
+   "id": "iskra",
+   "gender": "f",
+   "name": "Iskra",
+   "ancestry": "human",
+   "classId": "techie",
+   "look": {
+    "body": "light",
+    "skin": "#e3b48c",
+    "hair": "#f2a93b",
+    "hairStyle": 4,
+    "cloth": "#7f4f2a",
+    "accent": "#f2a93b"
+   },
+   "bio": "Wynalazczyni z warsztatu w zajezdni. Połowa lamp w Przystani to jej dzieło; druga połowa to jej wybuchy."
+  },
+  {
+   "id": "grzmot",
+   "gender": "m",
+   "name": "Grzmot",
+   "ancestry": "human",
+   "classId": "monk",
+   "look": {
+    "body": "heavy",
+    "skin": "#b98866",
+    "hair": "#8a2a1a",
+    "hairStyle": 5,
+    "cloth": "#4a4a52",
+    "accent": "#b4532a"
+   },
+   "bio": "Były zawodnik z podziemnych aren. Walczy z ryczeniem i bez planu, ale jeszcze nigdy nie przegrał. Ani nie przeprosił."
+  },
+  {
+   "id": "szept",
+   "gender": "f",
+   "name": "Szept",
+   "ancestry": "humanoid",
+   "classId": "scout",
+   "look": {
+    "body": "light",
+    "skin": "#c4d0e0",
+    "hair": "#e8ecf4",
+    "hairStyle": 3,
+    "cloth": "#4a5a6a",
+    "accent": "#7fd0e8"
+   },
+   "bio": "Humanoid z zamkniętej enklawy na północy. Chodzi bez dźwięku, widzi w półmroku i pamięta rzeczy, których żaden żyjący człowiek nie mógł widzieć."
+  },
+  {
+   "id": "zgrzyt",
+   "gender": "m",
+   "name": "Zgrzyt",
+   "ancestry": "ratling",
+   "classId": "scavenger",
+   "look": {
+    "body": "light",
+    "skin": "#9a8f82",
+    "hair": "#2a2420",
+    "hairStyle": 2,
+    "cloth": "#5a4a32",
+    "accent": "#d8c040"
+   },
+   "bio": "Szczurak z wysypiska za Rdzawiskiem. Wciśnie się w każdą rurę, sprzeda Ci Twój własny but i jeszcze się przy tym potarguje."
+  },
+  {
+   "id": "mur",
+   "gender": "m",
+   "name": "Mur",
+   "ancestry": "ogrin",
+   "classId": "champion",
+   "look": {
+    "body": "heavy",
+    "skin": "#8a7c6c",
+    "hair": "#1a1410",
+    "hairStyle": 0,
+    "cloth": "#5a6068",
+    "accent": "#d8c070"
+   },
+   "bio": "Ogrzyn, który złożył przysięgę Zakonowi i jako jedyny z garnizonu jej dotrzymał. Staje między drużyną a wszystkim, co do niej strzela."
+  },
+  {
+   "id": "retorta",
+   "gender": "f",
+   "name": "Retorta",
+   "ancestry": "vault",
+   "classId": "alchemist",
+   "look": {
+    "body": "light",
+    "skin": "#f0dccb",
+    "hair": "#a8782a",
+    "hairStyle": 4,
+    "cloth": "#6a7a3a",
+    "accent": "#8fd14f"
+   },
+   "bio": "Dziecko Schronu 12. Wyszła na powierzchnię z notesem pełnym wzorów i od tamtej pory sprawdza, które z nich wybuchają."
+  },
+  {
+   "id": "aksamit",
+   "gender": "m",
+   "name": "Aksamit",
+   "ancestry": "humanoid",
+   "classId": "herald",
+   "look": {
+    "body": "light",
+    "skin": "#ccd6e4",
+    "hair": "#b8c8e0",
+    "hairStyle": 1,
+    "cloth": "#7a2a4a",
+    "accent": "#e0b040"
+   },
+   "bio": "Humanoid o głosie, którego słucha nawet wiatr. Zagrzewał do boju trzy armie; dwie z nich walczyły ze sobą."
+  },
+  {
+   "id": "zero",
+   "gender": "f",
+   "name": "Zero",
+   "ancestry": "cyborg",
+   "classId": "hacker",
+   "look": {
+    "body": "light",
+    "skin": "#a8b0b4",
+    "hair": "#2a2a30",
+    "hairStyle": 2,
+    "cloth": "#2a4a52",
+    "accent": "#40e0d0",
+    "cyber": true
+   },
+   "bio": "Połowę pamięci trzyma na kartach w kieszeni. Wchodzi do cudzych systemów tak, jak inni wchodzą do baru — bez pukania."
+  }
+ ],
+ "tactical": {
+  "MAP_W": 32,
+  "MAP_H": 32,
+  "CellKind": {
+   "FREE": 0,
+   "LOW": 1,
+   "HIGH": 2,
+   "HAZARD": 3
+  },
+  "PROP_KIND": {
+   "car": 1,
+   "bus": 2,
+   "barrel": 1,
+   "barrel_toxic": 1,
+   "crate": 1,
+   "debris": 1,
+   "sandbags": 1,
+   "container": 2,
+   "fence": 1,
+   "generator": 2,
+   "pillar": 2,
+   "terminal": 1,
+   "tent": 2,
+   "tank_trap": 1,
+   "scrap_pile": 1,
+   "wall": 2,
+   "wall_broken": 1
+  },
+  "SIGHT_PC": 9,
+  "SIGHT_NEUTRAL": 5,
+  "EXTRACTION_OBJECTIVES": [
+   "retrieve",
+   "rescue",
+   "hack"
+  ]
+ },
+ "campaign": {
+  "SIDE_TYPES": [
+   "eliminate",
+   "retrieve",
+   "rescue",
+   "hunt",
+   "hack",
+   "liberate",
+   "purge",
+   "defend"
+  ],
+  "BIOME_NAMES": {
+   "ruins": "Ruiny",
+   "wastes": "Pustkowia",
+   "industrial": "Strefa przemysłowa",
+   "bunker": "Bunkier"
+  },
+  "TYPE_NAMES": {
+   "eliminate": "Eliminacja",
+   "retrieve": "Odzyskanie",
+   "rescue": "Ratunek",
+   "hunt": "Polowanie",
+   "boss": "Wódz",
+   "hack": "Włamanie",
+   "liberate": "Wyzwolenie",
+   "purge": "Oczyszczanie",
+   "defend": "Obrona"
+  },
+  "FACTION_NAMES": {
+   "survivors": "Ocaleni z Przystani",
+   "nomads": "Nomadzi"
+  },
+  "MOOD_NAMES": {
+   "day": "dzień",
+   "dusk": "zmierzch",
+   "night": "noc",
+   "toxic": "toksyczna mgła",
+   "storm": "burza"
+  },
+  "STORY_CONTRACTS": [
+   {
+    "id": "story1",
+    "story": true,
+    "title": "Cień Żelaznych Szczęk",
+    "giver": "Kapitan Dobosz",
+    "faction": "survivors",
+    "desc": "Szabrownicy z Żelaznych Szczęk przejęli stary posterunek na trasie do Przystani. Ich flaga — czaszka w stalowych szczękach — wisi tam od tygodnia. Kapitan chce wiedzieć, kim jest ich wódz.",
+    "type": "eliminate",
+    "level": 2,
+    "biome": "industrial",
+    "mood": "dusk",
+    "objective": {
+     "type": "eliminate"
+    },
+    "travelDays": 1,
+    "reward": {
+     "scrap": 220,
+     "xp": 500,
+     "items": [],
+     "rep": {
+      "survivors": 2
+     }
+    },
+    "enemies": [
+     "raider_thug",
+     "raider_thug",
+     "raider_gunner",
+     "raider_psycho"
+    ]
+   },
+   {
+    "id": "story2",
+    "story": true,
+    "title": "Karawana w ogniu",
+    "giver": "Handlarka Zeyna",
+    "faction": "nomads",
+    "desc": "Szczęki wyrżnęły karawanę Nomadów i pojmały jej przewodnika. Zeyna zapłaci wszystko, co ma, byście go odbili — a on zna kryjówkę Kostuchy.",
+    "type": "rescue",
+    "level": 3,
+    "biome": "ruins",
+    "mood": "night",
+    "objective": {
+     "type": "rescue"
+    },
+    "travelDays": 2,
+    "reward": {
+     "scrap": 340,
+     "xp": 700,
+     "items": [],
+     "rep": {
+      "nomads": 3
+     }
+    },
+    "enemies": [
+     "raider_thug",
+     "raider_gunner",
+     "raider_gunner",
+     "raider_psycho",
+     "raider_burner",
+     "raider_chief"
+    ]
+   },
+   {
+    "id": "story3",
+    "story": true,
+    "title": "Kostucha",
+    "giver": "Burmistrz Kalinowski",
+    "faction": "survivors",
+    "desc": "Znamy już jej kryjówkę: pogrzebany pod Rdzawiskiem bunkier. Kostucha rządzi Szczękami żelazną ręką — i tylko jej śmierć powstrzyma atak na Przystań. To zlecenie, z którego się nie wraca z pustymi rękami.",
+    "type": "boss",
+    "level": 5,
+    "biome": "bunker",
+    "mood": "toxic",
+    "objective": {
+     "type": "boss"
+    },
+    "travelDays": 2,
+    "reward": {
+     "scrap": 800,
+     "xp": 1000,
+     "items": [],
+     "rep": {
+      "survivors": 5,
+      "nomads": 5
+     }
+    },
+    "enemies": [
+     "kostucha",
+     "raider_thug",
+     "raider_thug",
+     "raider_gunner",
+     "raider_sniper",
+     "raider_psycho",
+     "raider_burner"
+    ]
+   }
+  ],
+  "EVENT_CHANCE": 0.3,
+  "EVENTS": [
+   {
+    "id": "trader",
+    "title": "Karawana Nomadów",
+    "weight": 3,
+    "text": "Na wydmie błyska lusterko. Mała karawana Nomadów zwija obóz — handlarz macha do Was, jakby czekał od rana.",
+    "choices": [
+     {
+      "label": "Potargować się",
+      "skill": "diplomacy",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Handlarz obraża się i zdziera z Was haracz za „zepsute targowanie\".",
+        "scrap": -15
+       },
+       "1": {
+        "text": "Cena jest absurdalna. Odchodzicie z niczym."
+       },
+       "2": {
+        "text": "Dobijacie targu: kupujecie sprzęt za pół ceny.",
+        "items": [
+         "@consumable"
+        ]
+       },
+       "3": {
+        "text": "Handlarz jest pod wrażeniem. Dorzuca prezent i dobre słowo o Was wśród Nomadów.",
+        "items": [
+         "@consumable",
+         "@any"
+        ],
+        "rep": {
+         "nomads": 1
+        }
+       }
+      }
+     },
+     {
+      "label": "Wymienić plotki",
+      "skill": "society",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Plotki okazują się pułapką na naiwnych. Tracicie trochę Złomu.",
+        "scrap": -10
+       },
+       "1": {
+        "text": "Nic nowego. Machacie sobie na pożegnanie."
+       },
+       "2": {
+        "text": "Nomadzi sprzedają informację o ukrytym składzie.",
+        "scrap": 25
+       },
+       "3": {
+        "text": "Mapa skrytki! Wasze kieszenie robią się cięższe.",
+        "scrap": 60
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "radstorm",
+    "title": "Burza radioaktywna",
+    "weight": 3,
+    "text": "Horyzont ciemnieje, a geiger zaczyna rzęzić jak szalony. Idzie burza pyłowa niosąca skażenie. Trzeba coś zrobić — szybko.",
+    "choices": [
+     {
+      "label": "Znaleźć schronienie",
+      "skill": "survival",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Schronienie okazuje się dziurawe. Burza trawi Was przez godziny.",
+        "hp": "2d6"
+       },
+       "1": {
+        "text": "Przeczekujecie burzę, ale bez rewelacji — każdy nałykał się pyłu.",
+        "hp": "1d6"
+       },
+       "2": {
+        "text": "Znajdujecie betonową rurę. Burza przechodzi bokiem."
+       },
+       "3": {
+        "text": "Pod osłoną wraku znajdujecie czyjąś skrytkę z zapasami.",
+        "items": [
+         "@consumable"
+        ]
+       }
+      }
+     },
+     {
+      "label": "Przebić się mimo wszystko",
+      "skill": "athletics",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Pył zasypuje oczy. Potykacie się, kaszlecie krwią.",
+        "hp": "2d6"
+       },
+       "1": {
+        "text": "Docieracie na miejsce poobijani i skażeni.",
+        "hp": "1d6"
+       },
+       "2": {
+        "text": "Silne plecy i mokre szmaty na twarzach — przeszliście."
+       },
+       "3": {
+        "text": "Burza zostaje w tyle. Nawet zyskujecie dzień czasu.",
+        "days": -1
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "ambush",
+    "title": "Zasadzka Szabrowników",
+    "weight": 3,
+    "text": "Coś nie gra. Cisza, zbyt równo ułożone kamienie przy drodze, odblask lunety między skałami. Szabrownicy czekają za zakrętem.",
+    "choices": [
+     {
+      "label": "Wypatrzyć ich pierwsi",
+      "skill": "perception",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Za późno! Seria z karabinu rani Was, zanim sięgniecie po broń.",
+        "hp": "2d6",
+        "scrap": -20
+       },
+       "1": {
+        "text": "Widzicie ich, ale oni Was też. Ostrzał zadaje rany.",
+        "hp": "1d6"
+       },
+       "2": {
+        "text": "Mijacie zasadzkę szerokim łukiem. Szabrownicy nawet nie zauważyli."
+       },
+       "3": {
+        "text": "Zaskakujecie ich. Rozbrajacie pułapkę i zabieracie ich zapasy.",
+        "scrap": 30,
+        "xp": 20
+       }
+      }
+     },
+     {
+      "label": "Przekraść się ukradkiem",
+      "skill": "stealth",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Kamień usuwa się spod nogi. Strzały! Uciekacie zdyszani.",
+        "hp": "2d6"
+       },
+       "1": {
+        "text": "Prawie. Ktoś Was zauważył i posłał kilka kul na pożegnanie.",
+        "hp": "1d6"
+       },
+       "2": {
+        "text": "Bezszelestnie obchodzicie zasadzkę."
+       },
+       "3": {
+        "text": "Wymykacie się, a przy okazji zwijacie im kilka rzeczy z obozu.",
+        "items": [
+         "@consumable"
+        ],
+        "xp": 20
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "cache",
+    "title": "Opuszczona skrzynia",
+    "weight": 3,
+    "text": "W cieniu wraku autobusu stoi wojskowa skrzynia z solidnym zamkiem. Nikogo wokół — albo tak się wydaje.",
+    "choices": [
+     {
+      "label": "Otworzyć wytrychem",
+      "skill": "thievery",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Zamek ma pułapkę! Iskry i gaz. Skrzynia jest pusta.",
+        "hp": "1d6"
+       },
+       "1": {
+        "text": "Zamek ani drgnie. Tracicie tylko czas."
+       },
+       "2": {
+        "text": "Klik! W środku leży sprzęt i trochę Złomu.",
+        "scrap": 40,
+        "items": [
+         "@consumable"
+        ]
+       },
+       "3": {
+        "text": "Skrzynia wojskowa pełna po brzegi. Dobry dzień dla Najemników.",
+        "scrap": 80,
+        "items": [
+         "@any",
+         "@consumable"
+        ]
+       }
+      }
+     },
+     {
+      "label": "Rozebrać zawiasy",
+      "skill": "crafting",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Narzędzie ślizga się i kaleczy dłoń.",
+        "hp": "1d4"
+       },
+       "1": {
+        "text": "Zawiasy zardzewiałe na amen. Odpuszczacie."
+       },
+       "2": {
+        "text": "Skrzynia otwarta. Kilka przydatnych drobiazgów.",
+        "scrap": 35,
+        "items": [
+         "@consumable"
+        ]
+       },
+       "3": {
+        "text": "Pod fałszywym dnem leży prawdziwy skarb.",
+        "scrap": 70,
+        "items": [
+         "@any"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "stranger",
+    "title": "Ranny nieznajomy",
+    "weight": 3,
+    "text": "Przy drodze leży człowiek, trzyma się za brzuch. Mówi, że zaatakowały go mutanty. Krew na piasku jest jeszcze świeża.",
+    "choices": [
+     {
+      "label": "Opatrzyć rany",
+      "skill": "medicine",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Pacjent umiera Wam na rękach. Zostaje tylko poczucie winy.",
+        "rep": {
+         "survivors": -1
+        }
+       },
+       "1": {
+        "text": "Opatrunek wystarczył na kilka godzin. Mężczyzna odchodzi o własnych siłach, nic nie mówiąc."
+       },
+       "2": {
+        "text": "Mężczyzna dochodzi do siebie. W podzięce oddaje Wam trochę Złomu.",
+        "scrap": 30,
+        "rep": {
+         "survivors": 1
+        }
+       },
+       "3": {
+        "text": "Okazuje się kurierem Przystani. Odwdzięcza się hojnie i opowiada o Was wszędzie.",
+        "scrap": 50,
+        "items": [
+         "@consumable"
+        ],
+        "rep": {
+         "survivors": 2
+        }
+       }
+      }
+     },
+     {
+      "label": "Przeszukać i iść dalej",
+      "skill": "thievery",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "To była pułapka! „Ranny\" wyciąga nóż.",
+        "hp": "1d8"
+       },
+       "1": {
+        "text": "Nic przy nim nie ma. Odchodzicie ze złym smakiem w ustach.",
+        "rep": {
+         "survivors": -1
+        }
+       },
+       "2": {
+        "text": "Znajdujecie coś cennego. Sumienie milczy.",
+        "scrap": 25,
+        "rep": {
+         "survivors": -1
+        }
+       },
+       "3": {
+        "text": "Pod kurtką ukrył cenną rzecz. Nikt się nie dowie.",
+        "scrap": 45,
+        "rep": {
+         "survivors": -1
+        }
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "bridge",
+    "title": "Zawalony wiadukt",
+    "weight": 2,
+    "text": "Wiadukt, którym biegnie szlak, runął. Z drugiej strony przepaści widać dymiącą drogę. Objazd zająłby dzień.",
+    "choices": [
+     {
+      "label": "Przejść po belkach",
+      "skill": "acrobatics",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Belka pęka. Spadacie boleśnie z kilku metrów.",
+        "hp": "2d6"
+       },
+       "1": {
+        "text": "Przechodzicie, ale trzy razy prawie ginąc. Ktoś zdarł sobie skórę.",
+        "hp": "1d6"
+       },
+       "2": {
+        "text": "Linia po linii, przechodzicie na drugą stronę."
+       },
+       "3": {
+        "text": "Idzie jak po sznurku — wasza zwinność zostanie zapamiętana.",
+        "xp": 20
+       }
+      }
+     },
+     {
+      "label": "Zbudować przeprawę",
+      "skill": "crafting",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Konstrukcja zawala się w trakcie. Rany i stracony sprzęt.",
+        "hp": "1d6",
+        "scrap": -15
+       },
+       "1": {
+        "text": "Budowa trwa cały dzień.",
+        "days": 1
+       },
+       "2": {
+        "text": "Kilka desek, lina i sprytny węzeł. Przeprawa gotowa."
+       },
+       "3": {
+        "text": "Z gruzu wydobywacie jeszcze nadające się do użytku części.",
+        "scrap": 30
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "wreck",
+    "title": "Wrak konwoju",
+    "weight": 2,
+    "text": "Szkielety ciężarówek tkwią w piasku. Ktoś już tu był — ale ktoś zawsze coś przegapi.",
+    "choices": [
+     {
+      "label": "Przeszukać wraki",
+      "skill": "perception",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Pod blachą gnieździ się mutant-padlinożerca. Gryzie!",
+        "hp": "1d8"
+       },
+       "1": {
+        "text": "Tylko rdza i szkielety."
+       },
+       "2": {
+        "text": "Znajdujecie schowek w podwoziu.",
+        "scrap": 30,
+        "items": [
+         "@consumable"
+        ]
+       },
+       "3": {
+        "text": "Ukryty ładunek! Ktoś kiedyś bardzo go pilnował.",
+        "scrap": 60,
+        "items": [
+         "@any"
+        ]
+       }
+      }
+     },
+     {
+      "label": "Rozmontować na złom",
+      "skill": "crafting",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Resztka paliwa zapala się. Poparzenia.",
+        "hp": "1d6"
+       },
+       "1": {
+        "text": "Same śruby. Mało pożytku.",
+        "scrap": 10
+       },
+       "2": {
+        "text": "Dobry kawał metalu na sprzedaż.",
+        "scrap": 45
+       },
+       "3": {
+        "text": "Działający akumulator i cenne części.",
+        "scrap": 75,
+        "items": [
+         "@tech"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "beasts",
+    "title": "Stado mutantów",
+    "weight": 2,
+    "text": "Z wydm wynurza się stado kudłatych, sześcionogich stworzeń. Węszą w Waszą stronę i zbliżają się powoli.",
+    "choices": [
+     {
+      "label": "Uspokoić je",
+      "skill": "nature",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Rozjuszone zwierzęta atakują. Ledwo uciekacie.",
+        "hp": "2d6"
+       },
+       "1": {
+        "text": "Cofają się niechętnie, ale kilka razy Was ugryzło.",
+        "hp": "1d6"
+       },
+       "2": {
+        "text": "Zwierzęta rozchodzą się, jakby nic się nie stało."
+       },
+       "3": {
+        "text": "Przewodnik stada daje się pogłaskać. Znajdujecie coś w jego legowisku.",
+        "items": [
+         "@consumable"
+        ],
+        "xp": 20
+       }
+      }
+     },
+     {
+      "label": "Odstraszyć wrzaskiem",
+      "skill": "intimidation",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Rzucają się wprost na Was.",
+        "hp": "2d6"
+       },
+       "1": {
+        "text": "Odsuwają się, ale ciągnęli Was za nogawki jeszcze godzinę.",
+        "hp": "1d4"
+       },
+       "2": {
+        "text": "Stado ucieka z piskiem."
+       },
+       "3": {
+        "text": "Uciekając, zostawiają zapasy.",
+        "scrap": 25,
+        "xp": 20
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "signal",
+    "title": "Dziwny sygnał radiowy",
+    "weight": 2,
+    "text": "Stary nadajnik w Waszym plecaku nagle zaczyna syczeć. Przez trzaski przebija się czyjś głos, powtarzający liczby.",
+    "choices": [
+     {
+      "label": "Namierzyć źródło",
+      "skill": "crafting",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Sprzężenie zwrotne wypala radio i uszy.",
+        "hp": "1d4",
+        "scrap": -10
+       },
+       "1": {
+        "text": "Sygnał urywa się w połowie."
+       },
+       "2": {
+        "text": "Namierzacie starą stację przekaźnikową z zapasami.",
+        "scrap": 35,
+        "items": [
+         "@tech"
+        ]
+       },
+       "3": {
+        "text": "To automatyczny skład wojskowy! Pełen użytecznych rzeczy.",
+        "scrap": 70,
+        "items": [
+         "@tech",
+         "@consumable"
+        ]
+       }
+      }
+     },
+     {
+      "label": "Zignorować",
+      "skill": null,
+      "out": {
+       "2": {
+        "text": "Wyłączacie radio. Co w nim było, nigdy się nie dowiecie."
+       }
+      }
+     }
+    ]
+   },
+   {
+    "id": "guide",
+    "title": "Wędrowiec z pustkowi",
+    "weight": 2,
+    "text": "Samotny Nomad siedzi przy dogasającym ognisku. Zna okolicę lepiej niż Wy własne kieszenie i wygląda, jakby miał ochotę na rozmowę.",
+    "choices": [
+     {
+      "label": "Poprosić o skrót",
+      "skill": "diplomacy",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Źle zrozumiał prośbę — wyprowadza Was na manowce.",
+        "days": 1
+       },
+       "1": {
+        "text": "Kręci głową. Skrótów nie sprzedaje."
+       },
+       "2": {
+        "text": "Pokazuje ścieżkę znaną tylko Nomadom. Zyskujecie czas.",
+        "days": -1,
+        "rep": {
+         "nomads": 1
+        }
+       },
+       "3": {
+        "text": "Z honorami prowadzi Was dalej i opowiada o Was przy ogniskach.",
+        "days": -1,
+        "rep": {
+         "nomads": 2
+        },
+        "items": [
+         "@consumable"
+        ]
+       }
+      }
+     },
+     {
+      "label": "Wypytać o szlaki",
+      "skill": "survival",
+      "dc": "level",
+      "out": {
+       "0": {
+        "text": "Źle zapamiętujecie drogę i traficie na pole minowe.",
+        "hp": "1d6"
+       },
+       "1": {
+        "text": "Nic konkretnego."
+       },
+       "2": {
+        "text": "Dowiadujecie się, gdzie najlepiej szukać zapasów.",
+        "scrap": 30
+       },
+       "3": {
+        "text": "Ma dla Was mapę kilku skrytek.",
+        "scrap": 60,
+        "rep": {
+         "nomads": 1
+        }
+       }
+      }
+     }
+    ]
+   }
+  ],
+  "FAUNA_CHANCE": 0.22,
+  "FAUNA_KINDS": [
+   {
+    "templateId": "dog_mutant",
+    "name": "pies"
+   },
+   {
+    "templateId": "rat_mutant",
+    "name": "szczur"
+   },
+   {
+    "templateId": "scorpion",
+    "name": "skorpion"
+   },
+   {
+    "templateId": "kretowij",
+    "name": "kretowij"
+   },
+   {
+    "templateId": "wolf_beast",
+    "name": "wilk"
+   },
+   {
+    "templateId": "boar_beast",
+    "name": "dzik"
+   },
+   {
+    "templateId": "spider",
+    "name": "pająk"
+   },
+   {
+    "templateId": "beetle",
+    "name": "chrząszcz"
+   }
+  ],
+  "faunaAttackTemplate": {
+   "id": "fauna_attack",
+   "title": "Atak: zmutowany {name}",
+   "weight": 0,
+   "text": "{name} wypada zza wydmy prosto na Was — za duży, za szybki, a jego narośla świecą w półmroku. Nie ma czasu na ustawienie szyku.",
+   "choices": [
+    {
+     "label": "Walczcie!",
+     "skill": "athletics",
+     "dc": "level",
+     "out": {
+      "0": {
+       "text": "{name} rozrywa szyk i znika z kawałkiem czyjegoś ekwipunku w pysku. Ktoś mocno krwawi.",
+       "hp": "2d6",
+       "scrap": -10
+      },
+      "1": {
+       "text": "Odpieracie atak, ale bestia zdążyła kogoś poharatać, zanim uciekła.",
+       "hp": "1d6",
+       "xp": 15
+      },
+      "2": {
+       "text": "{name} pada. Wycinacie gruczoł — alchemicy w Przystani dobrze za niego zapłacą.",
+       "items": [
+        "mutant_gland"
+       ],
+       "xp": 40
+      },
+      "3": {
+       "text": "Czysta robota: jedno uderzenie, jedno truchło. Przy legowisku znajdujecie resztki po mniej szczęśliwych podróżnych.",
+       "items": [
+        "mutant_gland",
+        "@consumable"
+       ],
+       "scrap": 15,
+       "xp": 60
+      }
+     }
+    },
+    {
+     "label": "Odstraszcie ją ogniem i krzykiem",
+     "skill": "intimidation",
+     "dc": "level",
+     "out": {
+      "0": {
+       "text": "Krzyk tylko ją rozjusza. Zanim odpuści, ktoś obrywa.",
+       "hp": "1d8"
+      },
+      "1": {
+       "text": "Bestia krąży, kąsa i dopiero po chwili daje za wygraną.",
+       "hp": "1d4"
+      },
+      "2": {
+       "text": "{name} cofa się, warczy i odchodzi w pustkowia.",
+       "xp": 20
+      },
+      "3": {
+       "text": "Bestia podkula ogon i ucieka. Wy idziecie dalej raźniejszym krokiem.",
+       "xp": 35
+      }
+     }
+    },
+    {
+     "label": "Uciekajcie między skały",
+     "skill": "acrobatics",
+     "dc": "level",
+     "out": {
+      "0": {
+       "text": "Ktoś się potyka. Bestia dopada go pierwsza, a kluczenie kosztuje Was dzień.",
+       "hp": "1d8",
+       "days": 1
+      },
+      "1": {
+       "text": "Gubicie ją, ale nadkładacie drogi.",
+       "days": 1
+      },
+      "2": {
+       "text": "Gubicie bestię w rumowisku i wracacie na szlak."
+      },
+      "3": {
+       "text": "Znikacie jej z oczu tak sprawnie, że po drodze trafiacie na czyjś porzucony schowek.",
+       "items": [
+        "@consumable"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ },
+ "region": {
+  "HMAP": {
+   "x0": -9216,
+   "z0": -6144,
+   "step": 128,
+   "w": 145,
+   "h": 97
+  },
+  "HOME": {
+   "x": -4352,
+   "z": 2048
+  },
+  "CITY": {
+   "x": 640,
+   "z": 512,
+   "rx": 3482,
+   "rz": 2611,
+   "g": 666
+  },
+  "GATE": {
+   "x": -2767,
+   "z": 845
+  },
+  "CRATER": {
+   "x": 4992,
+   "z": -1536
+  },
+  "PLAZAS": [
+   {
+    "x": -692,
+    "z": -154
+   },
+   {
+    "x": 2638,
+    "z": 1178
+   },
+   {
+    "x": -1358,
+    "z": 1844
+   },
+   {
+    "x": 1306,
+    "z": -1486
+   },
+   {
+    "x": 640,
+    "z": 2510
+   },
+   {
+    "x": 3304,
+    "z": -154
+   },
+   {
+    "x": -26,
+    "z": 1178
+   },
+   {
+    "x": 1972,
+    "z": -820
+   }
+  ],
+  "SECTORS": [
+   {
+    "id": "ruins",
+    "name": "RUINY MIASTA",
+    "sub": "sektor miejski",
+    "color": 15903035,
+    "x": 640,
+    "z": 512,
+    "rx": 3610,
+    "rz": 2739,
+    "label": {
+     "x": 640,
+     "z": 3533
+    },
+    "spots": [
+     {
+      "x": -692,
+      "z": -154
+     },
+     {
+      "x": 2638,
+      "z": 1178
+     },
+     {
+      "x": -1358,
+      "z": 1844
+     },
+     {
+      "x": 1306,
+      "z": -1486
+     },
+     {
+      "x": 640,
+      "z": 2510
+     },
+     {
+      "x": 3304,
+      "z": -154
+     },
+     {
+      "x": -26,
+      "z": 1178
+     },
+     {
+      "x": 1972,
+      "z": -820
+     }
+    ]
+   },
+   {
+    "id": "wastes",
+    "name": "PUSTKOWIA",
+    "sub": "wydmy i obóz Nomadów",
+    "color": 14205072,
+    "x": 6144,
+    "z": 2816,
+    "rx": 1843,
+    "rz": 1946,
+    "label": {
+     "x": 6144,
+     "z": 4864
+    },
+    "spots": [
+     {
+      "x": 5504,
+      "z": 2944
+     },
+     {
+      "x": 7040,
+      "z": 1920
+     },
+     {
+      "x": 5248,
+      "z": 4096
+     },
+     {
+      "x": 6912,
+      "z": 3840
+     },
+     {
+      "x": 6016,
+      "z": 1434
+     }
+    ]
+   },
+   {
+    "id": "industrial",
+    "name": "STREFA PRZEMYSŁOWA",
+    "sub": "fabryki i krater",
+    "color": 14708794,
+    "x": 3840,
+    "z": -3072,
+    "rx": 2202,
+    "rz": 1126,
+    "label": {
+     "x": 6144,
+     "z": -4506
+    },
+    "spots": [
+     {
+      "x": 2688,
+      "z": -3635
+     },
+     {
+      "x": 4736,
+      "z": -2714
+     },
+     {
+      "x": 3712,
+      "z": -2458
+     },
+     {
+      "x": 5248,
+      "z": -3482
+     }
+    ]
+   },
+   {
+    "id": "bunker",
+    "name": "GÓRY · BUNKIER",
+    "sub": "schrony w skałach",
+    "color": 6992127,
+    "x": -3840,
+    "z": -2816,
+    "rx": 2304,
+    "rz": 1331,
+    "label": {
+     "x": -3840,
+     "z": -1178
+    },
+    "spots": [
+     {
+      "x": -3328,
+      "z": -1946
+     },
+     {
+      "x": -4992,
+      "z": -2099
+     },
+     {
+      "x": -2304,
+      "z": -2611
+     },
+     {
+      "x": -4224,
+      "z": -3200
+     }
+    ]
+   }
+  ]
+ },
+ "story": {
+  "GAME_TITLE": "PYŁ I RDZA",
+  "GAME_SUBTITLE": "NAJEMNICY",
+  "INTRO_SLIDES": [
+   {
+    "id": "bomb",
+    "text": "Rok 2041. Nikt już nie pamięta, kto wystrzelił pierwszy. Pamięta się tylko światło — jaśniejsze niż słońce — i ciszę, która nadeszła po nim."
+   },
+   {
+    "id": "ruins",
+    "text": "Miasta zamieniły się w Rdzawisko: labirynt zwęglonych wieżowców, skażonych piwnic i stalowych szkieletów. W cieniu czają się mutanty, a w ruinach rządzi głód."
+   },
+   {
+    "id": "raiders",
+    "text": "Najgorsi są Szabrownicy. Zdegenerowane bandy, które mordują dla puszki konserw i błyskotki z dawnego świata. Najkrwawszą z nich dowodzi Kostucha, wódz Żelaznych Szczęk."
+   },
+   {
+    "id": "nomads",
+    "text": "Na pustkowiach, z dala od ruin, wędrują Nomadzi. Twardzi, milczący handlarze, którzy przeżyli, bo znają każdą wydmę, każdą studnię i każdą burzę pyłową."
+   },
+   {
+    "id": "haven",
+    "text": "Ci, którzy nie chcą uciekać, odbudowują życie w Przystani — dawnej zajezdni kolejowej na skraju Martwego Miasta. Mają mury, światło i nadzieję. Brakuje im tylko ludzi, którzy potrafią strzelać."
+   },
+   {
+    "id": "crew",
+    "text": "To zadanie dla Najemników. Cztery osoby, jedna umowa, tyle Złomu, ile zdołasz zarobić. Zbierz drużynę. Przyjmij zlecenie. Przeżyj."
+   }
+  ],
+  "EPILOGUE": [
+   "Kostucha padła, a Żelazne Szczęki rozsypały się jak zardzewiały łańcuch.",
+   "Karawany Nomadów wróciły na stare szlaki. W Przystani zapalono wszystkie lampy naraz.",
+   "Rdzawisko wciąż jest pełne mutantów i złomu — ale ktoś w nim wreszcie śpi spokojnie.",
+   "Nazywają Was teraz Najemnikami z Przystani. Jest jeszcze mnóstwo zleceń."
+  ],
+  "GAMEOVER_LINES": [
+   "Pustkowia nie wybaczają. Ani szybkości, ani dumy, ani źle policzonej amunicji.",
+   "Wiatr zasypuje ślady, a Przystań zapala lampy dla kolejnej drużyny."
+  ],
+  "TIPS": [
+   "Wskazówka: Medyk potrafi uratować umierającego sojusznika — nie zostawiaj nikogo bez opieki.",
+   "Wskazówka: Osłony dają +2 do KP. Płot, beczka i wrak to Twoi przyjaciele.",
+   "Wskazówka: Handlarze Nomadów oferują lepsze ceny, gdy ich lubisz."
+  ],
+  "CREDITS": [
+   [
+    "Autor",
+    "Robert Magdziarz (K0V4L)"
+   ],
+   [
+    "Studio",
+    "STORM 32"
+   ],
+   [
+    "Reguły",
+    "Pathfinder 2e (adaptacja postapokaliptyczna)"
+   ],
+   [
+    "Grafika",
+    "rysowana w całości w kodzie"
+   ],
+   [
+    "Dźwięk i muzyka",
+    "syntezowane w locie — zero plików audio"
+   ],
+   [
+    "Silnik",
+    "Phaser + TypeScript"
+   ],
+   [
+    "Dziękujemy",
+    "Każdemu, kto przeżył Rdzawisko"
+   ]
+  ]
+ },
+ "fixed": {
+  "TICK_HZ": 50,
+  "Q12": 4096,
+  "Q8": 256,
+  "SIN_LUT": [
+   0,
+   402,
+   804,
+   1205,
+   1606,
+   2006,
+   2404,
+   2801,
+   3196,
+   3590,
+   3981,
+   4370,
+   4756,
+   5139,
+   5520,
+   5897,
+   6270,
+   6639,
+   7005,
+   7366,
+   7723,
+   8076,
+   8423,
+   8765,
+   9102,
+   9434,
+   9760,
+   10080,
+   10394,
+   10702,
+   11003,
+   11297,
+   11585,
+   11866,
+   12140,
+   12406,
+   12665,
+   12916,
+   13160,
+   13395,
+   13623,
+   13842,
+   14053,
+   14256,
+   14449,
+   14635,
+   14811,
+   14978,
+   15137,
+   15286,
+   15426,
+   15557,
+   15679,
+   15791,
+   15893,
+   15986,
+   16069,
+   16143,
+   16207,
+   16261,
+   16305,
+   16340,
+   16364,
+   16379,
+   16384,
+   16379,
+   16364,
+   16340,
+   16305,
+   16261,
+   16207,
+   16143,
+   16069,
+   15986,
+   15893,
+   15791,
+   15679,
+   15557,
+   15426,
+   15286,
+   15137,
+   14978,
+   14811,
+   14635,
+   14449,
+   14256,
+   14053,
+   13842,
+   13623,
+   13395,
+   13160,
+   12916,
+   12665,
+   12406,
+   12140,
+   11866,
+   11585,
+   11297,
+   11003,
+   10702,
+   10394,
+   10080,
+   9760,
+   9434,
+   9102,
+   8765,
+   8423,
+   8076,
+   7723,
+   7366,
+   7005,
+   6639,
+   6270,
+   5897,
+   5520,
+   5139,
+   4756,
+   4370,
+   3981,
+   3590,
+   3196,
+   2801,
+   2404,
+   2006,
+   1606,
+   1205,
+   804,
+   402,
+   0,
+   -402,
+   -804,
+   -1205,
+   -1606,
+   -2006,
+   -2404,
+   -2801,
+   -3196,
+   -3590,
+   -3981,
+   -4370,
+   -4756,
+   -5139,
+   -5520,
+   -5897,
+   -6270,
+   -6639,
+   -7005,
+   -7366,
+   -7723,
+   -8076,
+   -8423,
+   -8765,
+   -9102,
+   -9434,
+   -9760,
+   -10080,
+   -10394,
+   -10702,
+   -11003,
+   -11297,
+   -11585,
+   -11866,
+   -12140,
+   -12406,
+   -12665,
+   -12916,
+   -13160,
+   -13395,
+   -13623,
+   -13842,
+   -14053,
+   -14256,
+   -14449,
+   -14635,
+   -14811,
+   -14978,
+   -15137,
+   -15286,
+   -15426,
+   -15557,
+   -15679,
+   -15791,
+   -15893,
+   -15986,
+   -16069,
+   -16143,
+   -16207,
+   -16261,
+   -16305,
+   -16340,
+   -16364,
+   -16379,
+   -16384,
+   -16379,
+   -16364,
+   -16340,
+   -16305,
+   -16261,
+   -16207,
+   -16143,
+   -16069,
+   -15986,
+   -15893,
+   -15791,
+   -15679,
+   -15557,
+   -15426,
+   -15286,
+   -15137,
+   -14978,
+   -14811,
+   -14635,
+   -14449,
+   -14256,
+   -14053,
+   -13842,
+   -13623,
+   -13395,
+   -13160,
+   -12916,
+   -12665,
+   -12406,
+   -12140,
+   -11866,
+   -11585,
+   -11297,
+   -11003,
+   -10702,
+   -10394,
+   -10080,
+   -9760,
+   -9434,
+   -9102,
+   -8765,
+   -8423,
+   -8076,
+   -7723,
+   -7366,
+   -7005,
+   -6639,
+   -6270,
+   -5897,
+   -5520,
+   -5139,
+   -4756,
+   -4370,
+   -3981,
+   -3590,
+   -3196,
+   -2801,
+   -2404,
+   -2006,
+   -1606,
+   -1205,
+   -804,
+   -402
+  ],
+  "EASE_OUT3_LUT": [
+   0,
+   189,
+   372,
+   549,
+   721,
+   887,
+   1047,
+   1202,
+   1352,
+   1496,
+   1636,
+   1770,
+   1899,
+   2023,
+   2143,
+   2258,
+   2368,
+   2474,
+   2575,
+   2672,
+   2765,
+   2854,
+   2938,
+   3019,
+   3096,
+   3169,
+   3239,
+   3305,
+   3367,
+   3426,
+   3482,
+   3534,
+   3584,
+   3631,
+   3674,
+   3715,
+   3753,
+   3788,
+   3821,
+   3852,
+   3880,
+   3906,
+   3930,
+   3951,
+   3971,
+   3989,
+   4005,
+   4019,
+   4032,
+   4043,
+   4053,
+   4062,
+   4069,
+   4075,
+   4080,
+   4085,
+   4088,
+   4091,
+   4093,
+   4094,
+   4095,
+   4096,
+   4096,
+   4096,
+   4096
+  ]
+ }
+}
