@@ -107,7 +107,7 @@ function simpleAttack(
   res: ActionResult, t: Character, o: { label: string; bonus: number; expr: string; type: DamageType; rng: Rng },
 ): { hit: boolean; c: CheckResult } {
   const dc = getStat(t, 'ac');
-  const c = check(o.bonus, dc, o.rng, concealHalves(t, true));
+  const c = check(o.bonus, dc, o.rng, concealHalves(t));
   if (!res.d20) res.d20 = c;
   const info = `k20 ${fmtD20(c)}${fmtMod(o.bonus)}=${c.total} vs KP ${dc}`;
   if (c.degree <= 1) {

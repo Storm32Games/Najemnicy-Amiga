@@ -59,7 +59,7 @@ export const CONDITIONS = {
   hidden: { name: 'Ukryty', desc: 'Rzut na trafienie w ukrytego dzielony na 2; następny atak z ukrycia uderza w odsłoniętego.', kind: 'flag' },
   raised_shield: { name: 'Tarcza w górze', desc: '+KP z tarczy do początku następnej tury.', kind: 'short' },
   dodging: { name: 'Unik', desc: '+2 do KP do początku następnej tury.', kind: 'short' },
-  in_cover: { name: 'W osłonie', desc: '+2 KP (1) lub +4 (2) przeciw atakom dystansowym; strzelec dzieli kość trafienia na 2.', kind: 'flag', valued: true },
+  in_cover: { name: 'W osłonie', desc: '+2 KP (1) lub +4 (2) przeciw atakom dystansowym.', kind: 'flag', valued: true },
   hunted: { name: 'Wyznaczony cel', desc: 'Zwiadowca zadaje mu więcej obrażeń.', kind: 'timed' },
   raging: { name: 'Szał', desc: '+obrażenia w walce wręcz, -1 do KP.', kind: 'timed' },
   stimmed: { name: 'Pobudzony', desc: '+1 do trafienia.', kind: 'timed' },

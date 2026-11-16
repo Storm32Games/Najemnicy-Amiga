@@ -115,12 +115,12 @@ ok(createCharacter({ name: 'X', ancestry: 'nomad-born', classId: 'scout' }).ance
   removeCondition(c, 'frightened');
   addCondition(c, 'in_cover');
   ok(getStat(c, 'ac') === ac0 + 2, 'cover +2');
-  ok(attackHalves(c, c, true) === 1 && attackHalves(c, c, false) === 0, 'take cover: ranged hit die halved, melee not');
+  ok(attackHalves(c, c) === 0, 'take cover: AC only, hit die not halved');
   removeCondition(c, 'in_cover');
   addCondition(c, 'hidden');
-  ok(attackHalves(c, c, false) === 1, 'hidden: hit die halved');
+  ok(attackHalves(c, c) === 1, 'hidden: hit die halved');
   addCondition(c, 'frightened', 1);
-  ok(attackHalves(c, c, false) === 2, 'frightened attacker vs hidden target: halved twice');
+  ok(attackHalves(c, c) === 2, 'frightened attacker vs hidden target: halved twice');
   removeCondition(c, 'frightened');
   removeCondition(c, 'hidden');
   c.equipment.shield = newItem('scrap_shield');

@@ -20,10 +20,7 @@ export interface StrikeOptions {
   rangeIncrements?: number;
   /** Wymusza atak z ukrycia (Szczur). */
   sneak?: boolean;
-  /**
-   * Połowienia k20 trafienia; domyślnie attackHalves(atakujący, obrońca). Warstwa taktyczna podaje je sama,
-   * bo chwilowa osłona terenu (in_cover z geometrii) nie jest ukryciem.
-   */
+  /** Połowienia k20 trafienia; domyślnie attackHalves(atakujący, obrońca). */
   hitHalves?: number;
 }
 
@@ -40,7 +37,7 @@ export function strike(attacker: Character, defender: Character, o: StrikeOption
   const bonus = getAttackBonus(attacker, w, o.mapIndex || 0, { rangeIncrements: o.rangeIncrements }) + (o.bonus || 0);
   const dc = getStat(defender, 'ac', { ignoreCover: !!o.ignoreCover || w.range === 0 });
   const rng = o.rng ?? Math.random;
-  const c = check(bonus, dc, rng, o.hitHalves ?? attackHalves(attacker, defender, w.range > 0));
+  const c = check(bonus, dc, rng, o.hitHalves ?? attackHalves(attacker, defender));
   res.d20 = c;
   res.weapon = w;
   const info = `k20 ${fmtD20(c)}${fmtMod(bonus)}=${c.total} vs KP ${dc}`;

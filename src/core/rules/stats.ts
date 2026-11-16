@@ -47,17 +47,13 @@ export const statusPenalty = (ch: Character): number => condValue(ch, 'sickened'
 
 /** Zastraszenie: przerażona postać dzieli każdy swój rzut kością na 2 (zaokrąglenie w górę). */
 export const dieHalves = (ch: Character): number => (hasCondition(ch, 'frightened') ? 1 : 0);
-/**
- * Ukrycie celu: atakujący dzieli kość testu trafienia na 2. Ukryty (hidden) - każdy atak;
- * Kryj się (in_cover nadane umiejętnością) - ataki dystansowe, tak jak premia osłony do KP.
- */
-export const concealHalves = (def: Character, ranged: boolean): number =>
-  hasCondition(def, 'hidden') || (ranged && hasCondition(def, 'in_cover')) ? 1 : 0;
+/** Ukrycie celu (Ukryty): atakujący dzieli kość testu trafienia na 2. Osłona / Kryj się daje tylko KP. */
+export const concealHalves = (def: Character): number => (hasCondition(def, 'hidden') ? 1 : 0);
 /** Test k20 wykonywany przez postać: przerażona połowi kość. `extra` - dodatkowe połowienia (ukryty cel). */
 export const checkBy = (ch: Character, mod: number, dc: number, rng: Rng = Math.random, extra = 0): CheckResult =>
   check(mod, dc, rng, dieHalves(ch) + extra);
 /** Połowienia k20 testu trafienia: przerażony atakujący + ukryty cel (sumują się). */
-export const attackHalves = (att: Character, def: Character, ranged: boolean): number => dieHalves(att) + concealHalves(def, ranged);
+export const attackHalves = (att: Character, def: Character): number => dieHalves(att) + concealHalves(def);
 
 /** Modyfikator cechy po stanach (niezdarny obniża ZR, osłabiony SIŁ). */
 export function attrMod(ch: Character, a: AttrId): number {

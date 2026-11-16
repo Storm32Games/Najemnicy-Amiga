@@ -43,7 +43,7 @@ export function previewStrike(attacker: Character, defender: Character, from: Gr
   }
   out.mod = getAttackBonus(attacker, w, out.mapIdx, { rangeIncrements: out.inc });
   out.ac = getStat(defender, 'ac', { ignoreCover: w.range === 0 });
-  const ch = hitChances(out.mod, out.ac, attackHalves(attacker, defender, w.range > 0));
+  const ch = hitChances(out.mod, out.ac, attackHalves(attacker, defender));
   out.hit = ch.hit;
   out.crit = ch.crit;
   out.ok = true;

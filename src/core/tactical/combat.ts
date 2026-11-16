@@ -90,7 +90,7 @@ export interface StrikeInfo {
   geoCover: boolean;
   /** Połowienia k20 trafienia (przerażony atakujący, ukryty cel). */
   halves: number;
-  /** Cel w ukryciu (Ukryty / Kryj się) - kość trafienia dzielona na 2. */
+  /** Cel w ukryciu (Ukryty) - kość trafienia dzielona na 2. */
   concealed: boolean;
   /** Atakujący przerażony - jego kości dzielone na 2. */
   frightened: boolean;
@@ -279,10 +279,9 @@ export class Combat {
     info.geoCover = r > 0 && cover;
     info.mapIdx = Math.min(2, att.mapN);
     info.mod = getAttackBonus(att.ch, w, info.mapIdx, { rangeIncrements: info.inc });
-    // przed withTemp: chwilowa osłona terenu to nie ukrycie
-    info.concealed = concealHalves(def.ch, r > 0) > 0;
+    info.concealed = concealHalves(def.ch) > 0;
     info.frightened = dieHalves(att.ch) > 0;
-    info.halves = attackHalves(att.ch, def.ch, r > 0);
+    info.halves = attackHalves(att.ch, def.ch);
     info.ac = this.withTemp(def, info.geoCover, info.flank, () => getStat(def.ch, 'ac', { ignoreCover: r === 0 }));
     info.baseAc = getStat(def.ch, 'ac', { ignoreCover: r === 0 });
     const ch = hitChances(info.mod, info.ac, info.halves);
