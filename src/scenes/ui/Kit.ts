@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SoundManager } from '../../audio/SoundManager';
-import { type ResSetting, Settings, resPreset } from './Settings';
+import { type ResSetting, Settings, UI_ALPHAS, resPreset } from './Settings';
 import { FLAME_TONGUES, MoteField, Q12, Q8, TickClock, TypeProgress, flameKQ12, flameSwayQ8, glowAlphaQ8, potTiles, secToQ8 } from '../../core/frontend';
 import { PixelText, pixelText } from './BitmapFont';
 import { addHiRes } from '../iso/HiRes';
@@ -157,10 +157,65 @@ export function label(scene: Phaser.Scene, x: number, y: number, s: string, o: L
   });
 }
 
-/** Panel w stylu starego .panel: ciemne tło, rdzawa ramka, twardy cień. Połyka kliknięcia. */
-export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: number, edge: number = PAL.edge, alpha = 0.94): Phaser.GameObjects.Container {
-  const shadow = scene.add.rectangle(2, 2, w, h, 0x000000, 0.5).setOrigin(0);
-  const bg = scene.add.rectangle(0, 0, w, h, PAL.panel, alpha).setOrigin(0).setStrokeStyle(1, edge).setInteractive();
+// ------------------------------------------------------------------ przezroczystość okien (Opcje / przełącznik w nagłówku)
+
+/** Tła i cienie okien UI, których krycie zależy od Settings.uiAlpha (bazowe krycie cienia zapamiętane przy rejestracji). */
+const uiBgs = new Map<Phaser.GameObjects.Rectangle, number | null>();
+const paintUiBg = (r: Phaser.GameObjects.Rectangle, shadow: number | null): void => {
+  const k = Settings.uiAlphaK;
+  r.setFillStyle(r.fillColor, shadow === null ? k : shadow * k);
+};
+let lastUiAlpha = Settings.values.uiAlpha;
+Settings.onChange((v) => {
+  if (v.uiAlpha === lastUiAlpha) return;
+  lastUiAlpha = v.uiAlpha;
+  for (const [r, sh] of uiBgs) paintUiBg(r, sh);
+});
+
+/**
+ * Tło okna UI: krycie wg ustawienia przezroczystości (brak = w pełni kryjące, 50/50, pełna = samo obramowanie).
+ * `shadow` = cień okna: jego krycie (bieżące krycie wypełnienia) mnoży się przez ten sam współczynnik.
+ */
+export function uiBg<T extends Phaser.GameObjects.Rectangle>(r: T, shadow = false): T {
+  const sh = shadow ? r.fillAlpha : null;
+  uiBgs.set(r, sh);
+  r.once(Phaser.GameObjects.Events.DESTROY, () => uiBgs.delete(r));
+  paintUiBg(r, sh);
+  return r;
+}
+
+/**
+ * Przełącznik przezroczystości okien w nagłówku okna (● brak / ◐ 50/50 / ○ pełna); klik = następny poziom,
+ * dotyczy wszystkich okien. (x, y) = prawy górny róg znaku. `hover` dostaje opis (null = zjechanie kursorem).
+ */
+export function uiAlphaToggle(scene: Phaser.Scene, x: number, y: number, color: number = PAL.dim, hover?: (tip: string | null) => void): PixelText {
+  const glyph = (): string => UI_ALPHAS.find(([k]) => k === Settings.values.uiAlpha)?.[3] ?? '●';
+  const tip = (): string => `Przezroczystość okien: ${UI_ALPHAS.find(([k]) => k === Settings.values.uiAlpha)?.[1] ?? ''} (klik: zmień)`;
+  const t = label(scene, x, y, glyph(), { color }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+  t.on('pointerdown', (p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
+    ev?.stopPropagation();
+    if (p.rightButtonDown()) return;
+    Settings.cycleUiAlpha();
+    SoundManager.sfx('click');
+    hover?.(tip());
+  });
+  t.on('pointerover', () => {
+    t.setColor(PAL.amber);
+    hover?.(tip());
+  });
+  t.on('pointerout', () => {
+    t.setColor(color);
+    hover?.(null);
+  });
+  const off = Settings.onChange(() => t.active && t.setText(glyph()));
+  t.once(Phaser.GameObjects.Events.DESTROY, off);
+  return t;
+}
+
+/** Panel w stylu starego .panel: ciemne tło, rdzawa ramka, twardy cień. Połyka kliknięcia. Krycie tła: Settings.uiAlpha. */
+export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: number, edge: number = PAL.edge, _alpha = 0.94): Phaser.GameObjects.Container {
+  const shadow = uiBg(scene.add.rectangle(2, 2, w, h, 0x000000, 0.5).setOrigin(0), true);
+  const bg = uiBg(scene.add.rectangle(0, 0, w, h, PAL.panel, 1).setOrigin(0).setStrokeStyle(1, edge).setInteractive());
   return scene.add.container(x, y, [shadow, bg]);
 }
 

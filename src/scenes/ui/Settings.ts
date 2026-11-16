@@ -30,6 +30,18 @@ export const resPreset = (id: ResSetting): ResPreset => RES_PRESETS.find((p) => 
 /** Rozmiar interfejsu (Oldgame/src/core/settings.js:9 UI_SIZES): skala okien, podpowiedzi i komunikatów. */
 export const UI_SIZES: readonly (readonly [number, string])[] = [[0.9, 'Mały'], [1, 'Normalny'], [1.15, 'Duży'], [1.3, 'Bardzo duży']];
 
+/**
+ * Przezroczystość okien UI (tła paneli i ich cienie; napisy, ramki i przyciski zostają kryjące).
+ * [id, nazwa, mnożnik krycia tła, znak przełącznika w nagłówku okna].
+ */
+export type UiAlpha = 'solid' | 'half' | 'clear';
+export const UI_ALPHAS: readonly (readonly [UiAlpha, string, number, string])[] = [
+  ['solid', 'Brak', 1, '●'],
+  ['half', '50/50', 0.5, '◐'],
+  ['clear', 'Pełna', 0, '○'],
+];
+const validAlpha = (v: unknown): v is UiAlpha => UI_ALPHAS.some(([k]) => k === v);
+
 export interface SettingsValues {
   res: ResSetting;
   /** Rozmiar interfejsu: jedna z wartości UI_SIZES (0.9 / 1 / 1.15 / 1.3). */
@@ -44,9 +56,11 @@ export interface SettingsValues {
   amiga: boolean;
   /** Zapamiętywanie układu okien HUD misji (pozycje i skale paneli) między uruchomieniami gry. */
   layout: boolean;
+  /** Przezroczystość okien UI (patrz UI_ALPHAS). */
+  uiAlpha: UiAlpha;
 }
 
-const DEFAULTS: SettingsValues = { res: DEFAULT_RES, ui: 1, scanlines: true, grain: true, dither: true, amiga: false, layout: false };
+const DEFAULTS: SettingsValues = { res: DEFAULT_RES, ui: 1, scanlines: true, grain: true, dither: true, amiga: false, layout: false, uiAlpha: 'solid' };
 
 const validRes = (v: unknown): v is ResSetting => typeof v === 'string' && (RES_CHOICES as readonly string[]).includes(v);
 
@@ -66,6 +80,7 @@ function read(): SettingsValues {
       const v = { ...DEFAULTS, ...s };
       // stare zapisy: 'auto' lub krotność 2..6 -> preset
       v.res = migrateRes(v.res);
+      if (!validAlpha(v.uiAlpha)) v.uiAlpha = 'solid';
       if (!UI_SIZES.some(([k]) => Math.abs(k - Number(v.ui)) < 0.01)) v.ui = 1;
       return v;
     }
@@ -83,6 +98,15 @@ export const Settings = {
   /** Skala interfejsu (okna, podpowiedzi, komunikaty, HUD-y, które ją czytają). */
   get uiScale(): number {
     return Number(this.values.ui) || 1;
+  },
+  /** Mnożnik krycia tła okien UI (1 / 0.5 / 0). */
+  get uiAlphaK(): number {
+    return UI_ALPHAS.find(([k]) => k === this.values.uiAlpha)?.[2] ?? 1;
+  },
+  /** Następny poziom przezroczystości (przełącznik w nagłówku okna: brak -> 50/50 -> pełna -> brak). */
+  cycleUiAlpha(): void {
+    const i = UI_ALPHAS.findIndex(([k]) => k === this.values.uiAlpha);
+    this.set('uiAlpha', UI_ALPHAS[(i + 1) % UI_ALPHAS.length][0]);
   },
   /** Rozdzielczość, z którą wystartowała ta sesja (później zmieniana na żywo przez Kit.applyResolution, poza misją). */
   get startRes(): ResSetting {
