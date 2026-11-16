@@ -177,6 +177,7 @@ export class RecruitScene extends Phaser.Scene {
 
   private build(r: RecruitDef): void {
     this.view = r;
+    this.markFigures();
     const ch = this.preview(r);
     const cls = classDef(r.classId), anc = ancestryOf(ch.ancestry);
     const D = this.detail;
@@ -368,11 +369,32 @@ export class RecruitScene extends Phaser.Scene {
       let pc = this.figures.get(r.id);
       if (!pc) {
         pc = portrait(this, x, y, this.preview(r), size).setDepth(2).setAlpha(0);
+        // klik = ten najemnik w karcie po prawej (obrót karty 3D); wciśnięcie portretu i dźwięk kliknięcia
+        const hit = this.add.rectangle(0, 0, size, size, 0x000000, 0).setOrigin(0).setInteractive({ useHandCursor: true });
+        const p = pc;
+        hit.on('pointerover', () => !modalOpen(this) && SoundManager.sfx('hover'));
+        hit.on('pointerdown', () => {
+          if (modalOpen(this)) return;
+          SoundManager.sfx('click', { vol: 0.6 });
+          const img = p.list[0] as Phaser.GameObjects.Image;
+          this.tweens.killTweensOf(img);
+          img.setPosition(0, 0);
+          this.tweens.add({ targets: img, y: 2, duration: 60, yoyo: true, ease: 'Quad.easeOut' });
+          this.show(r);
+        });
+        pc.add(hit);
         this.tweens.add({ targets: pc, alpha: 1, duration: 200 });
         this.figures.set(r.id, pc);
       }
       this.tweens.add({ targets: pc, x, y, duration: 180 });
     });
+    this.markFigures();
+  }
+
+  /** Ramka portretu na placu: jasna u najemnika pokazanego w karcie po prawej. */
+  private markFigures(): void {
+    for (const [id, pc] of this.figures)
+      (pc.list[1] as Phaser.GameObjects.Rectangle).setStrokeStyle(1, id === this.view.id ? PAL.edgeHi : PAL.edge);
   }
 
   /**
