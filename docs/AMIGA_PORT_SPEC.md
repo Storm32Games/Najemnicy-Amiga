@@ -13,6 +13,11 @@ Ekrany startowe (logo, intro, menu) i ograniczenia sprzętu: `docs/AMIGA_MINIGL.
 | `amiga/data/game_data.json` | wszystkie tabele: rasy, klasy, przedmioty, wrogowie, zdolności, rekruci, stany, umiejętności, stałe zasad, zamki, zdarzenia podróży, zlecenia fabularne, sektory regionu, teksty fabuły, `SIN_LUT`, `EASE_OUT3_LUT` | wejście dla generatora nagłówków C (`static const`) |
 | `amiga/data/test_vectors.json` | oczekiwane wyniki: `hashSeed`, mulberry32 (uint32), karty 16 rekrutów na poz. 1/5/10, 17 wrogów w wersji słabej/zwykłej/elitarnej, 32 ataki z ziarnem, 12 map (3 na biom) | testy jednostkowe portu: C musi dać identyczne liczby |
 | `amiga/data/region_height.bin` | siatka wysokości regionu 145×97 × int16 **big-endian** (Q8) | wczytywana wprost do pamięci 68k |
+| `amiga/src/data/gamedata.h` + `gamedata.c` (`node tools/amiga/gen_headers.ts`) | enumy id, struktury i tabele `const` C99: rasy, klasy (z progresją), przedmioty, wrogowie, zdolności, rekruci, stany, zamki, zdarzenia podróży (+ szablon ataku fauny z `{N}`/`{n}`), szablony zleceń, zlecenia fabularne, stałe zasad, teksty (ISO-8859-2), `SIN_LUT` (Q14), `EASE_OUT3_LUT` | kompilowane do gry; `make -C amiga test` (natywnie) i `make -C amiga m68k` (68020) |
+
+Konwencje nagłówków: kości jako `Dice {n, sides, mod}`; prawdopodobieństwo `p` jako próg `le = ceil(p·2³²) − 1`
+(sukces, gdy `u32 ≤ le` — identycznie jak `rng() < p`); brak wartości `0xFF` / `-1` / `COLOR_NONE`; `key` = tekstowe id z TS
+(do zapisów gry). Nie są jeszcze generowane: generator imion (`data/names.ts`) i stałe trasy regionu (`RING_S/N`, `HALLS`).
 
 ## 1. Mapa modułów
 
