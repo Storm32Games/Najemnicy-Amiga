@@ -458,6 +458,12 @@ const SFX = {
     tone(c, o, t, { type: 'triangle', f: 600 * P, f2: 1300 * P, d: 0.1, vol: 0.2 });
     tone(c, o, t + 0.07, { f: 1900 * P, d: 0.18, vol: 0.14 });
   } },
+  // obrót karty (werbunek): szum powietrza narastający i opadający jak odwracana tabliczka + cichy stuk krawędzi
+  flip: { dur: 0.35, rev: 0.12, max: 2, gap: 0.06, fn(c, o, t, P) {
+    noise(c, o, t, { f: 900 * P, f2: 3400 * P, q: 0.9, a: 0.06, d: 0.1, vol: 0.2 });
+    noise(c, o, t + 0.11, { f: 3400 * P, f2: 1100 * P, q: 1.1, a: 0.02, d: 0.12, vol: 0.14 });
+    tone(c, o, t + 0.11, { type: 'triangle', f: 420 * P, f2: 260 * P, d: 0.05, vol: 0.12 });
+  } },
   geiger: { dur: 1.0, rev: 0.05, max: 2, gap: 0.2, fn(c, o, t) {
     const n = 3 + Math.floor(Math.random() * 8);
     for (let i = 0; i < n; i++) {

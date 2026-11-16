@@ -37,6 +37,8 @@ export class RecruitScene extends Phaser.Scene {
   /** Imiona i kolory zmienione przez gracza (wg id rekruta). */
   private custom = new Map<string, { name?: string; nameColor?: string }>();
   private view: RecruitDef = RECRUITS[0];
+  /** Najemnik, którego pokaże trwający obrót karty (null = karta nie obraca się). */
+  private flipTo: RecruitDef | null = null;
   private detail!: Phaser.GameObjects.Container;
   private count!: PixelText;
   private hint!: PixelText;
@@ -65,6 +67,7 @@ export class RecruitScene extends Phaser.Scene {
     this.previews = new Map();
     this.custom = new Map();
     this.figures = new Map();
+    this.flipTo = null;
     this.turners = new Map();
 
     canvasTexture(this, 'recruit_bg', BASE_W, BASE_H, (g, w, h) => {
@@ -121,7 +124,58 @@ export class RecruitScene extends Phaser.Scene {
     if (q) for (const i of q.split(',')) if (RECRUITS[+i]) this.toggle(RECRUITS[+i]);
   }
 
+  /**
+   * Pokazuje najemnika w karcie po prawej. Zmiana najemnika = obrót karty w 3D wokół pionowej osi: treść zwęża
+   * się do krawędzi (scaleX 1 -> 0, z lekkim powiększeniem w pionie i przyciemnieniem jak bok odwracanej
+   * tabliczki), w połowie podmienia się na nowego, i rozwija z powrotem. Dźwięk 'flip'. Gdy obrót trwa,
+   * kolejne przełączenie tylko podmienia, kogo pokazać w połowie obrotu (szybkie przesuwanie myszą po kartach).
+   */
   private show(r: RecruitDef): void {
+    if (this.flipTo) {
+      this.flipTo = r;
+      return;
+    }
+    if (r === this.view || !this.detail.length) {
+      this.build(r);
+      return;
+    }
+    this.flipTo = r;
+    this.tip?.hide();
+    SoundManager.sfx('flip', { vol: 0.7 });
+    const D = this.detail, half = DET_W / 2;
+    this.tweens.add({
+      targets: D,
+      scaleX: 0,
+      scaleY: 1.04,
+      x: DET_X + half,
+      y: DET_Y - DET_H * 0.02,
+      alpha: 0.55,
+      duration: 110,
+      ease: 'Sine.easeIn',
+      onComplete: () => {
+        const next = this.flipTo ?? r;
+        this.build(next);
+        this.tweens.add({
+          targets: D,
+          scaleX: 1,
+          scaleY: 1,
+          x: DET_X,
+          y: DET_Y,
+          alpha: 1,
+          duration: 140,
+          ease: 'Sine.easeOut',
+          onComplete: () => {
+            const late = this.flipTo;
+            this.flipTo = null;
+            // w trakcie rozwijania wskazano jeszcze kogoś innego - kolejny obrót
+            if (late && late !== this.view) this.show(late);
+          },
+        });
+      },
+    });
+  }
+
+  private build(r: RecruitDef): void {
     this.view = r;
     const ch = this.preview(r);
     const cls = classDef(r.classId), anc = ancestryOf(ch.ancestry);
