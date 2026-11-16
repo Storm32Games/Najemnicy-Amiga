@@ -31,6 +31,8 @@ export const PLAZAS: readonly WPos[] = PLAZA_CELLS.map(([gx, gz]) => cityBlock(g
 export const AVENUE_Z = CITY.z + (CITY.g >> 1);
 export const GATE: WPos = { x: CITY.x - ((9 * CITY.g) >> 1) - q(1.6), z: AVENUE_Z };
 export const CRATER: WPos = { x: q(19.5), z: q(-6) };
+/** Hale fabryczne w strefie przemysłowej: środek (x, z) i wymiary (w wzdłuż x, d wzdłuż z) w jednostkach świata. */
+export const HALLS: readonly (readonly [number, number, number, number])[] = [[8.7, -11.9, 2.3, 1.5], [12.1, -12.7, 2.5, 1.8], [16.1, -12.4, 2.1, 1.6], [11.3, -9.1, 1.9, 1.2]];
 /** Płaskowyże (x, z, promień) w jednostkach świata. */
 const MESAS: readonly (readonly [number, number, number])[] = [[25, 2, 2.4], [18, 17, 1.8], [29, 12, 2.0], [-8, 15.5, 1.6], [-24, -2, 2.2]];
 
@@ -183,6 +185,34 @@ function finish(pts: WPos[], trackFrom: number): Route {
   return { x, z, cum, n, len: cum[n - 1], trackFrom };
 }
 
+/** Odstęp szlaku od ściany hali (Q8). */
+const HALL_MARGIN = q(0.35);
+
+/**
+ * Szlak nie przechodzi przez hale: każdy ciąg próbek wewnątrz hali (powiększonej o margines) jest przesuwany
+ * na tę krawędź, która jest najbliżej środka ciągu - trasa obchodzi budynek wzdłuż ściany.
+ */
+function avoidHalls(pts: WPos[]): void {
+  for (const [hx, hz, hw, hd] of HALLS) {
+    const x0 = q(hx - hw / 2) - HALL_MARGIN, x1 = q(hx + hw / 2) + HALL_MARGIN, z0 = q(hz - hd / 2) - HALL_MARGIN, z1 = q(hz + hd / 2) + HALL_MARGIN;
+    const inside = (p: WPos): boolean => p.x > x0 && p.x < x1 && p.z > z0 && p.z < z1;
+    for (let i = 0; i < pts.length; i++) {
+      if (!inside(pts[i])) continue;
+      let j = i;
+      while (j + 1 < pts.length && inside(pts[j + 1])) j++;
+      const m = pts[(i + j) >> 1];
+      const d = [m.x - x0, x1 - m.x, m.z - z0, z1 - m.z], e = d.indexOf(Math.min(...d));
+      for (let k = i; k <= j; k++) {
+        if (e === 0) pts[k].x = x0;
+        else if (e === 1) pts[k].x = x1;
+        else if (e === 2) pts[k].z = z0;
+        else pts[k].z = z1;
+      }
+      i = j;
+    }
+  }
+}
+
 /** Autostrada z Przystani do bramy miasta: lekki łuk na południe (sin z LUT, 128 = pół obrotu). */
 export function highway(): WPos[] {
   const out: WPos[] = [];
@@ -224,6 +254,7 @@ export function buildRoute(target: WPos, biome: Biome, index: number): Route {
     const p2 = { x: a.x + ((dx * 68) / 100 | 0) - ((sg * -dz * 7) / 100 | 0), z: a.z + ((dz * 68) / 100 | 0) - ((sg * dx * 7) / 100 | 0) };
     catmull([a, p1, p2, b], out);
   }
+  avoidHalls(out);
   return finish(out, 0);
 }
 

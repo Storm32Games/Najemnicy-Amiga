@@ -9,8 +9,9 @@
 // na obu widocznych ścianach, w dużej części zrujnowane. Pozostałe strefy mają własne obiekty.
 
 import Phaser from 'phaser';
-import { CITY, CRATER, GATE, HOME, PLAZA_CELLS, PLAZAS, SECTORS, WQ, buildRoute, cityBlock, heightQ8, inCity, riverDistF } from '../../core/campaign/region';
+import { CITY, CRATER, GATE, HALLS, HOME, PLAZA_CELLS, PLAZAS, SECTORS, WQ, buildRoute, cityBlock, heightQ8, inCity, riverDistF } from '../../core/campaign/region';
 import { canvasTexture, seeded, type Ctx2D } from '../ui/Kit';
+import { addHiRes } from './HiRes';
 
 // ------------------------------------------------------------------ rzut
 
@@ -26,6 +27,9 @@ const FL = 4;
 export const scrX = (xq: number, zq: number): number => OX + Math.round(((xq - zq) * A) / WQ);
 /** Punkt świata (Q8) -> ekran Y z wysokością terenu + uniesienie `up` (Q8). */
 export const scrY = (xq: number, zq: number, up = 0): number => OY + Math.round(((xq + zq) * B) / WQ) - Math.round(((heightQ8(xq, zq) + up) * LIFT) / WQ);
+/** Jak scrX / scrY, ale bez zaokrąglania do piksela - do płynnego ruchu postaci po mapie. */
+export const scrXf = (xq: number, zq: number): number => OX + ((xq - zq) * A) / WQ;
+export const scrYf = (xq: number, zq: number, up = 0): number => OY + ((xq + zq) * B) / WQ - ((heightQ8(xq, zq) + up) * LIFT) / WQ;
 
 const W = (v: number): number => Math.round(v * WQ);
 /** Wysokość terenu (jednostki). */
@@ -264,7 +268,18 @@ function paintTerrain(g: Ctx2D, w: number, h: number): void {
 interface Item {
   key: number;
   draw: (g: Ctx2D) => void;
+  /** Podstawa bryły (jednostki świata) - budynki: dokładny test "przed / za" dla postaci zamiast samego klucza x + z. */
+  box?: Box;
 }
+
+/** Prostokąt podstawy bryły w jednostkach świata. */
+export interface Box {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+const boxOf = (x: number, z: number, w: number, d: number): Box => ({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 });
 
 const px = (g: Ctx2D, c: string, x: number, y: number, w = 1, h = 1): void => {
   g.fillStyle = c;
@@ -643,7 +658,7 @@ function rails(g: Ctx2D, xa: number, xb: number, z: number): void {
 // ------------------------------------------------------------------ miasto: obiekty
 
 function cityItems(items: Item[], r: () => number): void {
-  const push = (key: number, draw: (g: Ctx2D) => void): void => void items.push({ key, draw });
+  const push = (key: number, draw: (g: Ctx2D) => void, box?: Box): void => void items.push({ key, draw, box });
   for (let bj = -BJ; bj <= BJ; bj++)
     for (let bi = -BI; bi <= BI; bi++) {
       if (!on(bi, bj)) continue;
@@ -665,10 +680,10 @@ function cityItems(items: Item[], r: () => number): void {
           const bx = two ? (k ? R - bw / 2 : L + bw / 2) : L + bw / 2 + r() * (wB - bw), bz = Bt - bd / 2 - (two && k ? 0.25 : 0);
           const rv = r();
           const b: Bld = { x: bx, z: bz, w: bw, d: bd, floors: Math.round(9 + core * 7 + r() * 5), col: [0x5e646a, 0x6a6862, 0x55524e, 0x7a7468][Math.floor(r() * 4)], roof: ROOFS[Math.floor(r() * 4)], ruin: rv < 0.3 ? 3 : rv < 0.55 ? 1 : rv < 0.75 ? 2 : 0, glass: r() < 0.55, seed: Math.floor(r() * 1e9) };
-          push(bx + bz, (g) => building(g, b));
+          push(bx + bz, (g) => building(g, b), boxOf(bx, bz, bw, bd));
         }
         const ad = dB * 0.3, ab: Bld = { x: L + wB / 2, z: T + ad / 2, w: wB * 0.9, d: ad, floors: 2 + Math.floor(r() * 3), col: WALLS[Math.floor(r() * WALLS.length)], roof: ROOFS[0], ruin: r() < 0.4 ? 1 : 0, glass: false, seed: Math.floor(r() * 1e9) };
-        push(ab.x + ab.z, (g) => building(g, ab));
+        push(ab.x + ab.z, (g) => building(g, ab), boxOf(ab.x, ab.z, ab.w, ab.d));
         continue;
       }
       const suburb = e > 0.62;
@@ -696,7 +711,7 @@ function cityItems(items: Item[], r: () => number): void {
           if (suburb && r() < 0.6) {
             const ruined = r() < 0.45, rc = [0x8a4a34, 0x6a5a4a, 0x5a4a44][Math.floor(r() * 3)];
             const hw = Math.min(pw - 0.12, 0.9), hd = rd * 0.85;
-            push(lx + rz, (g) => house(g, lx, rz, hw, hd, col, rc, seed, ruined));
+            push(lx + rz, (g) => house(g, lx, rz, hw, hd, col, rc, seed, ruined), boxOf(lx, rz, hw, hd));
             continue;
           }
           const rv = r();
@@ -715,7 +730,7 @@ function cityItems(items: Item[], r: () => number): void {
           }
           const floors = Math.max(1, Math.round((suburb ? 1 : 2) + core * 6 * r() + r() * (suburb ? 1.5 : 3)));
           const b: Bld = { x: lx, z: rz, w: Math.max(0.4, pw - 0.1), d: rd, floors, col, roof: ROOFS[Math.floor(r() * 4)], ruin: rv < 0.42 ? 1 : rv < 0.58 ? 2 : 0, glass: false, seed };
-          push(lx + rz, (g) => building(g, b));
+          push(lx + rz, (g) => building(g, b), boxOf(lx, rz, b.w, rd));
         }
       }
     }
@@ -820,12 +835,13 @@ function plaza(items: Item[], cx: number, cz: number, L: number, R: number, T: n
 // ------------------------------------------------------------------ pozostałe strefy
 
 function regionItems(items: Item[], r: () => number): void {
-  const push = (key: number, draw: (g: Ctx2D) => void): void => void items.push({ key, draw });
+  const push = (key: number, draw: (g: Ctx2D) => void, box?: Box): void => void items.push({ key, draw, box });
   // ================= strefa przemysłowa: hale szedowe, kominy, chłodnia, zbiorniki, tory, kontenery, suwnica
-  const halls: [number, number, number, number, number, number][] = [[8.7, -11.9, 2.3, 1.5, 4, 0x7a4a30], [12.1, -12.7, 2.5, 1.8, 5, 0x5a4a40], [16.1, -12.4, 2.1, 1.6, 4, 0x6a5040], [11.3, -9.1, 1.9, 1.2, 3, 0x6a5a4a]];
-  halls.forEach(([x, z, w, d, f, col], i) => {
+  const hallLook: [number, number][] = [[4, 0x7a4a30], [5, 0x5a4a40], [4, 0x6a5040], [3, 0x6a5a4a]];
+  HALLS.forEach(([x, z, w, d], i) => {
+    const [f, col] = hallLook[i];
     const b: Bld = { x, z, w, d, floors: f, col, roof: 0x5a5450, ruin: 0, glass: false, seed: 300 + i, saw: true };
-    push(x + z, (g) => building(g, b));
+    push(x + z, (g) => building(g, b), boxOf(x, z, w, d));
   });
   for (const [x, z, h] of [[13.5, -14.1, 4.6], [9.9, -13.1, 3.6], [17.3, -13.6, 3.9]]) {
     push(x + z, (g) => {
@@ -1248,7 +1264,7 @@ function regionItems(items: Item[], r: () => number): void {
   });
   for (const [x, z, seed] of [[-6.5, 15.2, 1], [9.5, 16.6, 2], [-26, 11.5, 3], [-27.5, 2.5, 4]]) {
     if (!freeAt(x, z, 1)) continue;
-    push(x + z, (g) => house(g, x, z, 1.0, 0.6, 0x7a6a52, 0x6a3a2a, seed * 97, seed % 2 === 1));
+    push(x + z, (g) => house(g, x, z, 1.0, 0.6, 0x7a6a52, 0x6a3a2a, seed * 97, seed % 2 === 1), boxOf(x, z, 1.0, 0.6));
     push(x + 1.3 + z - 0.6, (g) => {
       const info = isoBox(g, x + 1.3, z - 0.6, 0.9, 0.8, 0.7, 0x7a4a30, 0, true, (X, bt, tp, south, t, len) => {
         if (south && t > len / 2 - 3 && t < len / 2 + 2) px(g, '#1a1410', X, bt - 7, 1, 7);
@@ -1387,6 +1403,9 @@ function floraItems(items: Item[], r: () => number): void {
   }
 }
 
+/** Obiekty i gotowe płótno ostatnio malowanej mapy - źródło warstw przesłaniających (regionOccluders). */
+let lastPaint: { items: Item[]; canvas: HTMLCanvasElement } | null = null;
+
 /** Maluje całą mapę regionu do tekstury `key` (MAP_W x MAP_H). */
 export function paintRegion(scene: Phaser.Scene, key: string, w = MAP_W, h = MAP_H): void {
   canvasTexture(scene, key, w, h, (g) => {
@@ -1404,23 +1423,158 @@ export function paintRegion(scene: Phaser.Scene, key: string, w = MAP_W, h = MAP
     grad.addColorStop(1, 'rgba(24,10,4,0.5)');
     g.fillStyle = grad;
     g.fillRect(0, 0, w, h);
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    c.getContext('2d')?.drawImage(g.canvas, 0, 0);
+    lastPaint = { items, canvas: c };
   });
 }
 
+/** Szerokość pasma przesłaniania (jednostki x + z) i szerokość kawałka w pikselach. */
+const OCC_BAND = 0.25, OCC_CHUNK = 48, OCC_PAD = 2, ATLAS = 512;
+
+/** Kawałek obiektów z jednego pasma x + z: gdzie leży na mapie i w którym atlasie. */
+export interface Occluder {
+  /** Klucz sortowania (x + z, jednostki świata) - postać o większym kluczu stoi przed nim. */
+  key: number;
+  x: number;
+  y: number;
+  tex: string;
+  frame: string;
+  /** Szerokość / wysokość kawałka (piksele mapy). */
+  w: number;
+  h: number;
+  /** Podstawa bryły (budynki) - scena rozstrzyga nią "przed / za" dla postaci obok. */
+  box?: Box;
+}
+
+/**
+ * Warstwy przesłaniające: mapa jest jednym obrazem, więc postacie rysowane na nim zawsze byłyby "na dachach".
+ * Obiekty (budynki, wraki, drzewa...) dzielimy na pasma po kluczu x + z; dla każdego pasma kopiujemy z gotowej mapy
+ * piksele, które te obiekty zakrywają (pełne kolory końcowe, więc nic nie jest rysowane podwójnie), i pakujemy je
+ * do atlasów. Scena kładzie kawałki nad mapą z głębią z klucza - postać za budynkiem znika za nim.
+ * Wywoływać po paintRegion.
+ */
+export function regionOccluders(scene: Phaser.Scene, prefix: string): Occluder[] {
+  const lp = lastPaint;
+  if (!lp) return [];
+  const W0 = lp.canvas.width, H0 = lp.canvas.height;
+  const base = lp.canvas.getContext('2d')?.getImageData(0, 0, W0, H0).data;
+  const scratch = document.createElement('canvas');
+  scratch.width = W0;
+  scratch.height = H0;
+  const sg = scratch.getContext('2d', { willReadFrequently: true });
+  if (!base || !sg) return [];
+
+  // 1) pasma -> kawałki (prostokąt na mapie + maska pokrycia)
+  interface Piece { key: number; x: number; y: number; w: number; h: number; mask: Uint8Array; box?: Box; ax?: number; ay?: number; atlas?: number }
+  const pieces: Piece[] = [];
+  const items = lp.items.filter((it) => it.key > -100);
+  for (let i = 0; i < items.length; ) {
+    const k0 = Math.floor(items[i].key / OCC_BAND) * OCC_BAND;
+    const band: Item[] = [];
+    while (i < items.length && items[i].key < k0 + OCC_BAND) band.push(items[i++]);
+    // obiekty pasma leżą w poziomym pasie ekranu: ziemia na OY + k * B, wysokość terenu i budynków podnosi je w górę
+    const y0 = Math.max(0, Math.floor(OY + k0 * B - 240)), y1 = Math.min(H0, Math.ceil(OY + (k0 + OCC_BAND) * B + 24));
+    if (y1 <= y0) continue;
+    // budynki osobno (każdy z własną podstawą), drobiazgi pasma razem, pocięte na kawałki po OCC_CHUNK kolumn
+    const groups: { items: Item[]; box?: Box }[] = band.filter((it) => it.box).map((it) => ({ items: [it], box: it.box }));
+    const rest = band.filter((it) => !it.box);
+    if (rest.length) groups.push({ items: rest });
+    for (const grp of groups) {
+      sg.clearRect(0, 0, W0, H0);
+      for (const it of grp.items) it.draw(sg);
+      // budynek: tylko kolumny ekranu nad jego podstawą (plus zapas na gzymsy); drobiazgi: cała szerokość
+      const bx = grp.box;
+      const rx0 = bx ? Math.max(0, Math.floor(OX + (bx.x0 - bx.z1) * A) - 6) : 0;
+      const rx1 = bx ? Math.min(W0, Math.ceil(OX + (bx.x1 - bx.z0) * A) + 6) : W0;
+      if (rx1 <= rx0) continue;
+      const RW = rx1 - rx0, a = sg.getImageData(rx0, y0, RW, y1 - y0).data;
+      const chunk = bx ? RW : OCC_CHUNK;
+      for (let cx = 0; cx < RW; cx += chunk) {
+        const cw = Math.min(chunk, RW - cx);
+        let minX = RW, maxX = -1, minY = H0, maxY = -1;
+        for (let y = 0; y < y1 - y0; y++)
+          for (let x = cx; x < cx + cw; x++)
+            if (a[(y * RW + x) * 4 + 3] >= 128) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+        if (maxX < 0) continue;
+        const w = maxX - minX + 1, h = maxY - minY + 1, mask = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) mask[y * w + x] = a[((minY + y) * RW + minX + x) * 4 + 3] >= 128 ? 1 : 0;
+        pieces.push({ key: bx ? grp.items[0].key : k0, x: rx0 + minX, y: y0 + minY, w, h, mask, box: bx });
+      }
+    }
+  }
+
+  // 2) pakowanie półkowe do atlasów ATLAS x ATLAS (z marginesem pikseli mapy dla skalera)
+  const P2 = OCC_PAD * 2;
+  const order = pieces.slice().sort((p, q) => q.h - p.h);
+  let atlas = 0, sx = 0, sy = 0, shelf = 0;
+  for (const p of order) {
+    if (p.w + P2 > ATLAS || p.h + P2 > ATLAS) continue;
+    if (sx + p.w + P2 > ATLAS) {
+      sx = 0;
+      sy += shelf;
+      shelf = 0;
+    }
+    if (sy + p.h + P2 > ATLAS) {
+      atlas++;
+      sx = sy = shelf = 0;
+    }
+    p.atlas = atlas;
+    p.ax = sx + OCC_PAD;
+    p.ay = sy + OCC_PAD;
+    sx += p.w + P2;
+    shelf = Math.max(shelf, p.h + P2);
+  }
+
+  // 3) atlasy: piksele gotowej mapy (z marginesem) + maska; powiększenie skalerem jak sama mapa
+  const out: Occluder[] = [];
+  for (let k = 0; k <= atlas; k++) {
+    const mine = pieces.filter((p) => p.atlas === k);
+    if (!mine.length) continue;
+    const c = document.createElement('canvas');
+    c.width = c.height = ATLAS;
+    const cg = c.getContext('2d');
+    if (!cg) continue;
+    const img = cg.createImageData(ATLAS, ATLAS), d = img.data, mask = new Uint8Array(ATLAS * ATLAS);
+    for (const p of mine) {
+      for (let y = -OCC_PAD; y < p.h + OCC_PAD; y++)
+        for (let x = -OCC_PAD; x < p.w + OCC_PAD; x++) {
+          const mx = Math.min(W0 - 1, Math.max(0, p.x + x)), my = Math.min(H0 - 1, Math.max(0, p.y + y));
+          const so = (my * W0 + mx) * 4, to = ((p.ay! + y) * ATLAS + p.ax! + x) * 4;
+          d[to] = base[so];
+          d[to + 1] = base[so + 1];
+          d[to + 2] = base[so + 2];
+          d[to + 3] = 255;
+        }
+      for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) mask[(p.ay! + y) * ATLAS + p.ax! + x] = p.mask[y * p.w + x];
+    }
+    cg.putImageData(img, 0, 0);
+    const tex = `${prefix}${k}`;
+    const frames = mine.map((p, i) => ({ name: `o${i}`, x: p.ax!, y: p.ay!, w: p.w, h: p.h }));
+    addHiRes(scene, tex, c, { mask }, frames);
+    mine.forEach((p, i) => out.push({ key: p.key, x: p.x, y: p.y, w: p.w, h: p.h, tex, frame: `o${i}`, box: p.box }));
+  }
+  return out;
+}
+
 /** Miejsca animowanych ognisk (płonące beczki na ulicach, obóz Nomadów, Przystań) - w pikselach mapy. */
-export function regionFires(): { x: number; y: number; size: number }[] {
+export function regionFires(): { x: number; y: number; size: number; key: number }[] {
   const pts: [number, number][] = [[1, -1], [-2, 1], [3, 2], [-1, -3], [4, 0], [-4, -1], [2, 3]];
-  const out = pts.map(([gx, gz]) => {
-    const p = P(CX + (gx + 0.5) * G - 0.6, CZ + (gz + 0.5) * G + 0.05);
-    return { x: p.x, y: p.y, size: 0.4 };
-  });
-  const camp = P(22, 9.5), home = P(HX - 0.4, HZ + 0.05);
-  out.push({ x: camp.x, y: camp.y, size: 0.55 }, { x: home.x, y: home.y, size: 0.45 });
+  const at = (x: number, z: number, size: number): { x: number; y: number; size: number; key: number } => ({ ...P(x, z), size, key: x + z });
+  const out = pts.map(([gx, gz]) => at(CX + (gx + 0.5) * G - 0.6, CZ + (gz + 0.5) * G + 0.05, 0.4));
+  out.push(at(22, 9.5, 0.55), at(HX - 0.4, HZ + 0.05, 0.45));
   return out;
 }
 
 /** Czubek masztu przy bunkrze (czerwona latarnia). */
-export const beaconPos = (): { x: number; y: number } => {
+export const beaconPos = (): { x: number; y: number; key: number } => {
   const p = P(-10.6, -9.0, 4);
-  return { x: p.x, y: p.y - 1 };
+  return { x: p.x, y: p.y - 1, key: -10.6 - 9.0 };
 };
