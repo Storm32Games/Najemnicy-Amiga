@@ -15,7 +15,7 @@ import {
   LOCKS, DEVICES, PROP_KIND, SIDE_TYPES, BIOME_NAMES, TYPE_NAMES, FACTION_NAMES, MOOD_NAMES, EVENT_CHANCE, EXTRACTION_OBJECTIVES,
   SIGHT_PC, SIGHT_NEUTRAL, CRATE_SKILLS, LOCK_SKILLS, HACK_SKILLS, IMPROVISED_PENALTY, CREDITS,
   createCharacter, createEnemy, generateMap, getAttackBonus, getStat, getWeapons, hashSeed, makeRng, normWeapon, recruitCharacter, strike,
-  allEnemyIds, CellKind, HMAP, heightGrid, SECTORS, HOME, CITY, GATE, CRATER, PLAZAS,
+  allEnemyIds, CellKind, HMAP, heightGrid, SECTORS, HOME, CITY, GATE, CRATER, PLAZAS, d, roll, check, hitChances, randInt,
   type Biome, type Character, type StatKey,
 } from '../../src/core/index.ts';
 import { FAUNA_CHANCE, FAUNA_KINDS, faunaAttackEvent } from '../../src/core/campaign/events.ts';
@@ -134,6 +134,39 @@ const los = BIOMES.map((biome) => {
   };
 });
 
+// Kości: sekwencje rzutów, wyrażenia (z połowieniem), testy k20, szanse trafienia.
+const diceSeq = [20, 6, 4, 8, 10, 12].map((sides) => {
+  const seed = `dice:d${sides}`;
+  const r = makeRng(seed);
+  return { seed, sides, values: Array.from({ length: 24 }, () => d(sides, r)) };
+});
+const randInts = (() => {
+  const r = makeRng('dice:randint');
+  return { seed: 'dice:randint', a: -3, b: 7, values: Array.from({ length: 24 }, () => randInt(-3, 7, r)) };
+})();
+const ROLL_EXPRS = ['1d4', '1d6+2', '2d6+4', '3d6+2', '1d12+8', '2d8+7', '4d6+6', '1d6-1', '5'];
+const rolls = ROLL_EXPRS.flatMap((expr) => [0, 1, 2].map((halves) => {
+  const seed = `roll:${expr}:${halves}`;
+  const res = roll(expr, makeRng(seed), halves);
+  return { seed, expr, halves, total: res.total, values: res.rolls, mod: res.mod };
+}));
+const checks: unknown[] = [];
+for (const [mod, dc] of [[0, 10], [5, 15], [12, 18], [-2, 14], [20, 25], [7, 30], [3, 3]] as const) {
+  for (const halves of [0, 1, 2]) {
+    const seed = `check:${mod}:${dc}:${halves}`;
+    const r = makeRng(seed);
+    for (let k = 0; k < 6; k++) {
+      const c = check(mod, dc, r, halves);
+      checks.push({ seed, k, mod, dc, halves, raw: c.raw, d20: c.d20, total: c.total, degree: c.degree });
+    }
+  }
+}
+const chances: unknown[] = [];
+for (let mod = -4; mod <= 24; mod += 4) for (const dc of [12, 16, 20, 24, 28]) for (const halves of [0, 1, 2]) {
+  const h = hitChances(mod, dc, halves);
+  chances.push({ mod, dc, halves, hit20: Math.round(h.hit * 20), crit20: Math.round(h.crit * 20) });
+}
+
 const vectors = {
   _info: 'Oczekiwane wyniki logiki z src/core. Port w C musi dawać identyczne liczby (patrz docs/AMIGA_PORT_SPEC.md, rozdz. "Determinizm").',
   hashSeed: ['x', 'alpha', 'k3_abcde', 'story1', 'vec_ruins_alpha', 'Zażółć gęślą jaźń'].map((s) => ({ s, h: hashSeed(s) })),
@@ -142,6 +175,7 @@ const vectors = {
     { seed: 'story1', u32: rngU32('story1', 16) },
     { seed: 0, u32: rngU32(0, 8) },
   ],
+  dice: { seq: diceSeq, randInts, rolls, checks, chances },
   recruits,
   enemies,
   strikes,
