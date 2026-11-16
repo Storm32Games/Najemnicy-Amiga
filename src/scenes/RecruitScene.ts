@@ -13,7 +13,6 @@ import { abilityDef, ancestryOf, classDef, itemDef } from '../core/rules/lookup'
 import { getStat } from '../core/rules/stats';
 import type { Character } from '../core/rules/types';
 import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, canvasTexture, cut, dunes, enter, goto, hex, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
-import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { SPRITE_DIRS, hasSprite, spriteIdOf, spriteTexKey } from './iso/SpriteUnits';
 import { Tip, miniButton, modalOpen, namePrompt, openWindow, portrait } from './ui/Widgets';
 
@@ -45,7 +44,7 @@ export class RecruitScene extends Phaser.Scene {
   private dust: Motes | null = null;
   private tip!: Tip;
   /** Wybrani najemnicy stojący na placu pod panelami (Oldgame/src/scenes/recruit.js:122-123). */
-  private figures = new Map<string, Phaser.GameObjects.Image>();
+  private figures = new Map<string, Phaser.GameObjects.Container>();
   /** Zegary losowych obrotów sylwetek (sprite'y z 8 kierunkami). */
   private turners = new Map<string, Phaser.Time.TimerEvent>();
 
@@ -133,11 +132,14 @@ export class RecruitScene extends Phaser.Scene {
     const L = (x: number, y: number, s: string, o: Parameters<typeof label>[4] = {}) => add(label(this, x, y, s, o));
 
     // sylwetka
-    // cała postać przodem (sprite 64x64 w skali 1 = 64 px projektowych) w ramce portretu; bez sprite'a - portret
+    // cała postać (sprite 64x64 w skali 1 = 64 px projektowych) w ramce portretu; bez sprite'a - portret
     const sprite = spriteIdOf(r);
+    this.turners.get('detail')?.remove();
     if (hasSprite(this, sprite)) {
+      // cała postać losowo rozgląda się (przez sąsiednie kierunki), zaczyna przodem
       add(this.add.rectangle(8, 8, 64, 64, 0x1c1612).setOrigin(0).setStrokeStyle(1, PAL.edge));
-      add(this.add.image(8 + 32, 8 + 63, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64));
+      const fig = add(this.add.image(8 + 32, 8 + 63, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64));
+      this.turn('detail', sprite, fig, SPRITE_DIRS.indexOf('south'));
     } else add(portrait(this, 8, 8, ch, 64));
     const nm = L(78, 8, ch.name, { size: 12, color: parseColor(ch.nameColor, PAL.amber), maxW: DET_W - 76 - 84 });
     add(miniButton(this, Math.min(DET_W - 76, 84 + nm.displayWidth), 7, '✎ Zmień imię', () => void this.rename(r), { w: 70 }).box);
@@ -299,35 +301,23 @@ export class RecruitScene extends Phaser.Scene {
     if (sound) SoundManager.sfx(n ? 'pickup' : 'click', { vol: 0.5 });
   }
 
-  /** Sylwetki wybranych w kolejności wyboru; nowa postać "wyrasta" jak w Oldgame (skala 0.6 -> 1). */
+  /** Portrety wybranych w kolejności wyboru na placu pod panelami; nowy pojawia się z przenikaniem. */
   private standFigures(): void {
-    for (const [id, sp] of this.figures) {
+    for (const [id, pc] of this.figures) {
       if (this.picks.some((r) => r.id === id)) continue;
-      this.turners.get(id)?.remove();
-      this.turners.delete(id);
-      sp.destroy();
+      pc.destroy();
       this.figures.delete(id);
     }
-    const n = this.picks.length;
+    const n = this.picks.length, size = 26;
     this.picks.forEach((r, i) => {
-      const x = Math.round(142 + (i - (n - 1) / 2) * 34), y = BASE_H - 3 - (i % 2);
-      const sprite = spriteIdOf(r);
-      let sp = this.figures.get(r.id);
-      if (!sp) {
-        let scale = 1;
-        if (hasSprite(this, sprite)) {
-          // sprite 64x64 w 2x gęstości: skala 0.5 = 32 px projektowych, stopy przy dolnej krawędzi obrazu
-          scale = 0.5;
-          sp = this.add.image(x, y, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64).setDepth(2);
-          this.turn(r.id, sprite, sp, 2);
-        } else sp = addUnit(this, x, y, `pc_${r.id}`, unitLookOf(this.preview(r))).setDepth(2);
-        sp.setScale(scale * 0.6).setData('scale', scale);
-        this.tweens.add({ targets: sp, scale, duration: 250, ease: 'Back.easeOut' });
-        this.figures.set(r.id, sp);
+      const x = Math.round(142 + (i - (n - 1) / 2) * 34 - size / 2), y = BASE_H - size - 4;
+      let pc = this.figures.get(r.id);
+      if (!pc) {
+        pc = portrait(this, x, y, this.preview(r), size).setDepth(2).setAlpha(0);
+        this.tweens.add({ targets: pc, alpha: 1, duration: 200 });
+        this.figures.set(r.id, pc);
       }
-      this.tweens.add({ targets: sp, x, y, duration: 180 });
-      // obracające się sprite'y same patrzą w różne strony; proceduralne odbite do środka placu
-      if (!this.turners.has(r.id)) sp.setFlipX(i >= n / 2 && n > 1);
+      this.tweens.add({ targets: pc, x, y, duration: 180 });
     });
   }
 
