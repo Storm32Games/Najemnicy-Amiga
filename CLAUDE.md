@@ -27,7 +27,9 @@ We are migrating an existing pure-JavaScript isometric post-apocalyptic turn-bas
    - `UIScene.ts`: Runs in parallel to render HUD (AP counter, HP/Radiation bars, inventory, combat log, End Turn button).
 
 ## Isometric Projection & Pixel Art Rules
-1. **Crisp Pixels:** `pixelArt: true`, `roundPixels: true`, base resolution `320x180` or `480x270`.
+1. **Crisp Pixels:** `pixelArt: true`, `roundPixels: true`. Scene coordinates use the `480x270` design grid (`BASE_W x BASE_H`).
+   - **Default resolution: 1920x1080** (Full HD = design grid x4). Scaling goes both ways from it: down to **HD 1280x720** and **640x480**, up to **QHD 2560x1440** and **4K 3840x2160**. These five presets are the resolution choices in Options (`RES_PRESETS` in `src/scenes/ui/Settings.ts`; URL `?res=640x480|hd|fhd|qhd|4k`).
+   - The canvas is the preset size; `ZOOM = min(canvasW / 480, canvasH / 270)` and can be fractional (HD 2.67, QHD 5.33). Non-16:9 presets (640x480) are letterboxed: cameras get a centered `480x270 * ZOOM` viewport (`fitViewport` / `VX, VY, VW, VH` in `Kit.ts`). Never assume canvas size = `BASE * ZOOM` or that `ZOOM` is an integer; use `CANVAS_W/H` for full-canvas layers.
 2. **Isometric Math:** Keep game logic in orthogonal grid coordinates `(gx, gy)`. Convert to screen coordinates only in the rendering layer:
    - `isoX = (gx - gy) * (tileWidth / 2)`
    - `isoY = (gx + gy) * (tileHeight / 2)`

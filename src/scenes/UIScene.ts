@@ -146,7 +146,9 @@ let partyScale = 1;
 function panelScales(): number[] {
   const out: number[] = [];
   for (let k = Math.max(1, Math.ceil(ZOOM / 2)); k <= Math.floor(ZOOM * 1.5); k++) out.push(k / ZOOM);
-  return out;
+  // przy ułamkowym ZOOM (HD, QHD, 640x480) skala 1 nie wypada na całkowite k - dokładamy ją, bo to domyślna skala paneli
+  if (!out.some((v) => Math.abs(v - 1) < 1e-6)) out.push(1);
+  return out.sort((a, b) => a - b);
 }
 function nearestScale(list: number[], s: number): number {
   let best = 0;

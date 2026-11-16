@@ -33,7 +33,7 @@ import { Atmosphere, type MoodName, type WorldLight, asMood, fogMemoryTint } fro
 import { WorldFx, tracerStyleFor } from './fx/WorldFx';
 import { paintScorch } from './iso/FxArt';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, SX0, SY0, ZOOM, PAL, label } from './ui/Kit';
+import { BASE_H, BASE_W, SX0, SY0, VH, VW, ZOOM, PAL, fitViewport, label } from './ui/Kit';
 import { FRAME_CORPSE, FRAME_DOWN, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
 
 // Pełna walka PF2e z src/core/tactical (Mission + Combat + AI): drużyna 3 najemników, grupy wrogów,
@@ -1135,7 +1135,7 @@ export class WorldScene extends Phaser.Scene {
     cam.setZoom(ZOOM * this.camZoom);
     // kontener ekranowy: świat = środek + (px * ZOOM - środek) / zoom kamery
     const k = 1 / this.camZoom;
-    this.overlay.setScale(k).setPosition(((BASE_W * ZOOM) / 2) * (1 - k / ZOOM), ((BASE_H * ZOOM) / 2) * (1 - k / ZOOM));
+    this.overlay.setScale(k).setPosition((VW / 2) * (1 - k / ZOOM), (VH / 2) * (1 - k / ZOOM));
     this.refreshPathPreview();
   }
 
@@ -1147,7 +1147,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private setupCamera(): void {
-    const cam = this.cameras.main;
+    const cam = fitViewport(this.cameras.main);
     this.setCameraBounds();
     cam.setZoom(ZOOM);
     cam.setRoundPixels(true);

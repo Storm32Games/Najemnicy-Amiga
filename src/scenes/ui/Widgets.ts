@@ -9,8 +9,8 @@ import { abilityDef, itemDef } from '../../core/rules/lookup';
 import { abilityIcon, abilityKind, itemIcon } from '../legacy/icons';
 import { portraitCanvas } from '../legacy/portraits';
 import { addHiRes } from '../iso/HiRes';
-import { ART, BASE_H, BASE_W, PAL, type UiButton, ZOOM, applyZoom, autoZoom, button, canApplyZoomLive, hex, label, panel, parseColor } from './Kit';
-import { RES_CHOICES, type ResSetting, Settings, UI_SIZES } from './Settings';
+import { ART, BASE_H, BASE_W, CANVAS_H, CANVAS_W, PAL, RES, type UiButton, ZOOM, applyResolution, button, canApplyZoomLive, hex, label, panel, parseColor } from './Kit';
+import { RES_PRESETS, type ResSetting, Settings, UI_SIZES, resPreset } from './Settings';
 import { MissionLayout } from './MissionLayout';
 
 // Okna, podpowiedzi, listy przewijane, pole tekstowe, opcje i zapis gry - odpowiedniki UI.modal / UI.toast / UI.tooltip,
@@ -23,15 +23,50 @@ const D_TOAST = 1600;
 // ------------------------------------------------------------------ zapis gry (Oldgame/src/core/game.js)
 
 const SAVE_KEY = 'pyl-i-rdza-save-v1';
+/** Liczba ręcznych slotów zapisu (obok autozapisu pod SAVE_KEY). */
+export const SAVE_SLOTS = 3;
+const slotKey = (slot: number): string => `${SAVE_KEY}-slot${slot}`;
+
+/** Opis slotu do listy zapisów (bez wczytywania całego stanu do kampanii). */
+export interface SaveSlotInfo {
+  slot: number;
+  /** Czas zapisu (ms od epoki) albo null dla starych zapisów bez znacznika. */
+  time: number | null;
+  day: number;
+  scrap: number;
+  party: string[];
+  level: number;
+}
+
+const readState = (key: string): Partial<CampaignState> | null => {
+  try {
+    const s = JSON.parse(window.localStorage.getItem(key) ?? 'null') as (Partial<CampaignState> & { savedAt?: number }) | null;
+    return s && s.version === 1 && Array.isArray(s.party) ? s : null;
+  } catch {
+    return null; // uszkodzony zapis traktujemy jak brak zapisu
+  }
+};
+
+const writeState = (key: string): boolean => {
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ ...campaign.state, savedAt: Date.now() }));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const applyState = (s: Partial<CampaignState> | null): boolean => {
+  if (!s) return false;
+  const { savedAt: _t, ...rest } = s as Partial<CampaignState> & { savedAt?: number };
+  campaign.state = Object.assign(freshState(), rest);
+  return true;
+};
 
 export const Save = {
+  /** Autozapis (Kontynuuj). */
   write(): boolean {
-    try {
-      window.localStorage.setItem(SAVE_KEY, JSON.stringify(campaign.state));
-      return true;
-    } catch {
-      return false;
-    }
+    return writeState(SAVE_KEY);
   },
   exists(): boolean {
     try {
@@ -41,16 +76,7 @@ export const Save = {
     }
   },
   load(): boolean {
-    try {
-      const s = JSON.parse(window.localStorage.getItem(SAVE_KEY) ?? 'null') as Partial<CampaignState> | null;
-      if (s && s.version === 1 && Array.isArray(s.party)) {
-        campaign.state = Object.assign(freshState(), s);
-        return true;
-      }
-    } catch {
-      /* uszkodzony zapis traktujemy jak brak zapisu */
-    }
-    return false;
+    return applyState(readState(SAVE_KEY));
   },
   clear(): void {
     try {
@@ -59,7 +85,89 @@ export const Save = {
       /* brak dostępu do pamięci przeglądarki */
     }
   },
+  /** Zapis do slotu 1..SAVE_SLOTS; uaktualnia też autozapis, żeby "Kontynuuj" wracał do tego samego miejsca. */
+  writeSlot(slot: number): boolean {
+    return writeState(slotKey(slot)) && writeState(SAVE_KEY);
+  },
+  /** Wczytuje slot do kampanii; po udanym wczytaniu autozapis wskazuje ten stan. */
+  loadSlot(slot: number): boolean {
+    const ok = applyState(readState(slotKey(slot)));
+    if (ok) writeState(SAVE_KEY);
+    return ok;
+  },
+  slotInfo(slot: number): SaveSlotInfo | null {
+    const s = readState(slotKey(slot)) as (Partial<CampaignState> & { savedAt?: number }) | null;
+    if (!s) return null;
+    const party = (s.party ?? []).filter((c) => !c.conditions?.dead);
+    return {
+      slot,
+      time: typeof s.savedAt === 'number' ? s.savedAt : null,
+      day: s.day ?? 1,
+      scrap: s.scrap ?? 0,
+      party: party.map((c) => c.name),
+      level: party.length ? Math.max(...party.map((c) => c.level ?? 1)) : 1,
+    };
+  },
+  anySlot(): boolean {
+    for (let i = 1; i <= SAVE_SLOTS; i++) if (Save.slotInfo(i)) return true;
+    return false;
+  },
 };
+
+const fmtTime = (t: number | null): string => {
+  if (t === null) return '';
+  const d = new Date(t);
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/**
+ * Okno slotów zapisu. `save`: zapisuje bieżącą kampanię (nadpisanie zajętego slotu wymaga potwierdzenia).
+ * `load`: wczytuje wybrany slot do kampanii. Zwraca numer slotu albo null po anulowaniu / błędzie.
+ */
+export function openSaveSlots(scene: Phaser.Scene, mode: 'save' | 'load'): Promise<number | null> {
+  return new Promise<number | null>((resolve) => {
+    const W = 260, ROW = 34, H = 30 + SAVE_SLOTS * (ROW + 4) + 24;
+    let result: number | null = null;
+    const win = openWindow(scene, W, H, mode === 'save' ? 'Zapisz grę' : 'Wczytaj grę', () => resolve(result));
+    for (let i = 1; i <= SAVE_SLOTS; i++) {
+      const info = Save.slotInfo(i);
+      const y = 22 + (i - 1) * (ROW + 4);
+      const row = scene.add.container(8, y);
+      row.add(scene.add.rectangle(0, 0, W - 16, ROW, 0x000000, 0.35).setOrigin(0).setStrokeStyle(1, PAL.edge));
+      row.add(label(scene, 6, 4, `SLOT ${i}`, { size: 7, bold: true, color: PAL.amber }));
+      if (info) {
+        row.add(label(scene, 48, 4, fmtTime(info.time), { size: 6, color: PAL.dim }));
+        row.add(label(scene, 6, 14, `Dzień ${info.day} · poz. ${info.level} · ${info.scrap} Złomu`, { size: 6 }));
+        const names = info.party.join(', ') || '(brak żywych najemników)';
+        row.add(label(scene, 6, 23, names.length > 34 ? `${names.slice(0, 33)}…` : names, { size: 5.5, color: PAL.dim }));
+      } else row.add(label(scene, 6, 15, '— pusty —', { size: 6.5, color: PAL.dim }));
+      const can = mode === 'save' || !!info;
+      const act = button(scene, W - 16 - 58, (ROW - 15) / 2, mode === 'save' ? 'Zapisz' : 'Wczytaj', async () => {
+        if (!can) return;
+        if (mode === 'save') {
+          if (info) {
+            const ok = await dialog(scene, { title: 'Nadpisać zapis?', body: `Slot ${i} zawiera już zapis (dzień ${info.day}). Nadpisać go?`, buttons: [{ label: 'Anuluj', value: false }, { label: 'Nadpisz', value: true, danger: true }] });
+            if (!ok) return;
+          }
+          if (Save.writeSlot(i)) {
+            SoundManager.sfx('pickup');
+            toast(scene, `Gra zapisana w slocie ${i}.`, 'good');
+            result = i;
+            win.close();
+          } else toast(scene, 'Zapis nie powiódł się!', 'bad');
+        } else if (Save.loadSlot(i) && campaign.state.party.length) {
+          result = i;
+          win.close();
+        } else toast(scene, 'Nie udało się wczytać zapisu.', 'bad');
+      }, { w: 54, h: 15, size: 6.5, primary: mode === 'save' || can });
+      if (!can) act.box.setAlpha(0.4);
+      row.add(act.box);
+      win.add(row);
+    }
+    win.add(button(scene, W - 62, H - 20, 'Anuluj', () => win.close(), { w: 54, size: 7 }).box);
+  });
+}
 
 // ------------------------------------------------------------------ portrety i ikony (malowane kodem z Oldgame/src/gfx)
 
@@ -82,7 +190,7 @@ const hashStr = (s: string): string => {
  * Tekstura portretu o rozmiarze projektowym `size` (domyślnie 32). Portret jest malowany w 2x gęstości projektowej
  * (32 -> 64 px, 40 -> 80 px), a HiRes dokłada Scale2x do gęstości płótna - bez skalowania na GPU, więc jest ostry.
  * Wyświetlaj go w tym samym rozmiarze, w jakim został zamówiony. Klucz zawiera ART: po zmianie rozdzielczości
- * (applyZoom) powstaje nowa tekstura w nowej gęstości.
+ * (applyResolution) powstaje nowa tekstura w nowej gęstości.
  */
 export function portraitKey(scene: Phaser.Scene, ch: PortraitSource, size = 32): string {
   const id = hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`);
@@ -388,25 +496,25 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     // --- rozdzielczość (dół, pełna szerokość); poza misją zmienia się od razu, w misji po ponownym uruchomieniu
     head(L, 164, 'Rozdzielczość obrazu');
     const marks: [ResSetting, UiButton][] = [];
+    const zoomTxt = (z: number): string => (Number.isInteger(z) ? `${z}` : z.toFixed(2));
     const paintRes = (): void => {
-      for (const [r, b] of marks) b.setLabel((Settings.values.res === r ? '● ' : '○ ') + (r === 'auto' ? 'Auto' : `${r}×`));
-      const want = Settings.values.res === 'auto' ? autoZoomFor() : Settings.values.res;
-      const now = `Teraz: ${BASE_W * ZOOM}×${BASE_H * ZOOM} (${ZOOM}× siatki ${BASE_W}×${BASE_H})`;
-      resNote.setText(want !== ZOOM ? `${now} → po ponownym uruchomieniu: ${BASE_W * want}×${BASE_H * want}` : now);
-      restart.box.setVisible(want !== ZOOM);
+      for (const [r, b] of marks) b.setLabel((Settings.values.res === r ? '● ' : '○ ') + resPreset(r).label);
+      const want = resPreset(Settings.values.res);
+      const now = `Teraz: ${CANVAS_W}×${CANVAS_H} (siatka ${BASE_W}×${BASE_H} ×${zoomTxt(ZOOM)})`;
+      resNote.setText(want.id !== RES ? `${now} → po ponownym uruchomieniu: ${want.w}×${want.h}` : now);
+      restart.box.setVisible(want.id !== RES);
     };
-    RES_CHOICES.forEach((r, i) => {
-      const b = button(scene, L + i * 51, 174, '', () => {
-        Settings.set('res', r);
-        const want = r === 'auto' ? autoZoomFor() : r;
-        if (canApplyZoomLive(scene.game)) applyZoom(scene.game, want);
+    RES_PRESETS.forEach((r, i) => {
+      const b = button(scene, L + i * 61, 174, '', () => {
+        Settings.set('res', r.id);
+        if (canApplyZoomLive(scene.game)) applyResolution(scene.game, r.id);
         paintRes();
-      }, { w: 48, h: 13, size: 6 });
-      marks.push([r, b]);
+      }, { w: 58, h: 13, size: 6 });
+      marks.push([r.id, b]);
       win.add(b.box);
     });
     const resNote = win.add(label(scene, L, 191, '', { size: 5.5, color: PAL.dim }));
-    win.add(label(scene, L, 200, 'Auto = największa ostra skala mieszcząca się w oknie przeglądarki.', { size: 5.5, color: PAL.dim }));
+    win.add(label(scene, L, 200, 'Domyślna: Full HD 1920×1080. Przy 640×480 (4:3) obraz ma czarne pasy.', { size: 5.5, color: PAL.dim }));
     win.add(label(scene, L, 208, 'W trakcie misji zmiana rozdzielczości wymaga ponownego uruchomienia.', { size: 5.5, color: PAL.dim }));
     const restart = button(scene, L, H - 22, 'Uruchom ponownie', async () => {
       const inMission = scene.scene.isActive('WorldScene');
@@ -431,9 +539,6 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     win.add(button(scene, W - 62, H - 22, 'Gotowe', () => win.close(), { w: 54, size: 7, primary: true }).box);
   });
 }
-
-/** Zoom trybu "Auto" przy obecnym oknie. */
-const autoZoomFor = (): number => autoZoom();
 
 // ------------------------------------------------------------------ imię najemnika (Oldgame/src/scenes/meta/nameedit.js)
 

@@ -11,7 +11,7 @@ import { RecruitScene } from './scenes/RecruitScene';
 import { TitleScene } from './scenes/TitleScene';
 import { TravelScene } from './scenes/TravelScene';
 import { UIScene } from './scenes/UIScene';
-import { BASE_H, BASE_W, ZOOM } from './scenes/ui/Kit';
+import { CANVAS_H, CANVAS_W } from './scenes/ui/Kit';
 import { Settings } from './scenes/ui/Settings';
 import { WorldScene } from './scenes/WorldScene';
 
@@ -53,9 +53,10 @@ class BootScene extends Phaser.Scene {
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'app',
-  // Siatka projektowa 480x270 renderowana w ZOOM-krotnej rozdzielczości (kamery mają zoom = ZOOM): gruby piksel, ostry tekst.
-  width: BASE_W * ZOOM,
-  height: BASE_H * ZOOM,
+  // Płótno w rozdzielczości presetu (domyślnie 1920x1080); siatka projektowa 480x270 rysowana z zoomem ZOOM
+  // (kamery mają zoom = ZOOM, przy 640x480 viewport z pasami): gruby piksel, ostry tekst.
+  width: CANVAS_W,
+  height: CANVAS_H,
   backgroundColor: '#000000',
   pixelArt: true,
   roundPixels: true,

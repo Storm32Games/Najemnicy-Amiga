@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BASE_H, BASE_W, ZOOM, ZOOM_EVENT } from './ui/Kit';
+import { CANVAS_H, CANVAS_W, ZOOM, ZOOM_EVENT } from './ui/Kit';
 import { Settings, type SettingsValues } from './ui/Settings';
 
 // Efekty retro nad całą grą (odpowiednik przebiegu post-process z Oldgame/src/gfx/post.js):
@@ -22,7 +22,7 @@ export class FxScene extends Phaser.Scene {
   create(): void {
     this.input.enabled = false;
     this.makeTextures();
-    const CW = BASE_W * ZOOM, CH = BASE_H * ZOOM;
+    const CW = CANVAS_W, CH = CANVAS_H;
     this.scan = this.add.tileSprite(0, 0, CW, CH, 'fx_scan').setOrigin(0);
     this.grain = this.add.tileSprite(0, 0, CW, CH, 'fx_grain').setOrigin(0).setBlendMode(Phaser.BlendModes.SCREEN);
     this.dither = this.add.tileSprite(0, 0, CW, CH, 'fx_bayer').setOrigin(0).setTileScale(ZOOM, ZOOM);
@@ -30,7 +30,7 @@ export class FxScene extends Phaser.Scene {
     this.events.on(ZOOM_EVENT, () => {
       if (this.textures.exists('fx_scan')) this.textures.remove('fx_scan');
       this.makeTextures();
-      const w = BASE_W * ZOOM, h = BASE_H * ZOOM;
+      const w = CANVAS_W, h = CANVAS_H;
       this.scan.setTexture('fx_scan').setSize(w, h);
       this.grain.setSize(w, h);
       this.dither.setSize(w, h).setTileScale(ZOOM, ZOOM);

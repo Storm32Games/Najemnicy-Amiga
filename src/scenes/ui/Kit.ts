@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SoundManager } from '../../audio/SoundManager';
-import { Settings } from './Settings';
+import { type ResSetting, Settings, resPreset } from './Settings';
 import { FLAME_TONGUES, MoteField, Q12, Q8, TickClock, TypeProgress, flameKQ12, flameSwayQ8, glowAlphaQ8, potTiles, secToQ8 } from '../../core/frontend';
 import { PixelText, pixelText } from './BitmapFont';
 import { addHiRes } from '../iso/HiRes';
@@ -10,64 +10,72 @@ export { PixelText } from './BitmapFont';
 // Wspólny zestaw UI scen menu + model rozdzielczości.
 //
 // Gra jest komponowana na siatce projektowej 480x270 (BASE_W x BASE_H) - wszystkie współrzędne scen są w tych
-// "pikselach projektowych". Płótno ma jednak rozmiar BASE * ZOOM, a każda kamera ma zoom = ZOOM, więc pixel art
-// zostaje gruby; tekst to czcionka bitmapowa w tej samej siatce pikseli (BitmapFont.ts).
+// "pikselach projektowych". Płótno ma rozmiar wybranego presetu (domyślnie 1920x1080, patrz Settings.RES_PRESETS),
+// a każda kamera ma zoom = ZOOM = min(płótno / siatka), więc pixel art zostaje gruby; tekst to czcionka bitmapowa
+// w tej samej siatce pikseli (BitmapFont.ts). ZOOM bywa ułamkowy (HD 2.67, QHD 5.33). Gdy proporcje płótna są inne
+// niż 16:9 (640x480), kamery dostają viewport BASE * ZOOM na środku płótna - reszta to czarne pasy.
 // (Odpowiednik Engine.pixelScale z Oldgame/src/core/engine.js.)
 
 export const BASE_W = 480;
 export const BASE_H = 270;
 
-/** Zoom dopasowany do okna (tryb "Automatyczna"). */
-export function autoZoom(): number {
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  // Liczone z rozmiaru ekranu, nie okna: ZOOM jest stały przez sesję, więc po przejściu na pełny ekran płótno
-  // trafia 1:1 w piksele monitora (1080p -> 4 -> 1920x1080). W oknie przeglądarka je tylko lekko zmniejsza -
-  // zmniejszanie rozmywa mniej niż powiększanie mniejszego płótna.
-  const sw = Math.max(window.innerWidth, window.screen?.width || 0);
-  const sh = Math.max(window.innerHeight, window.screen?.height || 0);
-  const fit = Math.min(sw / BASE_W, sh / BASE_H) * dpr;
-  return Math.max(2, Math.min(6, Math.ceil(fit)));
-}
-function pickZoom(): number {
-  const r = Settings.startRes;
-  return r === 'auto' ? autoZoom() : r;
-}
+/** Preset rozdzielczości aktywny w tej chwili (żywe wiązanie; zmienia go applyResolution). */
+export let RES: ResSetting = Settings.startRes;
+/** Rozmiar płótna w pikselach ekranu. */
+export let CANVAS_W = resPreset(RES).w;
+export let CANVAS_H = resPreset(RES).h;
 /**
- * Piksele płótna na piksel projektowy. Żywe wiązanie (`let`): zmienia je tylko applyZoom() (Opcje, poza misją);
+ * Piksele płótna na piksel projektowy. Żywe wiązanie (`let`): zmienia je tylko applyResolution() (Opcje, poza misją);
  * kod czytający ZOOM / SX0 / SY0 przy każdym użyciu widzi nową wartość.
  */
-export let ZOOM = pickZoom();
+export let ZOOM = Math.min(CANVAS_W / BASE_W, CANVAS_H / BASE_H);
 /**
  * Gęstość nowych tekstur: teksele na piksel projektowy (= ZOOM, czyli 1 teksel = 1 piksel płótna; patrz iso/HiRes.ts).
- * Idzie za ZOOM w applyZoom(); tekstury zbudowane wcześniej zostają w starej gęstości (wymiary projektowe się nie zmieniają).
+ * Idzie za ZOOM; tekstury zbudowane wcześniej zostają w starej gęstości (wymiary projektowe się nie zmieniają).
  */
 export let ART = ZOOM;
+/** Lewy górny róg obszaru gry (BASE * ZOOM) na płótnie - niezerowy tylko przy pasach (640x480). */
+export let VX = Math.round((CANVAS_W - BASE_W * ZOOM) / 2);
+export let VY = Math.round((CANVAS_H - BASE_H * ZOOM) / 2);
+/** Rozmiar obszaru gry na płótnie (viewport kamer). */
+export let VW = CANVAS_W - 2 * VX;
+export let VH = CANVAS_H - 2 * VY;
 
 /** Przesunięcie obiektów ze scrollFactor(0) przy kamerze z zoomem wokół środka: pozycja ekranu (x, y) -> (x + SX0, y + SY0). */
-export let SX0 = (BASE_W / 2) * (ZOOM - 1);
-export let SY0 = (BASE_H / 2) * (ZOOM - 1);
+export let SX0 = (VW - BASE_W) / 2;
+export let SY0 = (VH - BASE_H) / 2;
 
-/** Zdarzenie sceny emitowane po zmianie ZOOM: (nowy, stary). Scena z własną kamerą może je obsłużyć sama. */
+function setRes(id: ResSetting): void {
+  RES = id;
+  CANVAS_W = resPreset(id).w;
+  CANVAS_H = resPreset(id).h;
+  ZOOM = Math.min(CANVAS_W / BASE_W, CANVAS_H / BASE_H);
+  ART = ZOOM;
+  VX = Math.round((CANVAS_W - BASE_W * ZOOM) / 2);
+  VY = Math.round((CANVAS_H - BASE_H * ZOOM) / 2);
+  VW = CANVAS_W - 2 * VX;
+  VH = CANVAS_H - 2 * VY;
+  SX0 = (VW - BASE_W) / 2;
+  SY0 = (VH - BASE_H) / 2;
+}
+
+/** Zdarzenie sceny emitowane po zmianie rozdzielczości: (nowy ZOOM, stary ZOOM). Scena z własną kamerą może je obsłużyć sama. */
 export const ZOOM_EVENT = 'kit-zoom';
 
 /** Czy rozdzielczość da się zmienić bez restartu (misja ma własną kamerę i nakładkę ekranową liczoną przy starcie). */
 export const canApplyZoomLive = (game: Phaser.Game): boolean => !game.scene.isActive('WorldScene') && !game.scene.isActive('UIScene');
 
 /**
- * Zmiana rozdzielczości na żywo (Phaser ScaleManager.setGameSize): płótno BASE * z, kamery scen statycznych
- * (fitCamera) dostają nowy zoom. Scena nasłuchująca ZOOM_EVENT ustawia swoje kamery sama.
+ * Zmiana rozdzielczości na żywo (Phaser ScaleManager.setGameSize): płótno = preset, kamery scen statycznych
+ * (fitCamera) dostają nowy zoom i viewport. Scena nasłuchująca ZOOM_EVENT ustawia swoje kamery sama.
  */
-export function applyZoom(game: Phaser.Game, z: number): void {
-  if (z === ZOOM) return;
+export function applyResolution(game: Phaser.Game, id: ResSetting): void {
+  if (id === RES) return;
   const old = ZOOM;
-  ZOOM = z;
-  ART = z;
-  SX0 = (BASE_W / 2) * (ZOOM - 1);
-  SY0 = (BASE_H / 2) * (ZOOM - 1);
-  game.scale.setGameSize(BASE_W * z, BASE_H * z);
-  // rozmiary pełnoekranowych kamer aktualizuje CameraManager (zdarzenie RESIZE); tu tylko zoom aktywnych scen
+  setRes(id);
+  game.scale.setGameSize(CANVAS_W, CANVAS_H);
   for (const s of game.scene.getScenes(true)) {
-    if (s.events.listenerCount(ZOOM_EVENT)) s.events.emit(ZOOM_EVENT, z, old);
+    if (s.events.listenerCount(ZOOM_EVENT)) s.events.emit(ZOOM_EVENT, ZOOM, old);
     else if (s.cameras.main && Math.abs(s.cameras.main.zoom - old) < 1e-6) fitCamera(s);
   }
 }
@@ -104,9 +112,14 @@ export const parseColor = (s: string | undefined, fallback: number): number => {
 };
 export const cut = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
+/** Viewport kamery = obszar gry na płótnie (przy 16:9 całe płótno, przy 640x480 pas na środku). */
+export function fitViewport(cam: Phaser.Cameras.Scene2D.Camera): Phaser.Cameras.Scene2D.Camera {
+  return cam.setViewport(VX, VY, VW, VH);
+}
+
 /** Kamera sceny statycznej: widzi dokładnie prostokąt projektowy 0..480 x 0..270. */
 export function fitCamera(scene: Phaser.Scene): Phaser.Cameras.Scene2D.Camera {
-  const cam = scene.cameras.main;
+  const cam = fitViewport(scene.cameras.main);
   cam.setZoom(ZOOM);
   cam.centerOn(BASE_W / 2, BASE_H / 2);
   return cam;

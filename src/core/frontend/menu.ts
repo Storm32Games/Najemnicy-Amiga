@@ -64,13 +64,17 @@ export class MenuModel<Id extends string = string> {
   }
 }
 
-export type TitleMenuId = 'new' | 'continue' | 'options' | 'intro' | 'credits';
+export type TitleMenuId = 'new' | 'continue' | 'load' | 'options' | 'intro' | 'credits';
 
-/** Menu ekranu tytułowego; "Kontynuuj" tylko gdy istnieje zapis (fokus startuje na nim - jak w większości gier). */
-export function titleMenu(hasSave: boolean): MenuModel<TitleMenuId> {
+/**
+ * Menu ekranu tytułowego; "Kontynuuj" tylko gdy istnieje autozapis (fokus startuje na nim - jak w większości gier),
+ * "Wczytaj grę" gdy któryś z ręcznych slotów jest zajęty.
+ */
+export function titleMenu(hasSave: boolean, hasSlots = false): MenuModel<TitleMenuId> {
   const items: MenuItem<TitleMenuId>[] = [
     { id: 'new', label: '▶ Nowa gra', enabled: true },
     ...(hasSave ? [{ id: 'continue' as const, label: 'Kontynuuj', enabled: true }] : []),
+    ...(hasSlots ? [{ id: 'load' as const, label: 'Wczytaj grę', enabled: true }] : []),
     { id: 'options', label: 'Opcje', enabled: true },
     { id: 'intro', label: 'Intro', enabled: true },
     { id: 'credits', label: 'Autorzy', enabled: true },

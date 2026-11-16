@@ -17,7 +17,7 @@ import { getStat } from '../core/rules/stats';
 import type { Character, EquipSlot, ItemInstance } from '../core/rules/types';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, button, campfire, canvasTexture, cut, dunes, enter, goto, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
-import { Save, ScrollList, Tip, type Tone, abilityIconImage, bar, dialog, escConsumed, itemIconImage, itemTip, miniButton, modalOpen, namePrompt, openOptions, openWindow, portrait, toast } from './ui/Widgets';
+import { Save, ScrollList, Tip, type Tone, abilityIconImage, bar, dialog, escConsumed, itemIconImage, itemTip, miniButton, modalOpen, namePrompt, openOptions, openSaveSlots, openWindow, portrait, toast } from './ui/Widgets';
 
 // Przystań (port Oldgame/src/scenes/hub.js): tablica zleceń, handlarz, lecznica, drużyna, karczma, zapis.
 // Diorama 3D zastąpiona malowanym tłem; okna DOM - panelami Phasera.
@@ -218,19 +218,51 @@ export class HubScene extends Phaser.Scene {
     if (st.party.length < MAX_PARTY || st.party.some((c) => c.conditions.dead)) tabBtn('tavern', 'Karczma', { danger: this.tab !== 'tavern' });
     y += 6;
     add('Opcje', () => void openOptions(this));
-    add('Zapisz grę', () => {
-      if (Save.write()) {
-        SoundManager.sfx('pickup');
-        toast(this, 'Gra zapisana.', 'good');
-      } else toast(this, 'Zapis nie powiódł się!', 'bad');
+    add('Zapisz grę', () => void openSaveSlots(this, 'save'));
+    add('Wczytaj grę', () => void this.loadSlot());
+    add('Menu główne', () => void this.mainMenu());
+  }
+
+  /** Wczytanie slotu z miasta (miasto startuje od nowa ze stanem z zapisu). */
+  private async loadSlot(): Promise<void> {
+    if ((await openSaveSlots(this, 'load')) !== null) goto(this, 'HubScene', {});
+  }
+
+  /** Menu główne gry: zapis / wczytanie (3 sloty), wyjście z zapisem lub bez. */
+  private async mainMenu(): Promise<void> {
+    type Pick = 'stay' | 'save' | 'load' | 'quit' | 'quitNoSave';
+    const pick = await new Promise<Pick>((resolve) => {
+      const W = 150, H = 128;
+      let res: Pick = 'stay';
+      const win = openWindow(this, W, H, 'Menu główne', () => resolve(res));
+      const items: [Pick, string, { primary?: boolean; danger?: boolean }][] = [
+        ['save', 'Zapisz grę', {}],
+        ['load', 'Wczytaj grę', {}],
+        ['quit', 'Zapisz i wyjdź', { primary: true }],
+        ['quitNoSave', 'Wyjdź bez zapisu', { danger: true }],
+        ['stay', 'Wróć do gry', {}],
+      ];
+      items.forEach(([id, text, o], i) => win.add(button(this, 15, 22 + i * 20, text, () => {
+        res = id;
+        win.close();
+      }, { w: W - 30, h: 15, size: 6.5, ...o }).box));
     });
-    add('Menu główne', async () => {
-      const ok = await dialog(this, { title: 'Wyjść do menu?', body: 'Postęp zostanie zapisany.', buttons: [{ label: 'Zostań', value: false }, { label: 'Zapisz i wyjdź', value: true, primary: true }] });
-      if (ok) {
+    switch (pick) {
+      case 'save':
+        await openSaveSlots(this, 'save');
+        return;
+      case 'load':
+        return this.loadSlot();
+      case 'quit':
         Save.write();
         goto(this, 'TitleScene');
+        return;
+      case 'quitNoSave': {
+        const ok = await dialog(this, { title: 'Wyjść bez zapisu?', body: 'Zmiany od ostatniego zapisu zostaną utracone.', buttons: [{ label: 'Zostań', value: false }, { label: 'Wyjdź bez zapisu', value: true, danger: true }] });
+        if (ok) goto(this, 'TitleScene');
+        return;
       }
-    });
+    }
   }
 
   /** Wiersz przedmiotu: ikona, nazwa (xN), krótka statystyka; zwraca szerokość zajętą z prawej przez `right`. */

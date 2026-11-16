@@ -7,7 +7,7 @@ import { type MenuModel, Q8, TickClock, type TitleMenuId, angQ8, blinkAlphaQ8, i
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline, tiledImage } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
-import { Save, modalOpen, openOptions, toast } from './ui/Widgets';
+import { Save, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
 
 // Ekran tytułowy (port Oldgame/src/scenes/title.js): pikselowe logo nad pustkowiem o zmierzchu + menu.
 
@@ -80,9 +80,10 @@ export class TitleScene extends Phaser.Scene {
     this.sub = centered(titleTexture(this, 'title_sub', GAME_SUBTITLE, 2, { top: '#c8e08a', bottom: '#4f8a2a', spacing: 2 }), 86);
 
     // menu: model z core/frontend/menu.ts (fokus + nawigacja góra/dół/ogień jak joystickiem), scena tylko rysuje
-    this.menu = titleMenu(Save.exists());
+    this.menu = titleMenu(Save.exists(), Save.anySlot());
     const mx = BASE_W - 128;
-    let y = 158;
+    // przy większej liczbie pozycji (Kontynuuj + Wczytaj) menu podnosi się, żeby zmieściło się nad dolną krawędzią
+    let y = Math.min(158, BASE_H - 8 - 15 - 24 - 19 * (this.menu.items.length - 2));
     this.buttons = this.menu.items.map((it, i) => {
       const first = it.id === 'new';
       const b = button(this, mx, y, it.label, () => {
@@ -138,6 +139,9 @@ export class TitleScene extends Phaser.Scene {
       case 'continue':
         if (Save.load() && campaign.state.party.length) goto(this, 'HubScene');
         else toast(this, 'Nie udało się wczytać zapisu.', 'bad');
+        return;
+      case 'load':
+        void openSaveSlots(this, 'load').then((slot) => slot !== null && goto(this, 'HubScene'));
         return;
       case 'options':
         void openOptions(this);
