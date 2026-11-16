@@ -3,12 +3,12 @@
 import { DMG_ADJ } from '../data/rules.ts';
 import type { AbilityId, ConditionDef, ConditionId, DamageType, SaveId } from '../data/types.ts';
 import { CONDITIONS } from '../data/rules.ts';
-import { check, d, dcForLevel, fmtMod, roll, type CheckResult, type Rng } from './dice.ts';
+import { check, d, dcForLevel, fmtD20, halveDie, fmtMod, roll, type CheckResult, type Rng } from './dice.ts';
 import { applyDamage, grantTempHp, heal, isDead, type DamageOutcome } from './damage.ts';
 import { abilityDef, ancestryOf, enemyDef, itemDef } from './lookup.ts';
 import { newItem } from './character.ts';
 import { acc, strike, type StrikeOptions } from './strike.ts';
-import { addCondition, attrMod, condValue, getStat, getWeapon, hasCondition, normWeapon, removeCondition, type StatKey } from './stats.ts';
+import { addCondition, attrMod, checkBy, concealHalves, condValue, dieHalves, getStat, getWeapon, hasCondition, normWeapon, removeCondition, type StatKey } from './stats.ts';
 import type { AbilityContext, ActionResult, AttackLike, Character, ConditionValue } from './types.ts';
 
 const R = (): ActionResult => ({ log: [], events: [], attack: false });
@@ -75,8 +75,8 @@ function doHeal(res: ActionResult, t: Character, amount: number, label: string):
   return n;
 }
 /** Rzut leczenia: suma + zapis kości do pokazu (res.heal, tylko pierwszy rzut w akcji). */
-function healRoll(res: ActionResult, expr: string, rng: Rng, extra = 0): number {
-  const rr = roll(expr, rng);
+function healRoll(res: ActionResult, expr: string, rng: Rng, extra = 0, by?: Character): number {
+  const rr = roll(expr, rng, by ? dieHalves(by) : 0);
   const total = rr.total + extra;
   if (!res.heal) res.heal = { dice: rr.dice, flat: rr.mod + extra, mult: 1, post: [], total };
   return total;
@@ -88,17 +88,17 @@ function tempHp(res: ActionResult, t: Character, n: number): void {
 
 /** Podstawowy rzut obronny: kryt. sukces 0, sukces 1/2, porażka całość, kryt. porażka x2. */
 export function basicSave(
-  res: ActionResult, t: Character, kind: SaveId, dc: number, expr: string, type: DamageType, rng: Rng,
+  res: ActionResult, t: Character, kind: SaveId, dc: number, expr: string, type: DamageType, rng: Rng, by?: Character,
 ): { c: CheckResult; a: DamageOutcome } {
-  const c = check(getStat(t, kind), dc, rng);
+  const c = checkBy(t, getStat(t, kind), dc, rng);
   if (!res.d20) res.d20 = c;
-  const r = roll(expr, rng);
+  const r = roll(expr, rng, by ? dieHalves(by) : 0);
   const amt = c.degree === 3 ? 0 : c.degree === 2 ? Math.floor(r.total / 2) : c.degree === 1 ? r.total : r.total * 2;
   if (!res.dmg) res.dmg = { dice: r.dice, flat: r.mod, mult: [0, 0.5, 1, 2][3 - c.degree], post: [], total: Math.max(0, amt) };
   let a: DamageOutcome = { dealt: 0, downed: false, dead: false };
   if (amt > 0) a = hurt(res, t, amt, type, c.degree === 0);
   else res.events.push({ type: 'miss', target: t, degree: c.degree });
-  res.log.push(`${t.name}: ${a.dealt} obrażeń ${DMG_ADJ[type] || ''} (${SAVE_NAMES[kind]} k20 ${c.d20}${fmtMod(getStat(t, kind))}=${c.total} vs WT ${dc})`);
+  res.log.push(`${t.name}: ${a.dealt} obrażeń ${DMG_ADJ[type] || ''} (${SAVE_NAMES[kind]} k20 ${fmtD20(c)}${fmtMod(getStat(t, kind))}=${c.total} vs WT ${dc})`);
   return { c, a };
 }
 
@@ -107,9 +107,9 @@ function simpleAttack(
   res: ActionResult, t: Character, o: { label: string; bonus: number; expr: string; type: DamageType; rng: Rng },
 ): { hit: boolean; c: CheckResult } {
   const dc = getStat(t, 'ac');
-  const c = check(o.bonus, dc, o.rng);
+  const c = check(o.bonus, dc, o.rng, concealHalves(t, true));
   if (!res.d20) res.d20 = c;
-  const info = `k20 ${c.d20}${fmtMod(o.bonus)}=${c.total} vs KP ${dc}`;
+  const info = `k20 ${fmtD20(c)}${fmtMod(o.bonus)}=${c.total} vs KP ${dc}`;
   if (c.degree <= 1) {
     res.log.push(`${o.label} pudłuje (${info}).`);
     res.events.push({ type: 'miss', target: t, degree: c.degree });
@@ -187,10 +187,10 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       return r;
     }
     const dc = dcOf(t, 'will');
-    const c = check(getStat(u, 'intimidation'), dc, rngOf(ctx));
+    const c = checkBy(u, getStat(u, 'intimidation'), dc, rngOf(ctx));
     r.d20 = c;
     addCondition(t, 'dem_imm', 4);
-    const info = `Zastraszanie k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
+    const info = `Zastraszanie k20 ${fmtD20(c)}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
     if (c.degree >= 2) {
       const v = c.degree === 3 ? 2 : 1;
       cond(r, t, 'frightened', v, `${u.name} zastrasza ${acc(t)}: przerażony ${v} (${info}).`);
@@ -205,9 +205,9 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (isDead(t)) return deadNote(r, t);
     const dying = condValue(t, 'dying');
     const dc = dying ? 15 + dying : hasCondition(t, 'bleeding') ? 15 : dcForLevel(u.level);
-    const c = check(getStat(u, 'medicine'), dc, rng);
+    const c = checkBy(u, getStat(u, 'medicine'), dc, rng);
     r.d20 = c;
-    const info = `Medycyna k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
+    const info = `Medycyna k20 ${fmtD20(c)}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
     if (c.degree <= 1) {
       if (c.degree === 0 && dying) {
         t.conditions.dying = Math.min(3, dying + 1);
@@ -220,7 +220,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       t.conditions.wounded = Math.min(3, condValue(t, 'wounded') + 1);
       r.log.push(`${u.name} stabilizuje ${acc(t)} (${info}).`);
       r.events.push({ type: 'condition', target: t, condition: 'stable' });
-      if (c.degree === 3) doHeal(r, t, healRoll(r, '1d6', rng), 'Opatrunek');
+      if (c.degree === 3) doHeal(r, t, healRoll(r, '1d6', rng, 0, u), 'Opatrunek');
       return r;
     }
     if (hasCondition(t, 'bleeding')) {
@@ -228,7 +228,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       r.log.push(`${u.name} tamuje krwawienie ${t.name} (${info}).`);
       return r;
     }
-    doHeal(r, t, healRoll(r, c.degree === 3 ? '2d6' : '1d6', rng, 1), `Pierwsza pomoc (${info})`);
+    doHeal(r, t, healRoll(r, c.degree === 3 ? '2d6' : '1d6', rng, 1, u), `Pierwsza pomoc (${info})`);
     return r;
   },
   stand: (ctx) => {
@@ -259,19 +259,19 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     r.log.push(`${u.name} otwiera ogień zaporowy!`);
     const dmg = w.dmg.replace(/[+-]\d+$/, '');
     for (const t of ctx.targets) {
-      const c = check(getStat(t, 'reflex'), dc, rng);
+      const c = checkBy(t, getStat(t, 'reflex'), dc, rng);
       if (!r.d20) r.d20 = c;
       if (c.degree === 3) {
         r.log.push(`${t.name} unika ognia.`);
         continue;
       }
-      const rr = roll(dmg, rng);
+      const rr = roll(dmg, rng, dieHalves(u));
       let amt = rr.total;
       if (c.degree === 2) amt = Math.floor(amt / 2);
       if (c.degree === 0) amt *= 2;
       if (!r.dmg) r.dmg = { dice: rr.dice, flat: rr.mod, mult: c.degree === 2 ? 0.5 : c.degree === 0 ? 2 : 1, post: [], total: amt };
       const a = hurt(r, t, amt, w.type, c.degree === 0);
-      r.log.push(`${t.name}: ${a.dealt} obrażeń (Refleks k20 ${c.d20}=${c.total} vs WT ${dc}).`);
+      r.log.push(`${t.name}: ${a.dealt} obrażeń (Refleks k20 ${fmtD20(c)}=${c.total} vs WT ${dc}).`);
       if (c.degree <= 1) cond(r, t, 'distracted', 2, `${t.name} kuli się pod ogniem.`);
       if (c.degree === 0) cond(r, t, 'frightened', 1);
     }
@@ -328,7 +328,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const rng = rngOf(ctx);
     const r = ctxStrike(ctx, t);
     if (r.hit && alive(t)) {
-      const c = check(getStat(t, 'fortitude'), getStat(u, 'classDC'), rng);
+      const c = checkBy(t, getStat(t, 'fortitude'), getStat(u, 'classDC'), rng);
       if (c.degree <= 1) {
         const v = c.degree === 0 ? 2 : 1;
         cond(r, t, 'slowed', v, `${t.name} kuleje (spowolniony ${v}).`);
@@ -356,18 +356,18 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (isDead(t)) return deadNote(r, t);
     spend(u, 'field_dressing');
     const dc = dcForLevel(u.level);
-    const c = check(getStat(u, 'medicine'), dc, rng);
+    const c = checkBy(u, getStat(u, 'medicine'), dc, rng);
     r.d20 = c;
     const bonus = Math.max(0, attrMod(u, 'wis')) + u.level;
-    const info = `Medycyna k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
+    const info = `Medycyna k20 ${fmtD20(c)}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
     if (c.degree === 3) {
-      doHeal(r, t, healRoll(r, `4d6+${bonus}`, rng), `Opatrunek (${info})`);
+      doHeal(r, t, healRoll(r, `4d6+${bonus}`, rng, 0, u), `Opatrunek (${info})`);
       removeCondition(t, 'bleeding');
       removeCondition(t, 'poisoned');
     } else if (c.degree === 2) {
-      doHeal(r, t, healRoll(r, `2d6+${bonus}`, rng), `Opatrunek (${info})`);
+      doHeal(r, t, healRoll(r, `2d6+${bonus}`, rng, 0, u), `Opatrunek (${info})`);
       removeCondition(t, 'bleeding');
-    } else if (c.degree === 1) doHeal(r, t, healRoll(r, '1d4', rng), `Marny opatrunek (${info})`);
+    } else if (c.degree === 1) doHeal(r, t, healRoll(r, '1d4', rng, 0, u), `Marny opatrunek (${info})`);
     else r.log.push(`${u.name} partaczy opatrunek ${t.name} (${info}).`);
     return r;
   },
@@ -390,7 +390,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (isDead(t)) return deadNote(r, t);
     spend(u, 'adrenaline');
     if (t.hp <= 0) {
-      doHeal(r, t, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'wis')) + u.level), `Adrenalina: ${t.name} wraca do walki`);
+      doHeal(r, t, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'wis')) + u.level, u), `Adrenalina: ${t.name} wraca do walki`);
       removeCondition(t, 'prone');
     } else {
       quietCond(r, t, 'quickened', 1);
@@ -404,7 +404,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const rng = rngOf(ctx);
     spend(u, 'field_clinic');
     for (const t of targetsOrSelf(ctx)) {
-      if (!isDead(t)) doHeal(r, t, healRoll(r, '1d8', rng, Math.max(0, attrMod(u, 'wis')) + u.level), 'Punkt medyczny');
+      if (!isDead(t)) doHeal(r, t, healRoll(r, '1d8', rng, Math.max(0, attrMod(u, 'wis')) + u.level, u), 'Punkt medyczny');
     }
     return r;
   },
@@ -433,7 +433,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     r.log.push(`${u.name} rzuca granat EMP!`);
     for (const t of ctx.targets) {
       const mach = isMachine(t);
-      const { c } = basicSave(r, t, 'reflex', dc, mach ? `2d6+${u.level}` : '1d4', 'elec', rng);
+      const { c } = basicSave(r, t, 'reflex', dc, mach ? `2d6+${u.level}` : '1d4', 'elec', rng, u);
       if (mach && c.degree <= 1 && alive(t)) {
         const v = c.degree === 0 ? 2 : 1;
         cond(r, t, 'stunned', v, `${t.name} zwiera układy (ogłuszony ${v}).`);
@@ -448,9 +448,9 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (isDead(t)) return deadNote(r, t);
     spend(u, 'repair_armor');
     const dc = dcForLevel(u.level);
-    const c = check(getStat(u, 'crafting'), dc, rngOf(ctx));
+    const c = checkBy(u, getStat(u, 'crafting'), dc, rngOf(ctx));
     r.d20 = c;
-    const info = `Technika k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
+    const info = `Technika k20 ${fmtD20(c)}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
     const n = 3 + 2 * u.level;
     if (c.degree >= 2) {
       const amt = c.degree === 3 ? n * 2 : n;
@@ -479,10 +479,10 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     let sneak = hasCondition(u, 'hidden');
     if (!sneak) {
       const dc = dcOf(t, 'perception');
-      const c = check(getStat(u, 'stealth'), dc, rngOf(ctx));
+      const c = checkBy(u, getStat(u, 'stealth'), dc, rngOf(ctx));
       r.d20 = c;
       sneak = c.degree >= 2;
-      r.log.push(sneak ? `${u.name} wymyka się czujności ${t.name} (Skradanie k20 ${c.d20}=${c.total} vs ${dc}).` : `${t.name} zauważa ${u.name}.`);
+      r.log.push(sneak ? `${u.name} wymyka się czujności ${t.name} (Skradanie k20 ${fmtD20(c)}=${c.total} vs ${dc}).` : `${t.name} zauważa ${u.name}.`);
     }
     removeCondition(u, 'hidden');
     const s = ctxStrike(ctx, t, { sneak });
@@ -508,9 +508,9 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       return r;
     }
     const dc = dcOf(t, 'perception');
-    const c = check(getStat(u, 'thievery'), dc, rng);
+    const c = checkBy(u, getStat(u, 'thievery'), dc, rng);
     r.d20 = c;
-    const info = `Złodziejstwo k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs ${dc}`;
+    const info = `Złodziejstwo k20 ${fmtD20(c)}${fmtMod(c.mod)}=${c.total} vs ${dc}`;
     if (c.degree >= 2) {
       t.stolen = 1;
       const pool = (enemyDef(t.templateId)?.loot ?? []).filter((l) => {
@@ -525,7 +525,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
         r.events.push({ type: 'steal', target: t, item: it });
       } else r.log.push(`${u.name} przeszukuje ${acc(t)}, ale nic nie znajduje (${info}).`);
       if (c.degree === 3) {
-        const sc = 2 + d(6, rng);
+        const sc = 2 + halveDie(d(6, rng), dieHalves(u));
         u.stolenScrap = (u.stolenScrap || 0) + sc;
         r.events.push({ type: 'scrap', amount: sc });
         r.log.push(`Do tego ${sc} Złomu.`);
@@ -539,7 +539,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (!t) return noTarget();
     const u = ctx.user;
     const r = R();
-    const c = check(getStat(t, 'reflex'), getStat(u, 'classDC'), rngOf(ctx));
+    const c = checkBy(t, getStat(t, 'reflex'), getStat(u, 'classDC'), rngOf(ctx));
     r.d20 = c;
     if (c.degree >= 2) {
       r.log.push(`${t.name} unika piasku.`);
@@ -564,9 +564,9 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     r.log.push(`${u.name} wydaje straszliwy ryk!`);
     for (const t of ctx.targets) {
       const dc = dcOf(t, 'will');
-      const c = check(getStat(u, 'intimidation'), dc, rng);
+      const c = checkBy(u, getStat(u, 'intimidation'), dc, rng);
       if (!r.d20) r.d20 = c;
-      if (c.degree >= 2) cond(r, t, 'frightened', c.degree === 3 ? 2 : 1, `${t.name} cofa się w strachu (Zastraszanie k20 ${c.d20}=${c.total} vs ${dc}).`);
+      if (c.degree >= 2) cond(r, t, 'frightened', c.degree === 3 ? 2 : 1, `${t.name} cofa się w strachu (Zastraszanie k20 ${fmtD20(c)}=${c.total} vs ${dc}).`);
       else r.log.push(`${t.name} nie daje się zastraszyć.`);
     }
     return r;
@@ -588,12 +588,12 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const r = R();
     const rng = rngOf(ctx);
     const dc = dcOf(t, 'reflex');
-    const c = check(getStat(u, 'athletics'), dc, rng);
+    const c = checkBy(u, getStat(u, 'athletics'), dc, rng);
     r.d20 = c;
-    const info = `Atletyka k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs ${dc}`;
+    const info = `Atletyka k20 ${fmtD20(c)}${fmtMod(c.mod)}=${c.total} vs ${dc}`;
     if (c.degree >= 2) {
       cond(r, t, 'prone', 1, `${u.name} powala ${acc(t)} (${info}).`);
-      if (c.degree === 3) hurt(r, t, roll('1d6', rng).total, 'B');
+      if (c.degree === 3) hurt(r, t, roll('1d6', rng, dieHalves(u)).total, 'B');
     } else if (c.degree === 0) cond(r, u, 'prone', 1, `${u.name} potyka się! (${info}).`);
     else r.log.push(`${u.name} nie zdołał powalić ${acc(t)} (${info}).`);
     return r;
@@ -602,7 +602,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const u = ctx.user;
     const r = R();
     spend(u, 'second_wind');
-    doHeal(r, u, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'con')) + u.level + 4), 'Drugi oddech');
+    doHeal(r, u, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'con')) + u.level + 4, u), 'Drugi oddech');
     return r;
   },
 
@@ -613,7 +613,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const u = ctx.user;
     const rng = rngOf(ctx);
     const r = strike(u, t, { weapon: enemyAttack(ctx), mapIndex: mapOf(ctx), rng });
-    if (r.hit && alive(t) && check(getStat(t, 'reflex'), getStat(u, 'classDC'), rng).degree <= 1) cond(r, t, 'prone', 1, `${t.name} upada!`);
+    if (r.hit && alive(t) && checkBy(t, getStat(t, 'reflex'), getStat(u, 'classDC'), rng).degree <= 1) cond(r, t, 'prone', 1, `${t.name} upada!`);
     return r;
   },
   swarm_cloud: (ctx) => {
@@ -622,7 +622,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const rng = rngOf(ctx);
     if (!ctx.targets.length) return noTarget();
     for (const t of ctx.targets) {
-      const { c } = basicSave(r, t, 'fortitude', getStat(u, 'classDC'), '1d6+1', 'poison', rng);
+      const { c } = basicSave(r, t, 'fortitude', getStat(u, 'classDC'), '1d6+1', 'poison', rng, u);
       if (c.degree <= 1) cond(r, t, 'sickened', 1);
     }
     return r;
@@ -635,7 +635,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const sting: AttackLike = { name: 'Żądło', bonus: u.attacks?.[0]?.bonus ?? 0, damage: '1d6+3', dmgType: 'P', traits: [] };
     const r = strike(u, t, { weapon: sting, mapIndex: mapOf(ctx), rng });
     if (r.hit && alive(t)) {
-      const c = check(getStat(t, 'fortitude'), getStat(u, 'classDC'), rng);
+      const c = checkBy(t, getStat(t, 'fortitude'), getStat(u, 'classDC'), rng);
       if (c.degree <= 1) {
         cond(r, t, 'poisoned', '1d6', `${t.name} zatruty!`);
         if (c.degree === 0) cond(r, t, 'sickened', 1);
@@ -649,7 +649,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const rng = rngOf(ctx);
     if (!ctx.targets.length) return noTarget();
     for (const t of ctx.targets) {
-      const { c } = basicSave(r, t, 'reflex', getStat(u, 'classDC'), '2d6+3', 'B', rng);
+      const { c } = basicSave(r, t, 'reflex', getStat(u, 'classDC'), '2d6+3', 'B', rng, u);
       if (c.degree <= 1 && alive(t)) cond(r, t, 'prone', 1);
     }
     return r;
@@ -661,7 +661,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const rng = rngOf(ctx);
     const r = strike(u, t, { weapon: enemyAttack(ctx), mapIndex: mapOf(ctx), rng });
     if (r.hit && alive(t)) {
-      const c = check(getStat(t, 'fortitude'), getStat(u, 'classDC'), rng);
+      const c = checkBy(t, getStat(t, 'fortitude'), getStat(u, 'classDC'), rng);
       if (c.degree <= 1) cond(r, t, 'sickened', c.degree === 0 ? 2 : 1, `${t.name} choruje od promieniowania.`);
     }
     return r;
@@ -687,7 +687,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (!ctx.targets.length) return noTarget();
     r.log.push(`${u.name} ciska koktajl Mołotowa!`);
     for (const t of ctx.targets) {
-      const { c } = basicSave(r, t, 'reflex', 16 + Math.floor(u.level / 2), '1d6+2', 'fire', rng);
+      const { c } = basicSave(r, t, 'reflex', 16 + Math.floor(u.level / 2), '1d6+2', 'fire', rng, u);
       if (c.degree <= 1 && alive(t)) cond(r, t, 'burning', '1d4', `${t.name} płonie!`);
     }
     return r;
@@ -713,7 +713,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const r = R();
     const rng = rngOf(ctx);
     r.log.push(`${u.name} wybucha!`);
-    for (const t of ctx.targets) basicSave(r, t, 'reflex', 16, '2d8', 'P', rng);
+    for (const t of ctx.targets) basicSave(r, t, 'reflex', 16, '2d8', 'P', rng, u);
     u.hp = 0;
     u.conditions.dead = 1;
     r.events.push({ type: 'death', target: u });
@@ -735,7 +735,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     spend(u, 'rocket_salvo');
     if (!ctx.targets.length) return noTarget();
     r.log.push(`${u.name} odpala salwę rakiet!`);
-    for (const t of ctx.targets) basicSave(r, t, 'reflex', getStat(u, 'classDC'), '3d6+4', 'B', rng);
+    for (const t of ctx.targets) basicSave(r, t, 'reflex', getStat(u, 'classDC'), '3d6+4', 'B', rng, u);
     return r;
   },
   kostucha_cull: (ctx) => {
@@ -756,7 +756,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (!ctx.targets.length) return noTarget();
     r.log.push(`${u.name} wzywa gradobicie!`);
     for (const t of ctx.targets) {
-      const { c } = basicSave(r, t, 'reflex', 22, '3d6+2', 'P', rng);
+      const { c } = basicSave(r, t, 'reflex', 22, '3d6+2', 'P', rng, u);
       if (c.degree <= 1 && alive(t)) cond(r, t, 'distracted', 2);
     }
     return r;

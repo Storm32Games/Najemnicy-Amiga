@@ -33,6 +33,14 @@ export function makeRng(seed?: number | string | null): Rng {
 
 /** Rzut kością 1..sides. */
 export const d = (sides: number, rng: Rng = Math.random): number => 1 + Math.floor(rng() * sides);
+/**
+ * Połowienie wyniku kości (Zastraszanie, ukrycie celu): każde połowienie dzieli przez 2 z zaokrągleniem w górę.
+ * 20 -> 10 -> 5, 1 zostaje 1.
+ */
+export function halveDie(v: number, halves = 0): number {
+  for (let i = 0; i < halves; i++) v = Math.ceil(v / 2);
+  return v;
+}
 /** Liczba całkowita z przedziału [a, b]. */
 export const randInt = (a: number, b: number, rng: Rng = Math.random): number => a + Math.floor(rng() * (b - a + 1));
 /** Losowy element tablicy. */
@@ -77,7 +85,7 @@ export interface RollResult {
 }
 
 /** "2d6+3", "1d8", "1d4-1", "2d6+1d4+2", "5". */
-export function roll(expr: DiceExpr | number, rng: Rng = Math.random): RollResult {
+export function roll(expr: DiceExpr | number, rng: Rng = Math.random, halves = 0): RollResult {
   const s = String(expr).replace(/\s+/g, '');
   const re = /([+-]?)(\d*)d(\d+)|([+-]?)(\d+)/g;
   let m: RegExpExecArray | null;
@@ -91,7 +99,7 @@ export function roll(expr: DiceExpr | number, rng: Rng = Math.random): RollResul
       const n = m[2] === '' ? 1 : Number(m[2]);
       const sides = Number(m[3]);
       for (let i = 0; i < n; i++) {
-        const r = d(sides, rng);
+        const r = halveDie(d(sides, rng), halves);
         rolls.push(r);
         dice.push({ sides, value: r });
         total += sign * r;
@@ -132,7 +140,12 @@ export function degreeOf(total: number, dc: number, nat?: number): Degree {
 }
 
 export interface CheckResult {
+  /** Wynik k20 po ewentualnym połowieniu (to on wchodzi do sumy). */
   d20: number;
+  /** Surowy rzut k20 przed połowieniem. */
+  raw: number;
+  /** Ile razy połowiono kość (0 = zwykły rzut). */
+  halves: number;
   mod: number;
   total: number;
   dc: number;
@@ -141,20 +154,29 @@ export interface CheckResult {
   nat1: boolean;
 }
 
-export function check(mod: number, dc: number, rng: Rng = Math.random): CheckResult {
-  const r = d(20, rng);
+/**
+ * Test k20 vs ST. `halves` > 0 połowi kość (zaokrąglenie w górę) przed dodaniem modyfikatora;
+ * połowiona kość nie daje naturalnej 20 (maks. 10), naturalna 1 zostaje 1.
+ */
+export function check(mod: number, dc: number, rng: Rng = Math.random, halves = 0): CheckResult {
+  const raw = d(20, rng);
+  const r = halveDie(raw, halves);
   const total = r + mod;
-  return { d20: r, mod, total, dc, degree: degreeOf(total, dc, r), nat20: r === 20, nat1: r === 1 };
+  return { d20: r, raw, halves, mod, total, dc, degree: degreeOf(total, dc, r), nat20: r === 20, nat1: r === 1 };
 }
+
+/** Kość do dziennika: "14" albo "14→7" przy połowieniu. */
+export const fmtD20 = (c: CheckResult): string => (c.halves ? `${c.raw}→${c.d20}` : String(c.d20));
 
 export const flatCheck = (dc: number, rng: Rng = Math.random): CheckResult => check(0, dc, rng);
 
 /** Szansa (0..1) na co najmniej sukces / krytyk dla danego modyfikatora i ST - do podpowiedzi w UI. */
-export function hitChances(mod: number, dc: number): { hit: number; crit: number } {
+export function hitChances(mod: number, dc: number, halves = 0): { hit: number; crit: number } {
   let hit = 0;
   let crit = 0;
   for (let k = 1; k <= 20; k++) {
-    const g = degreeOf(k + mod, dc, k);
+    const v = halveDie(k, halves);
+    const g = degreeOf(v + mod, dc, v);
     if (g >= 2) hit++;
     if (g === 3) crit++;
   }

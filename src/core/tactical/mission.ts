@@ -7,7 +7,7 @@ import { createCharacter, createEnemy, encounterXP, endEncounter, newItem, party
 import { applyDamage, isAlive } from '../rules/damage.ts';
 import { check, dcForLevel, roll, type CheckResult, type Rng } from '../rules/dice.ts';
 import { allItems, itemDef } from '../rules/lookup.ts';
-import { getStat } from '../rules/stats.ts';
+import { checkBy, getStat } from '../rules/stats.ts';
 import { skillCheck } from '../rules/turn.ts';
 import {
   DEVICES, deviceState, hackDevice, hasLockpick, IMPROVISED_PENALTY, LOCKPICK_ID, LOCKS, lockState, pickLock,
@@ -496,7 +496,7 @@ export class Mission {
         if (f.tried) continue;
         f.tried = true;
         const best = near.slice().sort((a, b) => getStat(b.ch, 'perception') - getStat(a.ch, 'perception'))[0];
-        const r = check(getStat(best.ch, 'perception'), dc, this.rng);
+        const r = checkBy(best.ch, getStat(best.ch, 'perception'), dc, this.rng);
         if (r.degree >= 2) {
           f.found = true;
           this.log(`${best.ch.name} dostrzega coś w gruzach (Percepcja ${r.total} vs KT ${dc}).`, 'amber');
@@ -676,7 +676,7 @@ export class Mission {
   ambushAttack(a: Actor, g: EnemyGroup): CheckResult {
     const alive = g.actors.filter((e) => e.state !== 'dead');
     const dc = 10 + Math.max(0, ...alive.map((e) => getStat(e.ch, 'perception')));
-    const r = check(getStat(a.ch, 'stealth'), dc, this.rng);
+    const r = checkBy(a.ch, getStat(a.ch, 'stealth'), dc, this.rng);
     const ok = r.degree >= 2;
     this.log(`${a.ch.name}: Skradanie ${r.d20}${r.mod >= 0 ? '+' : ''}${r.mod} = ${r.total} vs ST ${dc} — ${ok ? 'zasadzka!' : 'wrogowie dostrzegają ruch.'}`, ok ? 'amber' : 'bad');
     this.startCombat(g, ok);
@@ -856,7 +856,7 @@ export class Mission {
     th.done = true;
     // Złodziejstwo = wytrych: bez wytrychów kara -2 (PF2e), kryt. porażka łamie wytrych
     const improvised = skill === 'thievery' && !hasLockpick(a.ch);
-    const r = improvised ? check(getStat(a.ch, skill) + IMPROVISED_PENALTY, dc, this.rng) : skillCheck(a.ch, skill, dc, this.rng);
+    const r = improvised ? checkBy(a.ch, getStat(a.ch, skill) + IMPROVISED_PENALTY, dc, this.rng) : skillCheck(a.ch, skill, dc, this.rng);
     if (improvised) this.log(`${a.ch.name} nie ma wytrychów — improwizuje (-2).`);
     if (skill === 'thievery' && !improvised && r.degree === 0) {
       const it = a.ch.inventory.find((i) => i.id === LOCKPICK_ID)!;

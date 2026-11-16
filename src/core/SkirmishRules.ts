@@ -3,7 +3,7 @@
 // Zero zależności od Phasera / DOM.
 import { hitChances } from './rules/dice.ts';
 import { itemDef } from './rules/lookup.ts';
-import { getAttackBonus, getStat, getWeapon, normWeapon, traitVal } from './rules/stats.ts';
+import { attackHalves, getAttackBonus, getStat, getWeapon, normWeapon, traitVal } from './rules/stats.ts';
 import type { Character, GridPos, ItemInstance, NormWeapon } from './rules/types.ts';
 
 export interface StrikePreview {
@@ -43,7 +43,7 @@ export function previewStrike(attacker: Character, defender: Character, from: Gr
   }
   out.mod = getAttackBonus(attacker, w, out.mapIdx, { rangeIncrements: out.inc });
   out.ac = getStat(defender, 'ac', { ignoreCover: w.range === 0 });
-  const ch = hitChances(out.mod, out.ac);
+  const ch = hitChances(out.mod, out.ac, attackHalves(attacker, defender, w.range > 0));
   out.hit = ch.hit;
   out.crit = ch.crit;
   out.ok = true;
