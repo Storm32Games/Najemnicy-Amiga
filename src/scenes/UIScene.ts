@@ -26,7 +26,7 @@ import type { Character, EquipSlot } from '../core/rules/types';
 import { itemDef } from '../core/rules/lookup';
 import { normWeapon } from '../core/rules/stats';
 import { TurnPhase } from '../core/TurnManager';
-import { BASE_H, BASE_W, PAL, ZOOM, button as kitButton, fitCamera, label, parseColor } from './ui/Kit';
+import { BASE_H, BASE_W, PAL, ZOOM, button as kitButton, fitCamera, label, parseColor, uiAlphaToggle, uiBg } from './ui/Kit';
 import { fitText } from './ui/FontGlyphs';
 import { MissionLayout, type MissionLayoutData } from './ui/MissionLayout';
 import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
@@ -325,7 +325,7 @@ export class UIScene extends Phaser.Scene {
     const MP = (this.menuPanel = this.add.container(0, 0));
     MP.add([
       this.panelRect(0, 0, RCOL_W, MENU_HEAD - 1),
-      this.dragHandle('menu', RCOL_W - 22, MENU_HEAD - 1),
+      this.dragHandle('menu', RCOL_W - 31, MENU_HEAD - 1),
       this.text(3, 1, 'MENU', PAL.dim),
       ...this.scaleButtons('menu', RCOL_W - 3, 1),
     ]);
@@ -509,7 +509,7 @@ export class UIScene extends Phaser.Scene {
 
   /** Tło panelu, które połyka kliknięcia (żeby nie przechodziły do WorldScene). */
   private panelRect(x: number, y: number, w: number, h: number, stroke: number = C.greenDim): Phaser.GameObjects.Rectangle {
-    return this.add.rectangle(x, y, w, h, C.bg, 0.92).setOrigin(0).setStrokeStyle(1, stroke).setInteractive();
+    return uiBg(this.add.rectangle(x, y, w, h, C.bg, 1).setOrigin(0).setStrokeStyle(1, stroke).setInteractive());
   }
 
 
@@ -578,8 +578,8 @@ export class UIScene extends Phaser.Scene {
       const dead = !!ch.conditions.dead || (foe && ch.hp <= 0);
       // ramka jak .m-card / .sel / .act / .down; wrogowie w czerwonej ramce
       const edge = turn || isCurrent ? PAL.amber : foe ? C.red : ch.hp <= 0 ? PAL.blood : PAL.edge;
-      const shadow = this.add.rectangle(2, y + 2, PARTY_W, PARTY_H, 0x000000, 0.5).setOrigin(0);
-      const bg = this.add.rectangle(0, y, PARTY_W, PARTY_H, foe ? 0x1a0d0a : 0x120e0b, 0.92).setOrigin(0).setStrokeStyle(2, edge).setInteractive({ cursor: 'move' });
+      const shadow = uiBg(this.add.rectangle(2, y + 2, PARTY_W, PARTY_H, 0x000000, 0.5).setOrigin(0), true);
+      const bg = uiBg(this.add.rectangle(0, y, PARTY_W, PARTY_H, foe ? 0x1a0d0a : 0x120e0b, 1).setOrigin(0).setStrokeStyle(2, edge).setInteractive({ cursor: 'move' }));
       const pi = hud.party.indexOf(ch);
       this.partyGrab(bg, foe || pi < 0 ? null : () => this.hud.command({ kind: 'selectMember', index: pi }));
       bg.on('pointerover', () => this.hud.setHover(foe ? this.foeTip(ch, init) : this.memberTip(ch)));
@@ -804,8 +804,9 @@ export class UIScene extends Phaser.Scene {
     const gx = Math.round(TOP_W / 2 - tw / 2) - 2;
     this.topGrip.setPosition(gx, 0).setSize(tw + 4, LH);
     this.topGrip.input?.hitArea.setSize(tw + 4, LH);
-    this.topScaleBtns[0]?.setX(gx + tw + 4 + 7);
+    this.topScaleBtns[0]?.setX(gx + tw + 4 + 9);
     this.topScaleBtns[1]?.setX(gx + tw + 4 + 16);
+    this.topScaleBtns[2]?.setX(gx + tw + 4 + 25);
 
     const locked = !hud.canAct;
     this.btnHelp.set('STEROWANIE [H]', true);
@@ -844,8 +845,8 @@ export class UIScene extends Phaser.Scene {
       if (r.go) this.tweens.add({ targets: t, alpha: { from: 1, to: 0.45 }, duration: 500, yoyo: true, repeat: -1 });
     }
     y += 1;
-    const shadow = this.add.rectangle(2, 2, RCOL_W, y, 0x000000, 0.5).setOrigin(0);
-    const bg = this.add.rectangle(0, 0, RCOL_W, y, PAL.panel, 0.94).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
+    const shadow = uiBg(this.add.rectangle(2, 2, RCOL_W, y, 0x000000, 0.5).setOrigin(0), true);
+    const bg = uiBg(this.add.rectangle(0, 0, RCOL_W, y, PAL.panel, 1).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive());
     const line = this.add.graphics().lineStyle(1, PAL.edge, 1).lineBetween(2, LH + 1.5, RCOL_W - 2, LH + 1.5);
     L.add([shadow, bg, line, ...items]);
     this.menuH = OBJ_Y + y;
@@ -888,7 +889,7 @@ export class UIScene extends Phaser.Scene {
       g.lineStyle(1, C.amberDim, 1).lineBetween(2, ay - 1.5, W - 2, ay - 1.5);
     }
     const right = W - (list.length ? this.hud.maxAp * 6 + 6 : 0) - 3;
-    const grip = this.dragHandle('actions', right - 20, 11);
+    const grip = this.dragHandle('actions', right - 29, 11);
     L.add([bg, grip, head, g, ...this.scaleButtons('actions', right, 1)]);
     weapons.forEach((slot, i) => {
       const x = 2 + (i % AB_COLS) * AB_BW;
@@ -1044,7 +1045,7 @@ export class UIScene extends Phaser.Scene {
     const pw = Math.ceil(Math.max(line.width, lab.width)) + 14, ph = 13;
     const py = dieY + S / 2 + 5;
     const plate = this.add.container(0, py).setAlpha(0);
-    const pbg = this.add.rectangle(0, 0, pw, ph, C.bg, 0.94).setOrigin(0.5, 0).setStrokeStyle(1, col);
+    const pbg = uiBg(this.add.rectangle(0, 0, pw, ph, C.bg, 1).setOrigin(0.5, 0).setStrokeStyle(1, col));
     line.setPosition(0, 3);
     plate.add([pbg, line]);
     box.add([shadow, burst, die, num, lab, plate]);
@@ -1174,7 +1175,7 @@ export class UIScene extends Phaser.Scene {
     const line = this.text(0, 3, r.text, col, 8).setOrigin(0.5, 0);
     const pw = Math.ceil(Math.max(line.width, lab.width)) + 14;
     const plate = this.add.container(0, ty).setAlpha(0);
-    plate.add([this.add.rectangle(0, 0, pw, 13, C.bg, 0.94).setOrigin(0.5, 0).setStrokeStyle(1, col), line]);
+    plate.add([uiBg(this.add.rectangle(0, 0, pw, 13, C.bg, 1).setOrigin(0.5, 0).setStrokeStyle(1, col)), line]);
     box.add(plate);
     box.setAlpha(0);
     this.tweens.add({ targets: box, alpha: 1, duration: 60 });
@@ -1296,7 +1297,7 @@ export class UIScene extends Phaser.Scene {
       items.push(body);
       y += Math.ceil(body.height) + 4;
     }
-    const bg = this.add.rectangle(0, 0, W, y + 4, C.bg, 0.97).setOrigin(0).setStrokeStyle(1, C.amber).setInteractive();
+    const bg = uiBg(this.add.rectangle(0, 0, W, y + 4, C.bg, 1).setOrigin(0).setStrokeStyle(1, C.amber).setInteractive());
     bg.on('pointerdown', () => this.hud.toggleHelp(false));
     box.add([bg, ...items]);
     this.helpBox = box;
@@ -1358,9 +1359,10 @@ export class UIScene extends Phaser.Scene {
     return r;
   }
 
-  /** Przyciski − / + skali panelu; `right` = prawa krawędź "+". */
+  /** Przełącznik przezroczystości okien (●/◐/○) + przyciski − / + skali panelu; `right` = prawa krawędź "+". */
   private scaleButtons(id: PanelId, right: number, y: number): PixelText[] {
-    return [-1, 1].map((dir) => {
+    const alpha = uiAlphaToggle(this, right - 18, y, PAL.dim, (tip) => this.hud.setHover(tip));
+    return [alpha, ...[-1, 1].map((dir) => {
       const b = this.text(dir < 0 ? right - 9 : right, y, dir < 0 ? '−' : '+', PAL.dim).setOrigin(1, 0).setInteractive({ useHandCursor: true });
       b.on('pointerdown', (p: Phaser.Input.Pointer) => !p.rightButtonDown() && this.setPanelScale(id, dir));
       b.on('pointerover', () => {
@@ -1372,7 +1374,7 @@ export class UIScene extends Phaser.Scene {
         this.hud.setHover(null);
       });
       return b;
-    });
+    })];
   }
 
   private panelBox(id: PanelId): Phaser.GameObjects.Container {
@@ -1590,8 +1592,9 @@ export class UIScene extends Phaser.Scene {
 
     this.logHeadLine.clear().lineStyle(1, C.greenDim, 1).lineBetween(2, 11.5, w - 2, 11.5);
     this.logColBtn.setX(w - 3);
-    this.logScaleBtns[1]?.setX(w - 23);
-    this.logScaleBtns[0]?.setX(w - 32);
+    this.logScaleBtns[2]?.setX(w - 23);
+    this.logScaleBtns[1]?.setX(w - 32);
+    this.logScaleBtns[0]?.setX(w - 41);
     this.logGrip.setSize(w - 60, 12);
     this.logGrip.input?.hitArea.setSize(w - 60, 12);
 
@@ -1826,7 +1829,7 @@ export class UIScene extends Phaser.Scene {
     y += 2 + LH * 3;
 
     // nieprzezroczyste tło: karta zasłania karty drużyny pod spodem
-    const solid = this.add.rectangle(0, 0, SHEET_W, y, C.bg, 1).setOrigin(0);
+    const solid = uiBg(this.add.rectangle(0, 0, SHEET_W, y, C.bg, 1).setOrigin(0));
     const bg = this.panelRect(0, 0, SHEET_W, y, C.amber);
     S.add([solid, bg, this.dragHandle('sheet', SHEET_W - 46, LH * 2 + 2), ...items]);
     this.sheetH = y;
