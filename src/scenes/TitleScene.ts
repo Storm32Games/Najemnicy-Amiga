@@ -7,7 +7,7 @@ import { type MenuModel, Q8, TickClock, type TitleMenuId, angQ8, blinkAlphaQ8, i
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline, tiledImage } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
-import { Save, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
+import { Save, dialog, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
 
 // Ekran tytułowy (port Oldgame/src/scenes/title.js): pikselowe logo nad pustkowiem o zmierzchu + menu.
 
@@ -33,6 +33,8 @@ export class TitleScene extends Phaser.Scene {
     enter(this);
     this.clock.reset();
     this.credits = null;
+    this.data.set('quit', false);
+    this.data.set('leaving', false);
 
     canvasTexture(this, 'title_bg', BASE_W, BASE_H, (g, w, h) => {
       skyGradient(g, w, h, [[0, '#1a1030'], [0.35, '#7a3a4a'], [0.58, '#e0803a'], [0.76, '#f6c070']]);
@@ -99,13 +101,13 @@ export class TitleScene extends Phaser.Scene {
 
     const kb = this.input.keyboard;
     const nav = (dir: -1 | 1) => () => {
-      if (modalOpen(this) || this.credits || this.data.get('leaving')) return;
+      if (modalOpen(this) || this.credits || this.data.get('leaving') || this.data.get('quit')) return;
       if (this.menu.move(dir)) this.focus(this.menu.focus, true);
     };
     for (const k of ['UP', 'W']) kb?.on(`keydown-${k}`, nav(-1));
     for (const k of ['DOWN', 'S']) kb?.on(`keydown-${k}`, nav(1));
     const fire = (): void => {
-      if (modalOpen(this) || this.data.get('leaving')) return;
+      if (modalOpen(this) || this.data.get('leaving') || this.data.get('quit')) return;
       if (this.credits) return this.toggleCredits();
       const id = this.menu.activate();
       if (id) {
@@ -131,6 +133,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private run(id: TitleMenuId): void {
+    if (this.data.get('quit')) return;
     switch (id) {
       case 'new':
         SoundManager.sfx('door');
@@ -152,7 +155,39 @@ export class TitleScene extends Phaser.Scene {
       case 'credits':
         this.toggleCredits();
         return;
+      case 'quit':
+        void this.confirmQuit();
+        return;
     }
+  }
+
+  /** "Wyjdź z gry": potwierdzenie, potem zamknięcie karty / okna; gdy przeglądarka nie pozwala - ekran pożegnalny. */
+  private async confirmQuit(): Promise<void> {
+    const yes = await dialog(this, {
+      title: 'WYJŚCIE Z GRY',
+      body: 'Na pewno chcesz opuścić pustkowie? Niezapisany postęp przepadnie (autozapis zostaje).',
+      buttons: [{ label: 'Zostaję', value: false }, { label: 'Wyjdź', value: true, danger: true }],
+    });
+    if (!yes) return;
+    this.data.set('leaving', true);
+    SoundManager.music(null);
+    SoundManager.ambience(null);
+    this.cameras.main.fadeOut(600, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.data.set('quit', true);
+      this.data.set('leaving', false);
+      for (const btn of this.buttons) btn.box.setVisible(false).each((o: Phaser.GameObjects.GameObject) => o.disableInteractive());
+      // window.close() działa tylko dla okien otwartych skryptem (np. wersja w osobnym oknie / PWA);
+      // w zwykłej karcie przeglądarka je ignoruje, więc zostaje czarny ekran z pożegnaniem
+      window.close();
+      const D = 100;
+      this.add.rectangle(-BASE_W, -BASE_H, BASE_W * 3, BASE_H * 3, 0x000000, 1).setOrigin(0).setDepth(D);
+      label(this, BASE_W / 2, BASE_H / 2 - 10, 'Do zobaczenia na pustkowiu.', { size: 9, bold: true, color: PAL.amber }).setOrigin(0.5).setDepth(D + 1);
+      label(this, BASE_W / 2, BASE_H / 2 + 8, 'Możesz zamknąć kartę przeglądarki.', { size: 7, color: PAL.dim }).setOrigin(0.5).setDepth(D + 1);
+      this.time.delayedCall(1200, () => button(this, BASE_W / 2 - 40, BASE_H / 2 + 26, 'Wróć do menu', () => this.scene.restart(), { w: 80, size: 7 }).box.setDepth(D + 2));
+      this.cameras.main.resetFX();
+      this.cameras.main.fadeIn(400, 0, 0, 0);
+    });
   }
 
   private toggleCredits(): void {

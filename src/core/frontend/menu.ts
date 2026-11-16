@@ -64,11 +64,11 @@ export class MenuModel<Id extends string = string> {
   }
 }
 
-export type TitleMenuId = 'new' | 'continue' | 'load' | 'options' | 'intro' | 'credits';
+export type TitleMenuId = 'new' | 'continue' | 'load' | 'options' | 'intro' | 'credits' | 'quit';
 
 /**
  * Menu ekranu tytułowego; "Kontynuuj" tylko gdy istnieje autozapis (fokus startuje na nim - jak w większości gier),
- * "Wczytaj grę" gdy któryś z ręcznych slotów jest zajęty.
+ * "Wczytaj grę" gdy któryś z ręcznych slotów jest zajęty; "Wyjdź z gry" zawsze na końcu.
  */
 export function titleMenu(hasSave: boolean, hasSlots = false): MenuModel<TitleMenuId> {
   const items: MenuItem<TitleMenuId>[] = [
@@ -78,6 +78,7 @@ export function titleMenu(hasSave: boolean, hasSlots = false): MenuModel<TitleMe
     { id: 'options', label: 'Opcje', enabled: true },
     { id: 'intro', label: 'Intro', enabled: true },
     { id: 'credits', label: 'Autorzy', enabled: true },
+    { id: 'quit', label: 'Wyjdź z gry', enabled: true },
   ];
   const m = new MenuModel(items);
   if (hasSave) m.setFocus(1);
