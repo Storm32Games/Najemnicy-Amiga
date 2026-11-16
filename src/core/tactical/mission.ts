@@ -163,6 +163,7 @@ export class Mission {
       const grp: EnemyGroup = { idx: gi, actors: [], alerted: false, nextNotice: 0, center: g.center };
       g.members.forEach((id, k) => {
         const a = makeActor(createEnemy(id), 'enemy', g.cells[k] ?? g.center, grp);
+        if (g.roam) a.roam = { home: { gx: a.gx, gy: a.gy }, dest: null };
         grp.actors.push(a);
         this.enemies.push(a);
         this.actors.push(a);
@@ -233,6 +234,7 @@ export class Mission {
       {
         grid: this.grid, actors: this.actors, groups: this.groups, target: this.target,
         isBlocked: (gx, gy) => this.neutral.some((n) => n.gx === gx && n.gy === gy),
+        inSight: (a) => this.isVisible(a),
       },
       rng,
     );
@@ -243,6 +245,11 @@ export class Mission {
         this.emitObjectives();
         this.checkObjective();
       } else if (s.kind === 'join' || s.kind === 'move') this.updateVisibility();
+      else if (s.kind === 'round' && this.mode === 'combat') {
+        // runda minęła także poza polem widzenia: wrogowie spoza walki idą dalej, widoczni dołączają
+        this.advanceWorld();
+        this.combat.engageVisible();
+      }
       else if (s.kind === 'end') this.onCombatEnd(s.outcome);
     });
     this.updateVisibility();
@@ -450,6 +457,7 @@ export class Mission {
     }
     this.updateVisibility();
     if (this.mode === 'explore') {
+      for (const [e, p] of this.advanceWorld()) paths.set(e, p);
       this.checkFinds();
       this.checkSpotting();
       const np = this.followNeutral(sel);
@@ -522,44 +530,37 @@ export class Mission {
 
   // ---------- wykrywanie przez wrogów
   /**
-   * Grupy wrogów wypatrują drużyny (≤11 pól, linia wzroku). Bardzo blisko (≤3.2) = wykrycie od razu;
-   * dalej - Percepcja najlepszego wroga vs 10 + najlepsze Skradanie drużyny, co 3 kroki. Wykrycie zaczyna walkę.
+   * Wrogowie wypatrują drużyny - tylko ci, których drużyna widzi (pole widzenia najemników, linia wzroku).
+   * Zaalarmowana grupa atakuje od razu; nieświadoma: bardzo blisko (≤3.2) = wykrycie od razu, dalej - Percepcja
+   * najlepszego z widocznych vs 10 + najlepsze Skradanie drużyny, co 3 kroki. Wykrycie zaczyna walkę.
    */
   checkSpotting(): EnemyGroup | null {
     if (this.mode !== 'explore') return null;
-    const w = this.checkWave();
-    if (w) return w;
+    this.checkWave();
+    const ups = this.pcs.filter((p) => p.state === 'up');
+    if (!ups.length) return null;
     for (const g of this.groups) {
-      if (g.alerted) continue;
-      const alive = g.actors.filter((a) => a.state !== 'dead');
-      if (!alive.length) continue;
+      const seers = g.actors.filter((e) => e.state === 'up' && this.isVisible(e));
       let seer: Actor | null = null;
-      let seen: Actor | null = null;
-      let close = false;
-      outer: for (const e of alive) {
-        for (const p of this.pcs) {
-          if (p.state !== 'up') continue;
+      let best = Infinity;
+      for (const e of seers) {
+        for (const p of ups) {
           const d = dist(e, p);
-          if (d > 11 || !this.grid.los(e, p).clear) continue;
-          if (d <= 3.2) {
-            close = true;
+          if (d < best && this.grid.los(e, p).clear) {
+            best = d;
             seer = e;
-            seen = p;
-            break outer;
-          }
-          if (!seer || !seen || d < dist(seer, seen)) {
-            seer = e;
-            seen = p;
           }
         }
       }
       if (!seer) continue;
-      if (!close) {
+      const close = best <= 3.2;
+      if (g.alerted) this.log(`${seer.ch.name} dostrzega drużynę i atakuje!`, 'bad');
+      else if (!close) {
         if (this.steps < g.nextNotice) continue;
         g.nextNotice = this.steps + 3;
-        const best = alive.reduce((m, e) => Math.max(m, getStat(e.ch, 'perception')), -9);
-        const dc = 10 + Math.max(...this.pcs.filter((p) => p.state === 'up').map((p) => getStat(p.ch, 'stealth')));
-        const r = check(best, dc, this.rng);
+        const per = seers.reduce((m, e) => Math.max(m, getStat(e.ch, 'perception')), -9);
+        const dc = 10 + Math.max(...ups.map((p) => getStat(p.ch, 'stealth')));
+        const r = check(per, dc, this.rng);
         this.log(`${seer.ch.name} wypatruje czegoś (Percepcja ${r.total} vs Skradanie ${dc}): ${r.degree >= 2 ? 'ZAUWAŻA!' : 'nic nie widzi.'}`, r.degree >= 2 ? 'bad' : 'dim');
         if (r.degree < 2) continue;
       } else this.log(`${seer.ch.name} jest tuż obok — wykrywa drużynę!`, 'bad');
@@ -570,24 +571,101 @@ export class Mission {
     return null;
   }
 
-  /** Obrona: kolejna grupa wrogów rusza do ataku na drużynę (po kilku krokach od poprzedniej fali). */
-  private checkWave(): EnemyGroup | null {
-    if (this.objType !== 'defend' || this.steps < this.nextWave) return null;
+  /** Obrona: kolejna grupa napastników rusza na drużynę (po kilku krokach od poprzedniej fali); walczy, gdy dotrze w pole widzenia. */
+  private checkWave(): void {
+    if (this.objType !== 'defend' || this.steps < this.nextWave) return;
     const g = this.groups.find((x) => !x.alerted && x.actors.some((e) => e.state !== 'dead'));
-    if (!g) return null;
+    if (!g) return;
     this.wave++;
-    const by = g.actors.find((e) => e.state !== 'dead')!;
+    g.alerted = true;
+    // następna fala po odparciu tej (onCombatEnd), najpóźniej za 10 kroków
+    this.nextWave = this.steps + 10;
     this.log(`Fala ${this.wave}/${this.groups.length}: napastnicy ruszają do ataku!`, 'bad');
-    this.emit({ kind: 'spotted', group: g, by, close: false });
-    this.startCombat(g);
-    return g;
   }
 
-  /** Walka z grupą; `ambush` = drużyna zaczyna z zaskoczenia (patrz Combat.start). */
+  /**
+   * Walka; biorą w niej udział tylko wrogowie w polu widzenia drużyny - pozostali dołączają, gdy sami się w nim znajdą
+   * (Combat.engageVisible). `ambush` = drużyna zaczyna z zaskoczenia (patrz Combat.start).
+   */
   startCombat(g: EnemyGroup, ambush = false): void {
     this.mode = 'combat';
-    this.combat.start(g, { ambush });
+    let foes = this.enemies.filter((e) => e.state === 'up' && this.isVisible(e));
+    // walka wymuszona bez nikogo w polu widzenia (np. symulacja) - cała grupa
+    if (!foes.length) foes = g.actors.filter((e) => e.state !== 'dead');
+    g.alerted = true;
+    this.combat.start(foes, { ambush });
     this.updateVisibility();
+  }
+
+  // ---------- życie poza walką
+  /**
+   * Wrogowie spoza walki ruszają się (co ruch eksploracji / co rundę walki). Zaalarmowani (grupa wie o drużynie) idą
+   * do najbliższego najemnika i stają, gdy wejdą w pole widzenia; wędrowcy krążą wokół swojego miejsca.
+   * W walce ruch idzie sygnałem Combat 'move'; poza nią - zwrócone ścieżki animuje widok.
+   */
+  advanceWorld(): Map<Actor, GridPos[]> {
+    const out = new Map<Actor, GridPos[]>();
+    const ups = this.pcs.filter((p) => p.state === 'up');
+    if (!ups.length || this.mode === 'over') return out;
+    const fighting = this.inCombat();
+    for (const e of this.enemies) {
+      if (e.state !== 'up' || e.engaged) continue;
+      const speed = this.combat.speedOf(e);
+      let path: GridPos[] | null = null;
+      if (e.group?.alerted) {
+        const near = ups.reduce((m, p) => (dist(p, e) < dist(m, e) ? p : m));
+        const full = this.grid.findPath(e, near, this.passFor(e, near), 240);
+        if (full && full.length > 1) path = this.clipWalk(full.slice(0, -1), fighting ? speed * 2 : speed, true);
+      } else if (e.roam) {
+        if (this.rng() < 0.35) continue; // przystaje
+        const r = e.roam;
+        if (!r.dest || (r.dest.gx === e.gx && r.dest.gy === e.gy)) r.dest = this.roamDest(e);
+        if (!r.dest) continue;
+        const full = this.grid.findPath(e, r.dest, this.passFor(e, r.dest), 120);
+        if (!full || !full.length) {
+          r.dest = null;
+          continue;
+        }
+        path = this.clipWalk(full, Math.min(speed, 4), fighting);
+      }
+      if (!path?.length) continue;
+      if (fighting) this.combat.relocate(e, path);
+      else {
+        const end = path[path.length - 1];
+        e.gx = end.gx;
+        e.gy = end.gy;
+      }
+      out.set(e, path);
+    }
+    return out;
+  }
+
+  /** Przejście dla wroga: wolne pola (bez innych postaci), cel zawsze dozwolony (dalej i tak przycinany). */
+  private passFor(e: Actor, goal: GridPos): (gx: number, gy: number) => boolean {
+    return (gx, gy) => (gx === goal.gx && gy === goal.gy) || (gx === e.gx && gy === e.gy) || !this.combat.occupied(gx, gy);
+  }
+
+  /** Ścieżka przycięta do `max` pól; `stopOnSight` = stop na pierwszym polu w zasięgu wzroku drużyny. Koniec nie na zajętym polu / obiekcie. */
+  private clipWalk(path: GridPos[], max: number, stopOnSight: boolean): GridPos[] {
+    const out: GridPos[] = [];
+    for (const p of path) {
+      if (out.length >= max || this.combat.occupied(p.gx, p.gy)) break;
+      out.push(p);
+      if (stopOnSight && this.isVisible(p)) break;
+    }
+    while (out.length && this.thingAt(out[out.length - 1].gx, out[out.length - 1].gy)) out.pop();
+    return out;
+  }
+
+  /** Losowy cel wędrówki: wolne pole ≤7 od miejsca startu, poza strefą wejścia. */
+  private roamDest(e: Actor): GridPos | null {
+    const h = e.roam?.home ?? e;
+    const c = this.map.reach.filter(
+      (r) => cheb(r, h) <= 7 && cheb(r, e) >= 2 && this.grid.isFree(r.gx, r.gy) && !inEntryZone(this.map.entry, r) && !this.combat.occupied(r.gx, r.gy),
+    );
+    if (!c.length) return null;
+    const r = c[Math.floor(this.rng() * c.length)];
+    return { gx: r.gx, gy: r.gy };
   }
 
   /**
@@ -724,14 +802,14 @@ export class Mission {
       this.checkObjective();
     }
     if (at.alarm && this.mode === 'explore') {
+      // alarm: najbliższa nieświadoma grupa rusza na drużynę (walka, gdy wejdzie w pole widzenia)
       const g = this.groups
         .filter((x) => !x.alerted && x.actors.some((e) => e.state !== 'dead'))
         .sort((x, y) => dist(x.center, th) - dist(y.center, th))[0];
       if (g && dist(g.center, th) <= 16) {
-        const by = g.actors.find((e) => e.state !== 'dead')!;
+        g.alerted = true;
         this.log('Alarm! Wrogowie w pobliżu zostają postawieni na nogi.', 'bad');
-        this.emit({ kind: 'spotted', group: g, by, close: false });
-        this.startCombat(g);
+        this.checkSpotting();
       }
     }
     return true;

@@ -2,6 +2,7 @@
 // Migracja z Oldgame/src/mission/map.js. Deterministyczny: to samo id zlecenia = ta sama mapa.
 import type { EnemyId } from '../data/types.ts';
 import { hashSeed, makeRng } from '../rules/dice.ts';
+import { enemyDef } from '../rules/lookup.ts';
 import type { GridPos } from '../rules/types.ts';
 import { CellKind, DIRS4, TacticalGrid } from './grid.ts';
 
@@ -56,6 +57,8 @@ export interface EnemyGroupSpawn {
   center: ReachCell;
   members: EnemyId[];
   cells: GridPos[];
+  /** Samotny wędrowiec (szabrownik, zwierzę, maszyna) - chodzi po mapie na własną rękę. */
+  roam?: boolean;
 }
 export type FindKind = 'scrap' | 'cache' | 'medical' | 'tech' | 'food' | 'ammo';
 export interface FindSpawn extends GridPos {
@@ -94,6 +97,8 @@ export interface MapSpec {
   id: string;
   biome?: Biome;
   level?: number;
+  /** Typ zlecenia ('defend' = fale napastników, bez wędrowców). */
+  type?: string;
 }
 
 const isBossId = (id: string): boolean => /kostucha|boss/i.test(id);
@@ -422,8 +427,19 @@ export function generateMap(spec: MapSpec, enemyIds: readonly EnemyId[] = []): T
   // cel zlecenia: daleko od wejścia
   const objCell = takeCell((c) => c.d >= maxD * 0.75) ?? takeCell((c) => c.d >= maxD * 0.5) ?? takeCell(() => true);
 
-  // grupy wrogów (po ~3 osoby, maks. 4 grupy; ostatnia przy celu, boss zawsze w niej)
+  // wędrowcy: część szabrowników, fauny i maszyn rozprasza się po mapie (boss i obrona zostają w grupach)
   const ids = enemyIds.slice();
+  const loners: EnemyId[] = [];
+  if (spec.type !== 'defend') {
+    const sr = makeRng((seed ^ 0x2a77e1d5) >>> 0);
+    for (let i = ids.length - 1; i >= 0 && ids.length > 1; i--) {
+      const f = enemyDef(ids[i])?.faction;
+      if (isBossId(ids[i]) || !(f === 'raider' || f === 'beast' || f === 'machine')) continue;
+      if (sr() < 0.45) loners.push(...ids.splice(i, 1));
+    }
+  }
+
+  // grupy wrogów (po ~3 osoby, maks. 4 grupy; ostatnia przy celu, boss zawsze w niej)
   const groups: EnemyGroupSpawn[] = [];
   const nG = Math.max(1, Math.min(4, Math.ceil(ids.length / 3)));
   const centers: ReachCell[] = [];
@@ -450,6 +466,21 @@ export function generateMap(spec: MapSpec, enemyIds: readonly EnemyId[] = []): T
       } else g.cells.push({ gx: g.center.gx, gy: g.center.gy });
     }
   }
+
+  // wędrowcy: pojedynczo, z dala od wejścia i od obozów (na początku listy - ostatnia grupa zostaje przy celu)
+  const solo: EnemyGroupSpawn[] = [];
+  for (const id of loners) {
+    const apart = (r: ReachCell): boolean => centers.every((o) => Math.hypot(o.gx - r.gx, o.gy - r.gy) >= 5);
+    const c = takeCell((r) => r.d >= maxD * 0.3 && apart(r)) ?? takeCell((r) => r.d >= 8) ?? takeCell(() => true);
+    if (!c) {
+      groups[0].members.push(id);
+      groups[0].cells.push({ gx: groups[0].center.gx, gy: groups[0].center.gy });
+      continue;
+    }
+    centers.push(c);
+    solo.push({ center: c, members: [id], cells: [{ gx: c.gx, gy: c.gy }], roam: true });
+  }
+  groups.unshift(...solo);
 
   // skrzynie: najpierw wnętrza budynków/ogrodzeń
   const crates: GridPos[] = [];

@@ -2234,7 +2234,7 @@ export class WorldScene extends Phaser.Scene {
     const cur = c.turn?.actor ?? null;
     const list: InitEntry[] = [];
     c.order.forEach((a, i) => {
-      if (a.state === 'dead' || (a.side === 'enemy' && !a.group?.alerted) || a.side === 'neutral') return;
+      if (a.state === 'dead' || (a.side === 'enemy' && !a.engaged) || a.side === 'neutral') return;
       list.push({ ch: a.ch, side: a.side === 'pc' ? 'pc' : 'enemy', init: a.init, current: a === cur, done: a !== cur && i < c.idx, down: a.state === 'down' });
     });
     this.hud.round = c.round;
@@ -2302,7 +2302,7 @@ export class WorldScene extends Phaser.Scene {
         this.hud.setPhase(TurnPhase.PLAYER_TURN, 1);
         this.hud.showBanner(s.ambush ? 'ZASADZKA!' : 'WALKA!', s.ambush ? 'amber' : 'bad', s.boss ? 'BOSS' : `${s.order.length} uczestników`);
         SoundManager.sfx('alarm', { vol: 0.6 });
-        const boss = this.combat.enemies.some((e) => e.group?.alerted && e.state !== 'dead' && (e.ch.ai === 'boss' || enemyDef(e.ch.templateId)?.ai === 'boss'));
+        const boss = this.combat.enemies.some((e) => e.engaged && e.state !== 'dead' && (e.ch.ai === 'boss' || enemyDef(e.ch.templateId)?.ai === 'boss'));
         SoundManager.music(s.boss || boss ? 'boss' : 'combat');
         this.updateFogOfWar();
         this.updateInitiative();
@@ -2311,7 +2311,7 @@ export class WorldScene extends Phaser.Scene {
       }
       case 'join':
         SoundManager.sfx('alarm', { vol: 0.4 });
-        if (s.group.actors.some((e) => e.ch.ai === 'boss' || enemyDef(e.ch.templateId)?.ai === 'boss')) SoundManager.music('boss');
+        if (s.actors.some((e) => e.ch.ai === 'boss' || enemyDef(e.ch.templateId)?.ai === 'boss')) SoundManager.music('boss');
         this.updateFogOfWar();
         this.updateInitiative();
         break;
@@ -2371,7 +2371,7 @@ export class WorldScene extends Phaser.Scene {
         break;
       case 'spotted': {
         const u = this.units.get(s.by);
-        if (u) {
+        if (u && this.mission.isVisible(s.by)) {
           this.setUnitVisible(u, true);
           this.floatAbove(s.by, '!', COLOR_HOSTILE);
           this.growl(s.by, 0.6);
@@ -2574,6 +2574,16 @@ export class WorldScene extends Phaser.Scene {
     const u = this.units.get(a);
     if (!u || !path.length) return;
     const enemy = a.side === 'enemy' || (a.side === 'neutral' && !a.following);
+    if (enemy && !this.mission.isVisible(u.pos) && !path.some((p) => this.mission.isVisible(p))) {
+      // ruch w mgle wojny: bez animacji (wędrowcy / zaalarmowani wrogowie poza polem widzenia)
+      const end = path[path.length - 1];
+      u.pos = { ...end };
+      const { x, y } = tileCenter(end);
+      u.sprite.setPosition(x, y).setDepth(objDepth(end.gx, end.gy, L_UNIT));
+      u.shadow.setPosition(x, y);
+      this.setUnitVisible(u, false);
+      return;
+    }
     for (const step of path) {
       if (enemy) this.setUnitVisible(u, this.mission.isVisible(u.pos) || this.mission.isVisible(step));
       await this.stepUnit(u, step);

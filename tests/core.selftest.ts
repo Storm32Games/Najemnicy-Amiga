@@ -283,6 +283,62 @@ for (const it of Object.values(ITEMS).filter((i) => i.type === 'consumable')) {
   }
 }
 
+// ---- wędrowcy i dołączanie do walki tylko w polu widzenia
+{
+  const ids: EnemyId[] = ['raider_thug', 'raider_gunner', 'rat_mutant', 'dog_mutant', 'raider_psycho', 'rat_mutant'];
+  let loners = 0;
+  for (let s = 0; s < 20; s++) {
+    const m = generateMap({ id: `roam-${s}`, biome: 'ruins', level: 2 }, ids);
+    loners += m.groups.filter((g) => g.roam).length;
+    ok(m.groups.filter((g) => g.roam).every((g) => g.members.length === 1), 'loner = one enemy');
+    ok(m.groups.reduce((n, g) => n + g.members.length, 0) === ids.length, 'all placed with loners');
+    const dm = generateMap({ id: `roam-${s}`, biome: 'ruins', level: 2, type: 'defend' }, ids);
+    ok(!dm.groups.some((g) => g.roam), 'defend: no loners');
+  }
+  ok(loners > 10, 'raiders / fauna scatter as loners');
+
+  const party = (['soldier', 'scout', 'medic', 'brute'] as ClassId[]).map((c, i) => createCharacter({ name: `S${i}`, classId: c, ancestry: 'human', level: 2 }));
+  const mk = (k: number) =>
+    new Mission({ id: `sight-${k}`, type: 'eliminate', level: 2, biome: 'wastes', enemies: ids, reward: 0 } as unknown as Contract, party, makeRng(7));
+  let m = mk(0);
+  for (let k = 1; k < 40 && !(m.enemies.some((e) => e.roam) && m.groups.some((x) => x.actors.length >= 2)); k++) m = mk(k);
+  ok(m.enemies.some((e) => e.roam), 'mission has roamers');
+  // wędrowcy chodzą po mapie
+  const before = m.enemies.map((e) => `${e.gx},${e.gy}`).join(' ');
+  for (let k = 0; k < 4; k++) m.advanceWorld();
+  ok(m.enemies.map((e) => `${e.gx},${e.gy}`).join(' ') !== before, 'roamers move during exploration');
+  ok(m.enemies.filter((e) => !e.roam && !e.group?.alerted).every((e) => m.map.groups[e.group!.idx].cells.some((c) => c.gx === e.gx && c.gy === e.gy)), 'camps stay put');
+  // walka: tylko widoczni wrogowie; reszta dołącza po wejściu w pole widzenia
+  const g = m.groups.find((x) => x.actors.length >= 2)!;
+  const [seen, hidden] = g.actors;
+  const lead = m.pcs[0];
+  const spot = m.map.reach.find((r) => Math.hypot(r.gx - seen.gx, r.gy - seen.gy) <= 2 && Math.hypot(r.gx - seen.gx, r.gy - seen.gy) >= 1 && !m.actorAt(r.gx, r.gy) && m.grid.isFree(r.gx, r.gy))!;
+  for (const p of m.pcs) {
+    p.gx = spot.gx;
+    p.gy = spot.gy;
+  }
+  for (const p of m.pcs.slice(1)) p.state = 'dead';
+  // ukryj drugiego członka grupy daleko poza zasięgiem wzroku
+  const far = m.map.reach.find((r) => Math.max(Math.abs(r.gx - spot.gx), Math.abs(r.gy - spot.gy)) >= 14 && !m.actorAt(r.gx, r.gy) && m.grid.isFree(r.gx, r.gy))!;
+  hidden.gx = far.gx;
+  hidden.gy = far.gy;
+  m.updateVisibility();
+  ok(m.isVisible(seen) && !m.isVisible(hidden), 'setup: one visible, one hidden');
+  m.startCombat(g);
+  ok(seen.engaged && !hidden.engaged, 'only visible enemy enters combat');
+  ok(!m.combat.order.includes(hidden), 'hidden enemy not in initiative');
+  ok(g.alerted, 'group alerted');
+  // zaalarmowany niewidoczny idzie w stronę drużyny i dołącza po wejściu w pole widzenia
+  let joined = false;
+  for (let r = 0; r < 12 && !joined; r++) {
+    m.advanceWorld();
+    m.combat.engageVisible();
+    joined = hidden.engaged;
+  }
+  ok(joined && m.combat.order.includes(hidden), 'hidden enemy joins once it walks into sight');
+  ok(m.isVisible(hidden), 'joined enemy is visible');
+}
+
 // ---- pełne misje: drużyna i wrogowie sterowani przez AI
 function simulateMission(contract: Contract, party: Character[], seed: number): { result: string; rounds: number; turns: number } {
   const rng = makeRng(seed);
