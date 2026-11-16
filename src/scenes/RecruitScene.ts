@@ -85,12 +85,25 @@ export class RecruitScene extends Phaser.Scene {
     RECRUITS.forEach((r, i) => {
       const x = GRID_X + (i % 4) * (CARD_W + GAP), y = GRID_Y + Math.floor(i / 4) * (CARD_H + GAP);
       const bg = this.add.rectangle(x, y, CARD_W, CARD_H, PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive({ useHandCursor: true });
-      portrait(this, x + 4, y + 1, this.preview(r), 30, 0x000000);
-      // jak w Oldgame/src/scenes/recruit.js:58-61: imię na pasku u dołu portretu, pod spodem klasa i rasa
-      this.add.rectangle(x + 2, y + 21, CARD_W - 4, 10, 0x000000, 0.72).setOrigin(0);
-      const name = label(this, x + CARD_W / 2, y + 22, plainName(r.name), { maxW: CARD_W - 4 }).setOrigin(0.5, 0);
-      label(this, x + CARD_W / 2, y + 30, classDef(r.classId)?.name ?? r.classId, { color: PAL.amber, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
-      label(this, x + CARD_W / 2, y + 37, ancestryOf(r.ancestry)?.name ?? r.ancestry, { color: PAL.dim, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
+      const sprite = spriteIdOf(r);
+      let name: PixelText;
+      if (hasSprite(this, sprite)) {
+        // cała postać (sprite 64x64 w 2x gęstości = 32 px projektowych) losowo obracająca się w miejscu,
+        // pod nią drobnym drukiem imię, klasa i rasa
+        const sp = this.add.image(x + CARD_W / 2, y + 30, spriteTexKey(sprite, SPRITE_DIRS[i % 8])).setOrigin(0.5, 63 / 64).setScale(0.5);
+        this.turn(`card_${r.id}`, sprite, sp, i % 8);
+        const sm = { small: true, maxW: CARD_W - 2 };
+        name = label(this, x + CARD_W / 2, y + 30, plainName(r.name), sm).setOrigin(0.5, 0);
+        label(this, x + CARD_W / 2, y + 35, classDef(r.classId)?.name ?? r.classId, { ...sm, color: PAL.amber }).setOrigin(0.5, 0);
+        label(this, x + CARD_W / 2, y + 40, ancestryOf(r.ancestry)?.name ?? r.ancestry, { ...sm, color: PAL.dim }).setOrigin(0.5, 0);
+      } else {
+        portrait(this, x + 4, y + 1, this.preview(r), 30, 0x000000);
+        // jak w Oldgame/src/scenes/recruit.js:58-61: imię na pasku u dołu portretu, pod spodem klasa i rasa
+        this.add.rectangle(x + 2, y + 21, CARD_W - 4, 10, 0x000000, 0.72).setOrigin(0);
+        name = label(this, x + CARD_W / 2, y + 22, plainName(r.name), { maxW: CARD_W - 4 }).setOrigin(0.5, 0);
+        label(this, x + CARD_W / 2, y + 30, classDef(r.classId)?.name ?? r.classId, { color: PAL.amber, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
+        label(this, x + CARD_W / 2, y + 37, ancestryOf(r.ancestry)?.name ?? r.ancestry, { color: PAL.dim, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
+      }
       const mark = label(this, x + CARD_W - 3, y + 2, '', { size: 7, bold: true, color: PAL.toxic }).setOrigin(1, 0);
       bg.on('pointerover', () => !modalOpen(this) && this.show(r));
       bg.on('pointerdown', () => {
