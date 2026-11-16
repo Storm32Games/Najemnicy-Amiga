@@ -137,7 +137,15 @@ export interface LabelOptions {
   align?: 'left' | 'center' | 'right';
   shadow?: boolean;
   lineSpacing?: number;
+  /** Drobny druk (podpowiedzi, przypisy): napis w skali SMALL_TEXT. `wrap` / `maxW` podaje się w pikselach po skalowaniu. */
+  small?: boolean;
 }
+
+/**
+ * Skala drobnego druku. 0.75 daje całe piksele płótna przy każdym presecie (ZOOM 1.33 / 2.67 / 4 / 5.33 / 8
+ * -> 1 / 2 / 3 / 4 / 6 px na piksel czcionki), więc litery zostają równe.
+ */
+export const SMALL_TEXT = 0.75;
 
 /**
  * Tekst pikselowy (ręcznie rysowana czcionka bitmapowa 6x8, BitmapFont.ts) - 1 piksel czcionki = 1 piksel projektowy.
@@ -146,15 +154,17 @@ export interface LabelOptions {
  * Domyślnie czarny obrys 1 px (czytelność na tle pixel artu); shadow: false = bez obrysu.
  */
 export function label(scene: Phaser.Scene, x: number, y: number, s: string, o: LabelOptions = {}): PixelText {
-  return pixelText(scene, x, y, s, {
+  const k = o.small ? SMALL_TEXT : 1;
+  const t = pixelText(scene, x, y, s, {
     color: o.color ?? PAL.text,
     bold: (o.size ?? 8) >= 12,
     style: o.shadow === false ? 'plain' : 'outline',
-    wrap: o.wrap,
-    maxW: o.maxW,
+    wrap: o.wrap === undefined ? undefined : o.wrap / k,
+    maxW: o.maxW === undefined ? undefined : o.maxW / k,
     align: o.align,
     lineSpacing: o.lineSpacing,
   });
+  return k === 1 ? t : t.setScale(k);
 }
 
 // ------------------------------------------------------------------ przezroczystość okien (Opcje / przełącznik w nagłówku)
