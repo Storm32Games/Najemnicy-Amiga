@@ -49,4 +49,11 @@ We are migrating an existing pure-JavaScript isometric post-apocalyptic turn-bas
 Every cloud chat starts from a fresh clone of `main` on its own `ccr-*` branch, so work from earlier chats is invisible until merged.
 - **At the start of each session**, run `git fetch origin` and list remote branches with commits not in `main` (`git log --oneline origin/main..origin/<branch>` for each `origin/ccr-*` and other feature branches; skip `backup/*`).
 - If any exist, show the user each branch with its commit subjects and **ask whether to merge them into the current branch before starting work**. Do not merge without the user's answer.
-- At the end of a chat, remind the user to open and merge a PR so the next chat sees the changes.
+- At the end of a chat, remind the user to merge the open PR so the next chat sees the changes.
+
+## Pull Requests: Create Automatically
+The user wants a PR to `main` after every pushed change, without being asked (standing permission).
+- After each commit + push to the session's `ccr-*` branch, check whether that branch has an **open** PR to `main`. If it does, the new commits are already in it (update its title/description if the scope changed). If not (none yet, or the previous one was merged/closed), **create a new PR** right away.
+- Before creating, run `git log --oneline origin/main..HEAD` so the PR describes only commits not yet in `main`. If the branch's previous PR was merged, fast-forward the branch to `origin/main` first (`git merge --ff-only origin/main`) when it has no unmerged commits.
+- PR description in Polish: sections **Zmiany** and **Testy** (what was run: `tsc`, `build`, Playwright checks), plus any limitations.
+- Give the user the PR link in the reply. Do not merge PRs yourself.
