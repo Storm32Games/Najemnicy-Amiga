@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
-import { CANVAS_H, CANVAS_W, ZOOM, ZOOM_EVENT } from './ui/Kit';
+import { VH, VW, VX, VY, ZOOM, ZOOM_EVENT } from './ui/Kit';
 import { Settings, type SettingsValues } from './ui/Settings';
 
 // Efekty retro nad całą grą (odpowiednik przebiegu post-process z Oldgame/src/gfx/post.js):
 // linie skanowania, ziarno filmu i raster Bayera. Scena stoi zawsze na wierzchu, nie przyjmuje kliknięć,
 // a włącza/wyłącza się w Opcjach (Settings.scanlines / grain / dither).
-// Rysuje w pikselach płótna (kamera bez zoomu), więc linie i ziarno są drobne przy każdej rozdzielczości.
+// Rysuje w pikselach płótna (kamera bez zoomu), ale wzory leżą na siatce pikseli projektowych (obszar gry od VX, VY):
+// ziarno i raster mają rozmiar piksela projektowego, a linia skanowania wypada na dole każdego wiersza pikseli.
+// Drobne (1 piksel płótna) ziarno i linie co 6 px przy pikselu 4 px rozmywały kontury postaci.
 
 
 export class FxScene extends Phaser.Scene {
@@ -22,18 +24,16 @@ export class FxScene extends Phaser.Scene {
   create(): void {
     this.input.enabled = false;
     this.makeTextures();
-    const CW = CANVAS_W, CH = CANVAS_H;
-    this.scan = this.add.tileSprite(0, 0, CW, CH, 'fx_scan').setOrigin(0);
-    this.grain = this.add.tileSprite(0, 0, CW, CH, 'fx_grain').setOrigin(0).setBlendMode(Phaser.BlendModes.SCREEN);
-    this.dither = this.add.tileSprite(0, 0, CW, CH, 'fx_bayer').setOrigin(0).setTileScale(ZOOM, ZOOM);
+    this.scan = this.add.tileSprite(VX, VY, VW, VH, 'fx_scan').setOrigin(0);
+    this.grain = this.add.tileSprite(VX, VY, VW, VH, 'fx_grain').setOrigin(0).setBlendMode(Phaser.BlendModes.SCREEN).setTileScale(ZOOM, ZOOM);
+    this.dither = this.add.tileSprite(VX, VY, VW, VH, 'fx_bayer').setOrigin(0).setTileScale(ZOOM, ZOOM);
     // zmiana rozdzielczości na żywo (Opcje): warstwy w pikselach płótna dostają nowy rozmiar
     this.events.on(ZOOM_EVENT, () => {
       if (this.textures.exists('fx_scan')) this.textures.remove('fx_scan');
       this.makeTextures();
-      const w = CANVAS_W, h = CANVAS_H;
-      this.scan.setTexture('fx_scan').setSize(w, h);
-      this.grain.setSize(w, h);
-      this.dither.setSize(w, h).setTileScale(ZOOM, ZOOM);
+      this.scan.setTexture('fx_scan').setPosition(VX, VY).setSize(VW, VH);
+      this.grain.setPosition(VX, VY).setSize(VW, VH).setTileScale(ZOOM, ZOOM);
+      this.dither.setPosition(VX, VY).setSize(VW, VH).setTileScale(ZOOM, ZOOM);
     });
     this.apply(Settings.values);
     this.off = Settings.onChange((v) => this.apply(v));
@@ -62,10 +62,11 @@ export class FxScene extends Phaser.Scene {
 
   private makeTextures(): void {
     if (!this.textures.exists('fx_scan')) {
-      // co trzeci wiersz płótna przyciemniony (przy dużych rozdzielczościach linia grubsza)
-      const step = Math.max(3, Math.round(ZOOM * 1.5)), line = Math.max(1, Math.round(step / 3));
+      // dolna ćwiartka każdego wiersza pikseli projektowych przyciemniona (krok = piksel projektowy, przy
+      // ułamkowym ZOOM zaokrąglony); wcześniej co 1.5 piksela projektowego - linie cięły piksele postaci w poprzek
+      const step = Math.max(2, Math.round(ZOOM)), line = Math.max(1, Math.round(step / 4));
       const g = this.make.graphics({}, false);
-      g.fillStyle(0x000000, 0.13).fillRect(0, 0, 4, line);
+      g.fillStyle(0x000000, 0.13).fillRect(0, step - line, 4, line);
       g.generateTexture('fx_scan', 4, step);
       g.destroy();
     }
@@ -81,6 +82,7 @@ export class FxScene extends Phaser.Scene {
       }
       ctx.putImageData(img, 0, 0);
       c.refresh();
+      c.setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
     if (!this.textures.exists('fx_bayer')) {
       // macierz Bayera 4x4: delikatny raster w pikselach projektowych (jak dithering palety w post.js)
@@ -103,6 +105,6 @@ export class FxScene extends Phaser.Scene {
     this.acc += delta;
     if (this.acc < 42) return;
     this.acc = 0;
-    this.grain.setTilePosition(Math.random() * 128, Math.random() * 128);
+    this.grain.setTilePosition(Math.floor(Math.random() * 128), Math.floor(Math.random() * 128));
   }
 }

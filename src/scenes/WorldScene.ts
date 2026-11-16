@@ -1051,8 +1051,10 @@ export class WorldScene extends Phaser.Scene {
         }
       }
       const u = this.makeUnit(key, look, a, sheet);
-      if (a.side === 'enemy' && (a.ch.look as Partial<EnemyLook>).scale) u.sprite.setScale(Math.min(1.5, Math.max(0.8, (a.ch.look as Partial<EnemyLook>).scale ?? 1)));
-      if (faunaScale !== 1) u.sprite.setScale(u.sprite.scaleX * faunaScale);
+      let scale = faunaScale;
+      if (a.side === 'enemy' && (a.ch.look as Partial<EnemyLook>).scale) scale *= Math.min(1.5, Math.max(0.8, (a.ch.look as Partial<EnemyLook>).scale ?? 1));
+      // skala do pełnych pikseli płótna na piksel projektowy (x1.1 przy ZOOM 4 dawałoby piksele 4 i 5 px na przemian)
+      if (scale !== 1) u.sprite.setScale(Math.max(1, Math.round(scale * ZOOM)) / ZOOM);
       if (a.side === 'enemy') {
         this.face(u, { gx: entry.gx - a.gx, gy: entry.gy - a.gy });
         this.idle(u);
@@ -1243,8 +1245,19 @@ export class WorldScene extends Phaser.Scene {
 
   // ---------- przybliżenie kamery (kółko, +/-, 0) - Oldgame/src/scenes/mission.js:639-645
 
+  /**
+   * Przybliżenie o krok: zoom kamery (ZOOM * camZoom) przeskakuje na następną liczbę całkowitą, więc piksel
+   * projektowy ma zawsze tyle samo pikseli płótna (przy ułamkowym zoomie najbliższy sąsiad daje nierówne, poszarpane
+   * piksele). Wyjątek: camZoom = 1 (klawisz 0 / start) - wtedy zoom = ZOOM, nawet ułamkowy (HD, QHD).
+   */
   private zoomBy(f: number): void {
-    this.setZoom(this.camZoom * f);
+    const cur = ZOOM * this.camZoom, target = cur * f;
+    const lo = Math.max(1, Math.ceil(ZOOM * 0.4)), hi = Math.max(lo, Math.floor(ZOOM * 2.5));
+    let e = f > 1 ? Math.max(Math.floor(cur + 1e-6) + 1, Math.round(target)) : Math.min(Math.ceil(cur - 1e-6) - 1, Math.round(target));
+    e = Math.max(lo, Math.min(hi, e));
+    // powrót do domyślnego zoomu, gdy krok go "przeskakuje"
+    if ((cur < ZOOM && e > ZOOM) || (cur > ZOOM && e < ZOOM)) e = ZOOM;
+    this.setZoom(e / ZOOM);
   }
 
   private setZoom(z: number): void {
