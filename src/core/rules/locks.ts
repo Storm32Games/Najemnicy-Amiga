@@ -6,8 +6,8 @@
 //   ten sam schemat sukcesów, kryt. porażka = blokada urządzenia i alarm.
 // Czysty TypeScript: zero zależności od Phasera / DOM.
 import type { SkillId } from '../data/types.ts';
-import { check, dcForLevel, type CheckResult, type Degree, type Rng } from './dice.ts';
-import { getStat } from './stats.ts';
+import { dcForLevel, type CheckResult, type Degree, type Rng } from './dice.ts';
+import { checkBy, getStat } from './stats.ts';
 import type { Character } from './types.ts';
 
 /** Jakość zamka (tabela PF2e Core: Poor / Simple / Average / Good / Superior). */
@@ -125,7 +125,7 @@ export function pickLock(ch: Character, lock: LockState, skill: SkillId, rng: Rn
   if (skill === 'athletics') {
     const dc = lock.dc + 5;
     const mod = getStat(ch, 'athletics') + IMPROVISED_PENALTY + lock.forcePenalty;
-    const r = check(mod, dc, rng);
+    const r = checkBy(ch, mod, dc, rng);
     out.roll = r;
     out.improvised = true;
     if (r.degree >= 2) {
@@ -142,7 +142,7 @@ export function pickLock(ch: Character, lock: LockState, skill: SkillId, rng: Rn
   }
   out.improvised = !hasLockpick(ch);
   const mod = getStat(ch, skill) + (out.improvised ? IMPROVISED_PENALTY : 0);
-  const r = check(mod, lock.dc, rng);
+  const r = checkBy(ch, mod, lock.dc, rng);
   out.roll = r;
   out.gained = r.degree === 3 ? 2 : r.degree === 2 ? 1 : 0;
   lock.progress = Math.min(lock.needed, lock.progress + out.gained);
@@ -161,7 +161,7 @@ export function pickLock(ch: Character, lock: LockState, skill: SkillId, rng: Rn
  * Kryt. sukces = 2 warstwy, sukces = 1, porażka = nic, kryt. porażka = blokada urządzenia i alarm.
  */
 export function hackDevice(ch: Character, dev: LockState, skill: SkillId, rng: Rng = Math.random, what = 'Urządzenie'): LockAttempt {
-  const r = check(getStat(ch, skill), dev.dc, rng);
+  const r = checkBy(ch, getStat(ch, skill), dev.dc, rng);
   const out: LockAttempt = { roll: r, skill, gained: r.degree === 3 ? 2 : r.degree === 2 ? 1 : 0, opened: false, brokeTool: false, jammed: false, broken: false, alarm: false, improvised: false, log: '' };
   dev.progress = Math.min(dev.needed, dev.progress + out.gained);
   out.opened = dev.progress >= dev.needed;

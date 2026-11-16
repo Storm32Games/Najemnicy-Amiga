@@ -3185,7 +3185,7 @@ export class WorldScene extends Phaser.Scene {
       return `${base} · ${info.reason}${approach}${ambush}`;
     }
     const pct = (v: number): string => `${Math.round(v * 100)}%`;
-    const notes = [info.flank && 'flankowanie', info.geoCover && 'osłona', info.mapIdx && `PWA -${info.mapIdx * 5}`, info.inc && 'dystans']
+    const notes = [info.frightened && 'przerażony: kość ½', info.concealed && 'cel ukryty: kość ½', info.flank && 'flankowanie', info.geoCover && 'osłona', info.mapIdx && `PWA -${info.mapIdx * 5}`, info.inc && 'dystans']
       .filter(Boolean)
       .join(', ');
     return `${base} · KP ${info.ac} · trafienie ${pct(info.hit)} (kryt. ${pct(info.crit)})${notes ? ' · ' + notes : ''} · 1 AP${ambush}`;

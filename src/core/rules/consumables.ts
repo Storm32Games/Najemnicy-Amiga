@@ -3,7 +3,7 @@ import type { Rng } from './dice.ts';
 import { roll } from './dice.ts';
 import { heal, isDead } from './damage.ts';
 import { itemDef } from './lookup.ts';
-import { addCondition, removeCondition } from './stats.ts';
+import { addCondition, dieHalves, removeCondition } from './stats.ts';
 import { basicSave, cond, isMachine } from './abilities.ts';
 import type { ActionResult, Character, ItemInstance } from './types.ts';
 
@@ -37,7 +37,7 @@ export function useConsumable(user: Character, ref: ItemInstance | string, targe
         r.log.push(`${t.name} nie żyje.`);
         return r;
       }
-      const rr = roll(c.amount ?? '1d4', rng);
+      const rr = roll(c.amount ?? '1d4', rng, dieHalves(user));
       r.heal = { dice: rr.dice, flat: rr.mod, mult: 1, post: [], total: rr.total };
       const n = heal(t, rr.total);
       r.events.push({ type: 'heal', target: t, amount: n });
@@ -52,7 +52,7 @@ export function useConsumable(user: Character, ref: ItemInstance | string, targe
     case 'damage':
       for (const t of tg) {
         if (c.only === 'machine' && !isMachine(t)) continue;
-        const { c: sc } = basicSave(r, t, c.save ?? 'reflex', c.dc ?? 15, c.amount ?? '1d6', c.dmgType ?? 'P', rng);
+        const { c: sc } = basicSave(r, t, c.save ?? 'reflex', c.dc ?? 15, c.amount ?? '1d6', c.dmgType ?? 'P', rng, user);
         if (c.condition && sc.degree <= 1 && t.hp > 0) {
           cond(r, t, c.condition.id, c.condition.value);
         }

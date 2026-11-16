@@ -3,7 +3,7 @@
 import { UNARMED } from '../data/items.ts';
 import { BASE_AC, COVER_AC, MAP, PERSISTENT, SKILLS } from '../data/rules.ts';
 import type { ArmorStats, AttrId, ConditionId, SaveId, ShieldStats, SkillId } from '../data/types.ts';
-import { profBonus } from './dice.ts';
+import { check, profBonus, type CheckResult, type Rng } from './dice.ts';
 import { ancestryOf, classDef, conditionDef, itemDef } from './lookup.ts';
 import type { AttackLike, Character, ConditionValue, NormWeapon, WeaponItemLike, WeaponRef } from './types.ts';
 
@@ -42,8 +42,18 @@ export function removeCondition(ch: Character, id: ConditionId): void {
   delete ch.conditions[id];
 }
 
-/** Kara statusowa: max(przerażony, chory). */
-export const statusPenalty = (ch: Character): number => Math.max(condValue(ch, 'frightened'), condValue(ch, 'sickened'));
+/** Kara statusowa: chory. (Przerażony nie daje kary - połowi kości, patrz dieHalves.) */
+export const statusPenalty = (ch: Character): number => condValue(ch, 'sickened');
+
+/** Zastraszenie: przerażona postać dzieli każdy swój rzut kością na 2 (zaokrąglenie w górę). */
+export const dieHalves = (ch: Character): number => (hasCondition(ch, 'frightened') ? 1 : 0);
+/** Ukrycie celu (Ukryty): atakujący dzieli kość testu trafienia na 2. Osłona / Kryj się daje tylko KP. */
+export const concealHalves = (def: Character): number => (hasCondition(def, 'hidden') ? 1 : 0);
+/** Test k20 wykonywany przez postać: przerażona połowi kość. `extra` - dodatkowe połowienia (ukryty cel). */
+export const checkBy = (ch: Character, mod: number, dc: number, rng: Rng = Math.random, extra = 0): CheckResult =>
+  check(mod, dc, rng, dieHalves(ch) + extra);
+/** Połowienia k20 testu trafienia: przerażony atakujący + ukryty cel (sumują się). */
+export const attackHalves = (att: Character, def: Character): number => dieHalves(att) + concealHalves(def);
 
 /** Modyfikator cechy po stanach (niezdarny obniża ZR, osłabiony SIŁ). */
 export function attrMod(ch: Character, a: AttrId): number {

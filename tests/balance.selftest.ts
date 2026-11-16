@@ -51,7 +51,7 @@ ok(noFn(ITEMS), 'items plain');
   const c = createCharacter({ name: 'F', ancestry: 'human', classId: 'soldier' });
   const ac0 = getStat(c, 'ac'), will0 = getStat(c, 'will');
   addCondition(c, 'frightened', 2);
-  ok(getStat(c, 'ac') === ac0 - 2 && getStat(c, 'will') === will0 - 2, 'frightened lowers AC and Will');
+  ok(getStat(c, 'ac') === ac0 && getStat(c, 'will') === will0, 'frightened: no flat AC/Will penalty (dice halved instead)');
   const heavy = createCharacter({ name: 'H', ancestry: 'human', classId: 'scout' });
   heavy.attrs.dex = 5;
   heavy.equipment.armor = newItem('riot_armor');

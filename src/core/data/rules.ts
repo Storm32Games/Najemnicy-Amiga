@@ -40,7 +40,7 @@ export const SKILLS = {
 /** kind: persistent (damage each turn, value = die), decay (-1 at end of turn), timed (value = rounds left), consume (lose X actions next turn), short (ends at owner's turn start), flag. */
 export const CONDITIONS = {
   off_guard: { name: 'Odsłonięty', desc: '-2 do KP.', kind: 'flag' },
-  frightened: { name: 'Przerażony', desc: 'Kara -X do wszystkich testów i WT; maleje co turę.', kind: 'decay', valued: true },
+  frightened: { name: 'Przerażony', desc: 'Wszystkie rzuty kością dzielone na 2 (w górę); maleje co turę.', kind: 'decay', valued: true },
   sickened: { name: 'Chory', desc: 'Kara -X do wszystkich testów i WT; maleje co turę.', kind: 'decay', valued: true },
   clumsy: { name: 'Niezdarny', desc: 'Kara -X do Zręczności (KP, Refleks, strzały).', kind: 'decay', valued: true },
   enfeebled: { name: 'Osłabiony', desc: 'Kara -X do Siły.', kind: 'decay', valued: true },
@@ -56,7 +56,7 @@ export const CONDITIONS = {
   wounded: { name: 'Ranny', desc: 'Kolejne umieranie zaczyna się od wyższego poziomu.', kind: 'flag', valued: true },
   unconscious: { name: 'Nieprzytomny', desc: 'Nie działa.', kind: 'flag' },
   dead: { name: 'Martwy', desc: '', kind: 'flag' },
-  hidden: { name: 'Ukryty', desc: 'Następny atak z ukrycia uderza w odsłoniętego.', kind: 'flag' },
+  hidden: { name: 'Ukryty', desc: 'Rzut na trafienie w ukrytego dzielony na 2; następny atak z ukrycia uderza w odsłoniętego.', kind: 'flag' },
   raised_shield: { name: 'Tarcza w górze', desc: '+KP z tarczy do początku następnej tury.', kind: 'short' },
   dodging: { name: 'Unik', desc: '+2 do KP do początku następnej tury.', kind: 'short' },
   in_cover: { name: 'W osłonie', desc: '+2 KP (1) lub +4 (2) przeciw atakom dystansowym.', kind: 'flag', valued: true },

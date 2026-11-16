@@ -4,7 +4,7 @@ import {
   ABILITIES, ABILITY_EFFECTS, ANCESTRIES, CLASSES, DEGREE_NAMES, ENEMIES, ITEMS,
   addCondition, addXP, applyDamage, canAct, check, createCharacter, createEnemy, dcForLevel, encounterXP, endTurn, equip,
   getAttackBonus, getStat, heal, isAlive, isDown, longRest, makeRng, newItem, profBonus, removeCondition, roll, rollInitiative,
-  skillCheck, startTurn, strike, summarize, useAbility, useConsumable, d,
+  skillCheck, startTurn, strike, summarize, useAbility, useConsumable, d, checkBy, halveDie, attackHalves,
   LOCKS, DEVICES, lockState, deviceState, pickLock, hackDevice, lockForLevel, hasLockpick, fmtDamage,
   generateMap, Mission, runAiTurn, CellKind, MAP_W, MAP_H,
   freshState, generateContracts, applyMissionResult, EVENTS, resolveEventChoice, shopStock, buy, sellPrice, restDay,
@@ -100,11 +100,29 @@ ok(createCharacter({ name: 'X', ancestry: 'nomad-born', classId: 'scout' }).ance
   ok(getStat(c, 'ac') === ac0 - 2, 'off_guard -2 AC');
   removeCondition(c, 'off_guard');
   addCondition(c, 'frightened', 2);
-  ok(getStat(c, 'ac') === ac0 - 2, 'frightened -2');
+  ok(getStat(c, 'ac') === ac0, 'frightened: no flat penalty (dice halved instead)');
+  {
+    const seq = (v: number) => () => (v - 1) / 20 + 0.001; // k20 = v
+    const n = check(5, 15, seq(14));
+    ok(n.d20 === 14 && n.total === 19, 'check: normal die');
+    const h = checkBy(c, 5, 15, seq(15));
+    ok(h.raw === 15 && h.d20 === 8 && h.total === 13 && h.halves === 1, 'frightened: k20 15 -> 8 (ceil)');
+    const h20 = checkBy(c, 0, 15, seq(20));
+    ok(h20.d20 === 10 && !h20.nat20, 'frightened: 20 -> 10, no nat 20');
+    ok(halveDie(1, 1) === 1 && halveDie(7, 1) === 4 && halveDie(20, 2) === 5, 'halveDie rounds up');
+    ok(roll('2d6', () => 0.999, 1).total === 6, 'frightened: damage dice halved (6 -> 3 each)');
+  }
   removeCondition(c, 'frightened');
   addCondition(c, 'in_cover');
   ok(getStat(c, 'ac') === ac0 + 2, 'cover +2');
+  ok(attackHalves(c, c) === 0, 'take cover: AC only, hit die not halved');
   removeCondition(c, 'in_cover');
+  addCondition(c, 'hidden');
+  ok(attackHalves(c, c) === 1, 'hidden: hit die halved');
+  addCondition(c, 'frightened', 1);
+  ok(attackHalves(c, c) === 2, 'frightened attacker vs hidden target: halved twice');
+  removeCondition(c, 'frightened');
+  removeCondition(c, 'hidden');
   c.equipment.shield = newItem('scrap_shield');
   addCondition(c, 'raised_shield');
   ok(getStat(c, 'ac') === ac0 + 2, 'shield +2');

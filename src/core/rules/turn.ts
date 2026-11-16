@@ -1,10 +1,10 @@
 // Początek / koniec tury postaci, inicjatywa, testy umiejętności. Migracja z Oldgame/src/rules/core.js.
 import { ACTIONS_PER_TURN, CONDITIONS, PERSISTENT, PERSISTENT_END_DC } from '../data/rules.ts';
 import type { ConditionDef, ConditionId } from '../data/types.ts';
-import { check, d, flatCheck, roll, type CheckResult, type Rng } from './dice.ts';
+import { d, flatCheck, halveDie, roll, type CheckResult, type Rng } from './dice.ts';
 import { applyDamage, isDead, recoveryCheck } from './damage.ts';
 import { conditionDef } from './lookup.ts';
-import { condValue, getStat, hasCondition, type StatKey } from './stats.ts';
+import { checkBy, condValue, dieHalves, getStat, hasCondition, type StatKey } from './stats.ts';
 import type { Character, CombatEvent } from './types.ts';
 
 export interface TurnStartResult {
@@ -92,8 +92,8 @@ export interface InitiativeRoll {
 /** Inicjatywa = Percepcja + k20. */
 export function rollInitiative(ch: Character, rng: Rng = Math.random): InitiativeRoll {
   const mod = getStat(ch, 'perception');
-  const d20 = d(20, rng);
+  const d20 = halveDie(d(20, rng), dieHalves(ch));
   return { d20, mod, total: d20 + mod };
 }
 
-export const skillCheck = (ch: Character, skill: StatKey, dc: number, rng: Rng = Math.random): CheckResult => check(getStat(ch, skill), dc, rng);
+export const skillCheck = (ch: Character, skill: StatKey, dc: number, rng: Rng = Math.random): CheckResult => checkBy(ch, getStat(ch, skill), dc, rng);

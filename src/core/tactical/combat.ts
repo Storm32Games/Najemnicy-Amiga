@@ -8,11 +8,11 @@ import { useAbility as resolveAbility, canUse } from '../rules/abilities.ts';
 import { endEncounter } from '../rules/character.ts';
 import { useConsumable } from '../rules/consumables.ts';
 import { isAlive, isDown } from '../rules/damage.ts';
-import { fmtMod, hitChances, type Rng } from '../rules/dice.ts';
+import { fmtD20, fmtMod, hitChances, type Rng } from '../rules/dice.ts';
 import { swapWeapons } from '../rules/equipment.ts';
 import { abilityDef, itemDef } from '../rules/lookup.ts';
 import { strike as strikeRule } from '../rules/strike.ts';
-import { getAttackBonus, getStat, getWeapon, normWeapon, traitVal } from '../rules/stats.ts';
+import { attackHalves, concealHalves, dieHalves, getAttackBonus, getStat, getWeapon, normWeapon, traitVal } from '../rules/stats.ts';
 import { endTurn as endTurnRule, rollInitiative, startTurn } from '../rules/turn.ts';
 import type { ActionResult, Character, GridPos, ItemInstance, NormWeapon, WeaponRef } from '../rules/types.ts';
 import { cheb, strideActions, TacticalGrid, UNREACHABLE, type SearchResult } from './grid.ts';
@@ -88,6 +88,12 @@ export interface StrikeInfo {
   crit: number;
   flank: boolean;
   geoCover: boolean;
+  /** Połowienia k20 trafienia (przerażony atakujący, ukryty cel). */
+  halves: number;
+  /** Cel w ukryciu (Ukryty) - kość trafienia dzielona na 2. */
+  concealed: boolean;
+  /** Atakujący przerażony - jego kości dzielone na 2. */
+  frightened: boolean;
   /** Przyrosty zasięgu (każdy -2). */
   inc: number;
   mapIdx: number;
@@ -254,7 +260,7 @@ export class Combat {
   strikeInfo(att: Actor, def: Actor, w: WeaponRef = this.weaponOf(att), pos: GridPos = att): StrikeInfo {
     const nw = normWeapon(w);
     const info: StrikeInfo = {
-      ok: false, weapon: nw, mod: 0, ac: 0, baseAc: 0, hit: 0, crit: 0, flank: false, geoCover: false, inc: 0, mapIdx: 0, ranged: nw.range > 0,
+      ok: false, weapon: nw, mod: 0, ac: 0, baseAc: 0, hit: 0, crit: 0, flank: false, geoCover: false, halves: 0, concealed: false, frightened: false, inc: 0, mapIdx: 0, ranged: nw.range > 0,
     };
     const d = cheb(pos, def);
     const r = nw.range;
@@ -273,9 +279,12 @@ export class Combat {
     info.geoCover = r > 0 && cover;
     info.mapIdx = Math.min(2, att.mapN);
     info.mod = getAttackBonus(att.ch, w, info.mapIdx, { rangeIncrements: info.inc });
+    info.concealed = concealHalves(def.ch) > 0;
+    info.frightened = dieHalves(att.ch) > 0;
+    info.halves = attackHalves(att.ch, def.ch);
     info.ac = this.withTemp(def, info.geoCover, info.flank, () => getStat(def.ch, 'ac', { ignoreCover: r === 0 }));
     info.baseAc = getStat(def.ch, 'ac', { ignoreCover: r === 0 });
-    const ch = hitChances(info.mod, info.ac);
+    const ch = hitChances(info.mod, info.ac, info.halves);
     info.hit = ch.hit;
     info.crit = ch.crit;
     info.ok = true;
@@ -414,18 +423,18 @@ export class Combat {
     if (!info.ok) return fail(`Nie można zaatakować: ${info.reason}.`);
     this.spendActions(att, 1);
     const result = this.withTemp(def, info.geoCover, info.flank, () =>
-      strikeRule(att.ch, def.ch, { weapon: w, mapIndex: info.mapIdx, rng: this.rng, rangeIncrements: info.inc }),
+      strikeRule(att.ch, def.ch, { weapon: w, mapIndex: info.mapIdx, rng: this.rng, rangeIncrements: info.inc, hitHalves: info.halves }),
     );
     att.mapN += 1;
     delete att.ch.conditions.in_cover;
     const d = result.d20;
     if (d) {
-      const note = [info.flank && 'flankowanie', info.geoCover && 'osłona', info.mapIdx && (info.mapIdx === 1 ? 'PWA -5' : 'PWA -10'), info.inc && 'dystans']
+      const note = [info.frightened && 'przerażony ½', info.concealed && 'cel ukryty ½', info.flank && 'flankowanie', info.geoCover && 'osłona', info.mapIdx && (info.mapIdx === 1 ? 'PWA -5' : 'PWA -10'), info.inc && 'dystans']
         .filter(Boolean)
         .join(', ');
       const tone: LogTone = att.side === 'pc' ? (d.degree >= 3 ? 'amber' : d.degree >= 2 ? 'good' : 'dim') : d.degree >= 2 ? 'bad' : 'dim';
       this.log(
-        `${att.ch.name} → ${def.ch.name} (${info.weapon.name}): k20 ${d.d20}${fmtMod(d.mod)} = ${d.total} vs KP ${d.dc} — ${DEGREE_NAMES[d.degree]}${note ? ' [' + note + ']' : ''}`,
+        `${att.ch.name} → ${def.ch.name} (${info.weapon.name}): k20 ${fmtD20(d)}${fmtMod(d.mod)} = ${d.total} vs KP ${d.dc} — ${DEGREE_NAMES[d.degree]}${note ? ' [' + note + ']' : ''}`,
         tone,
       );
     }

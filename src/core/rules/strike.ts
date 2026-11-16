@@ -1,9 +1,9 @@
 // Atak bronią (Strike): trafienie vs KP, krytyki, cechy deadly/fatal, atak z ukrycia, premie klasowe.
 // Migracja z Oldgame/src/rules/core.js -> strike().
 import { DMG_ADJ } from '../data/rules.ts';
-import { check, d, fmtMod, parseDice, type DieRoll, type Rng } from './dice.ts';
+import { check, d, fmtD20, fmtMod, halveDie, parseDice, type DieRoll, type Rng } from './dice.ts';
 import { applyDamage } from './damage.ts';
-import { attrMod, getAttackBonus, getStat, getWeapon, hasCondition, isOffGuard, normWeapon, traitDie, traitVal } from './stats.ts';
+import { attackHalves, attrMod, dieHalves, getAttackBonus, getStat, getWeapon, hasCondition, isOffGuard, normWeapon, traitDie, traitVal } from './stats.ts';
 import type { ActionResult, Character, WeaponRef } from './types.ts';
 
 export interface StrikeOptions {
@@ -20,6 +20,8 @@ export interface StrikeOptions {
   rangeIncrements?: number;
   /** Wymusza atak z ukrycia (Szczur). */
   sneak?: boolean;
+  /** Połowienia k20 trafienia; domyślnie attackHalves(atakujący, obrońca). */
+  hitHalves?: number;
 }
 
 /** Imię w bierniku do dziennika. */
@@ -35,10 +37,10 @@ export function strike(attacker: Character, defender: Character, o: StrikeOption
   const bonus = getAttackBonus(attacker, w, o.mapIndex || 0, { rangeIncrements: o.rangeIncrements }) + (o.bonus || 0);
   const dc = getStat(defender, 'ac', { ignoreCover: !!o.ignoreCover || w.range === 0 });
   const rng = o.rng ?? Math.random;
-  const c = check(bonus, dc, rng);
+  const c = check(bonus, dc, rng, o.hitHalves ?? attackHalves(attacker, defender));
   res.d20 = c;
   res.weapon = w;
-  const info = `k20 ${c.d20}${fmtMod(bonus)}=${c.total} vs KP ${dc}`;
+  const info = `k20 ${fmtD20(c)}${fmtMod(bonus)}=${c.total} vs KP ${dc}`;
   if (c.degree <= 1) {
     res.log.push(`${attacker.name} pudłuje (${info}).`);
     res.events.push({ type: 'miss', target: defender, degree: c.degree });
@@ -52,8 +54,9 @@ export function strike(attacker: Character, defender: Character, o: StrikeOption
   const sides = crit && fatal ? fatal : p.sides;
   const rolled: DieRoll[] = [];
   const post: DieRoll[] = [];
+  const dmgHalves = dieHalves(attacker);
   const die = (n: number, out: DieRoll[]): number => {
-    const v = d(n, rng);
+    const v = halveDie(d(n, rng), dmgHalves);
     out.push({ sides: n, value: v });
     return v;
   };
