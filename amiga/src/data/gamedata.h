@@ -778,4 +778,14 @@ extern const WPos RING_S[5], RING_N[5];
 extern const int32_t HALL_BOXES[4][4]; /* x0, x1, z0, z1 z marginesem */
 #define HALL_COUNT 4
 
+/* ---- generator imion (names.ts) */
+typedef struct { const char *const *items; uint8_t n; } StrList;
+typedef struct { const char *from, *to; } StrPair;
+extern const StrList NAMES_FIRST_M, NAMES_FIRST_F, NAMES_SURNAMES, NAMES_NICK, NAMES_TITLE_HUMAN;
+extern const StrList NAMES_CALL[CLASS_COUNT];
+extern const StrList NAMES_MUT_CALL, NAMES_MUT_TITLE, NAMES_CYB_CALL, NAMES_CYB_SERIAL, NAMES_NOM_CALL, NAMES_NOM_FROM;
+extern const StrPair NAMES_FEM[10], NAMES_MASC[3];
+#define NAMES_FEM_N 10
+#define NAMES_MASC_N 3
+
 #endif /* GAMEDATA_H */

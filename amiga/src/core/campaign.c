@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "campaign.h"
+#include "names.h"
 
 /* ================================================================ Number.prototype.toString(36) jak w V8 */
 static double next_double(double v) {
@@ -495,13 +496,33 @@ int tavern_recruits(const CampaignState *st, uint8_t *out) {
   }
   return n;
 }
+static int same_lower(const char *a, const char *b) {
+  char ka[64], kb[64];
+  int i;
+  for (i = 0; a[i] && i < 63; i++) ka[i] = a[i];
+  ka[i] = 0;
+  for (i = 0; b[i] && i < 63; i++) kb[i] = b[i];
+  kb[i] = 0;
+  for (i = 0; ka[i]; i++) ka[i] = (char)name_lower((unsigned char)ka[i]);
+  for (i = 0; kb[i]; i++) kb[i] = (char)name_lower((unsigned char)kb[i]);
+  return !strcmp(ka, kb);
+}
 int hire_recruit(CampaignState *st, uint8_t recruit, Rng *r) {
-  int cost = hire_cost(st), lvl;
-  (void)r; /* TS: generateName przy kolizji imion - tu imię rekruta zostaje (kolizja możliwa tylko przy własnych imionach) */
-  if (st->n_party >= MAX_PARTY || st->scrap < cost) return 0;
+  int cost = hire_cost(st), lvl, i, clash = 0;
+  const RecruitDef *rd = &RECRUIT_DEFS[recruit];
+  const char *taken[MAX_PARTY];
+  char name[NAME_MAX + 1];
+  if (st->n_party >= MAX_PARTY) return 0;
+  if (st->scrap < cost) return 0;
+  for (i = 0; i < st->n_party; i++) {
+    taken[i] = st->party[i].name;
+    if (same_lower(st->party[i].name, rd->name)) clash = 1;
+  }
+  if (clash) generate_name(rd->ancestry, rd->class_id, rd->gender, taken, st->n_party, r, name);
+  else strcpy(name, rd->name);
   lvl = campaign_party_level(st);
   st->scrap -= cost;
-  char_from_recruit(&st->party[st->n_party++], recruit, NULL, lvl);
+  char_from_recruit(&st->party[st->n_party++], recruit, name, lvl);
   return 1;
 }
 void start_campaign(CampaignState *st, const uint8_t *picks, int n, Rng *r) {

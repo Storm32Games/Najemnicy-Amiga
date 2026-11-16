@@ -7,22 +7,22 @@ export type Gender = 'm' | 'f';
 
 export const NAME_MAX = 24;
 
-const FIRST: Record<Gender, readonly string[]> = {
+export const FIRST: Record<Gender, readonly string[]> = {
   m: ['Bogdan', 'Zenon', 'Kazik', 'Wiesiek', 'Marek', 'Tadek', 'Roman', 'Stefan', 'Jurek', 'Zbyszek', 'Józek', 'Leszek', 'Mirek', 'Witold', 'Bronek', 'Czesiek', 'Edek', 'Franek', 'Henryk', 'Janek', 'Antek', 'Waldek', 'Rysiek', 'Stach', 'Gienek', 'Lucjan', 'Bolek', 'Ignac', 'Maciej', 'Kuba', 'Szymon', 'Adam', 'Feliks', 'Tymon', 'Bartek', 'Damian'],
   f: ['Halina', 'Jadwiga', 'Grażyna', 'Bożena', 'Danka', 'Krystyna', 'Wanda', 'Zośka', 'Irena', 'Marta', 'Ewa', 'Agata', 'Hanka', 'Ola', 'Wiesia', 'Teresa', 'Dorota', 'Baśka', 'Jola', 'Kaśka', 'Renata', 'Gośka', 'Stefa', 'Lena', 'Mira', 'Nina', 'Tola', 'Ula', 'Iza', 'Weronika', 'Julka', 'Bronka'],
 };
 // Surnames: adjectival ones (-ski/-cki/-dzki/-ny/-wy) take the feminine form automatically.
-const SURNAMES = ['Zawada', 'Kowal', 'Dymarski', 'Wroński', 'Rdest', 'Mazur', 'Sobczak', 'Kurek', 'Wilczek', 'Grabarz', 'Szewczyk', 'Kaczmarek',
+export const SURNAMES = ['Zawada', 'Kowal', 'Dymarski', 'Wroński', 'Rdest', 'Mazur', 'Sobczak', 'Kurek', 'Wilczek', 'Grabarz', 'Szewczyk', 'Kaczmarek',
   'Żuraw', 'Krawiec', 'Popiel', 'Bednarz', 'Skowron', 'Zięba', 'Rataj', 'Garbarz', 'Kołodziej', 'Ślusarz', 'Mielnik', 'Smolarek', 'Gajewski',
   'Brzeziński', 'Sikora', 'Gawron', 'Czajka', 'Rudnicki', 'Żelazny', 'Wierzbicki', 'Ostrowski', 'Pająk', 'Wróbel', 'Kruczek', 'Zając', 'Bagiński',
   'Siwy', 'Głodny', 'Rdzawy', 'Kamiński', 'Pyłko', 'Chmiel', 'Dziedzic', 'Starosta', 'Woźniak', 'Lisowski', 'Popławski', 'Duda', 'Gruszka', 'Kubiak'];
 // Nicknames used in quotes (gender-neutral nouns).
-const NICK = ['Młot', 'Kosa', 'Rdza', 'Kret', 'Ząb', 'Szczęka', 'Śruba', 'Klucz', 'Bagnet', 'Mżawka', 'Popiół', 'Żyleta', 'Wiertło', 'Bimber',
+export const NICK = ['Młot', 'Kosa', 'Rdza', 'Kret', 'Ząb', 'Szczęka', 'Śruba', 'Klucz', 'Bagnet', 'Mżawka', 'Popiół', 'Żyleta', 'Wiertło', 'Bimber',
   'Trotyl', 'Gruz', 'Szakal', 'Pył', 'Hiena', 'Szpon', 'Kolec', 'Gwóźdź', 'Żwir', 'Rygiel', 'Zapałka', 'Dzwon', 'Puszka', 'Kanister', 'Bełt',
   'Łom', 'Grzechotka', 'Cegła', 'Smar', 'Krzemień', 'Sadza', 'Kapsel', 'Piła', 'Drut', 'Rykoszet', 'Czacha', 'Kotwica', 'Skorpion', 'Osa',
   'Szrapnel', 'Lont', 'Kastet', 'Brzytwa', 'Ćma', 'Mysz', 'Rtęć', 'Kawka', 'Węgielek', 'Fuks', 'Pech', 'Bazyl', 'Bunkier'];
 // Single-word callsigns by class (like "Sowa", "Lut", "Bizon").
-const CALL: Record<string, readonly string[]> = {
+export const CALL: Record<string, readonly string[]> = {
   soldier: ['Sierżant', 'Kapral', 'Taran', 'Okop', 'Granat', 'Salwa', 'Bagnet', 'Major', 'Stalowy', 'Hełm', 'Moździerz', 'Bastion', 'Wachta', 'Szaniec'],
   scout: ['Sowa', 'Jastrząb', 'Wiatr', 'Lis', 'Cień', 'Kania', 'Sokół', 'Ryś', 'Szept', 'Pustułka', 'Kruk', 'Tropiciel', 'Zmierzch', 'Mgła'],
   medic: ['Igła', 'Bandaż', 'Siostra', 'Szew', 'Plaster', 'Jodyna', 'Skalpel', 'Konował', 'Szpatułka', 'Spirytus', 'Pigułka', 'Opatrunek', 'Rumianek'],
@@ -36,7 +36,7 @@ const CALL: Record<string, readonly string[]> = {
   hacker: ['Zero', 'Bit', 'Port', 'Skrypt', 'Kursor', 'Bajt', 'Proxy', 'Glitch', 'Kernel', 'Ping'],
   brute: ['Bizon', 'Grzmot', 'Kowadło', 'Tur', 'Dzik', 'Łom', 'Głaz', 'Niedźwiedź', 'Taran', 'Buldożer', 'Walec', 'Kafar', 'Mamut', 'Pięść'],
 };
-const ANC = {
+export const ANC = {
   mutant: { call: ['Pleśń', 'Glon', 'Ropucha', 'Bąbel', 'Szczaw', 'Mech', 'Narośl', 'Huba', 'Pokrzywa', 'Rzęsa', 'Grzyb', 'Jaszczur', 'Łuska', 'Kora', 'Trzmiel', 'Fosfor'],
     title: ['Doktor', 'Stary', 'Brat', 'Ciotka', 'Wujek', 'Mały', 'Zielony', 'Krzywy', 'Święty'] },
   cyborg: { call: ['Chrom', 'Tytan', 'Wolfram', 'Kobalt', 'Ołów', 'Magnez', 'Tłok', 'Sprężyna', 'Zębatka', 'Nit', 'Zawór', 'Rezystor', 'Bolec', 'Przekładnia'],
@@ -44,7 +44,7 @@ const ANC = {
   nomad: { call: ['Sowa', 'Kruk', 'Wydma', 'Kurz', 'Burza', 'Piasek', 'Susza', 'Skwar', 'Ostów', 'Szarańcza', 'Sęp', 'Kojot', 'Wiatr', 'Pustułka', 'Żmija', 'Biegacz'],
     from: ['z Rdzawiska', 'ze Studni', 'z Wydm', 'zza Wydmy', 'od Karawany', 'z Płaskowyżu', 'spod Komina', 'z Pustych Torów', 'znad Szlamu'] },
 };
-const TITLE_HUMAN = ['Stary', 'Mała', 'Wielki', 'Kapitan', 'Sierżant', 'Doktor', 'Szef', 'Dziadek', 'Babka'];
+export const TITLE_HUMAN = ['Stary', 'Mała', 'Wielki', 'Kapitan', 'Sierżant', 'Doktor', 'Szef', 'Dziadek', 'Babka'];
 
 
 const pick = <T>(a: readonly T[], rng: Rng): T => a[Math.floor(rng() * a.length) % a.length];
@@ -59,8 +59,8 @@ const surname = (g: Gender, rng: Rng): string => {
   const s = pick(SURNAMES, rng);
   return g === 'f' ? femSurname(s) : s;
 };
-const FEM: Record<string, string> = { Stary: 'Stara', Wielki: 'Wielka', Mały: 'Mała', Zielony: 'Zielona', Krzywy: 'Krzywa', Święty: 'Święta', Brat: 'Siostra', Wujek: 'Ciotka', Dziadek: 'Babka', Stalowy: 'Stalowa' };
-const MASC: Record<string, string> = { Mała: 'Mały', Ciotka: 'Wujek', Babka: 'Dziadek' };
+export const FEM: Record<string, string> = { Stary: 'Stara', Wielki: 'Wielka', Mały: 'Mała', Zielony: 'Zielona', Krzywy: 'Krzywa', Święty: 'Święta', Brat: 'Siostra', Wujek: 'Ciotka', Dziadek: 'Babka', Stalowy: 'Stalowa' };
+export const MASC: Record<string, string> = { Mała: 'Mały', Ciotka: 'Wujek', Babka: 'Dziadek' };
 const fem = (w: string, g: Gender): string => (g === 'f' ? FEM[w] : MASC[w]) ?? w;
 
 export interface NameOptions {

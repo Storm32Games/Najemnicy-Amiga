@@ -1650,3 +1650,66 @@ const int32_t HALL_BOXES[4][4] = {
   {3763, 4480, -3469, -2880},
   {2560, 3226, -2573, -2086},
 };
+
+static const char *const S_0[36] = {"Bogdan", "Zenon", "Kazik", "Wiesiek", "Marek", "Tadek", "Roman", "Stefan", "Jurek", "Zbyszek", "J\363zek", "Leszek", "Mirek", "Witold", "Bronek", "Czesiek", "Edek", "Franek", "Henryk", "Janek", "Antek", "Waldek", "Rysiek", "Stach", "Gienek", "Lucjan", "Bolek", "Ignac", "Maciej", "Kuba", "Szymon", "Adam", "Feliks", "Tymon", "Bartek", "Damian"};
+
+static const char *const S_1[32] = {"Halina", "Jadwiga", "Gra\277yna", "Bo\277ena", "Danka", "Krystyna", "Wanda", "Zo\266ka", "Irena", "Marta", "Ewa", "Agata", "Hanka", "Ola", "Wiesia", "Teresa", "Dorota", "Ba\266ka", "Jola", "Ka\266ka", "Renata", "Go\266ka", "Stefa", "Lena", "Mira", "Nina", "Tola", "Ula", "Iza", "Weronika", "Julka", "Bronka"};
+
+static const char *const S_2[52] = {"Zawada", "Kowal", "Dymarski", "Wro\361ski", "Rdest", "Mazur", "Sobczak", "Kurek", "Wilczek", "Grabarz", "Szewczyk", "Kaczmarek", "\257uraw", "Krawiec", "Popiel", "Bednarz", "Skowron", "Zi\352ba", "Rataj", "Garbarz", "Ko\263odziej", "\246lusarz", "Mielnik", "Smolarek", "Gajewski", "Brzezi\361ski", "Sikora", "Gawron", "Czajka", "Rudnicki", "\257elazny", "Wierzbicki", "Ostrowski", "Paj\261k", "Wr\363bel", "Kruczek", "Zaj\261c", "Bagi\361ski", "Siwy", "G\263odny", "Rdzawy", "Kami\361ski", "Py\263ko", "Chmiel", "Dziedzic", "Starosta", "Wo\274niak", "Lisowski", "Pop\263awski", "Duda", "Gruszka", "Kubiak"};
+
+static const char *const S_3[56] = {"M\263ot", "Kosa", "Rdza", "Kret", "Z\261b", "Szcz\352ka", "\246ruba", "Klucz", "Bagnet", "M\277awka", "Popi\363\263", "\257yleta", "Wiert\263o", "Bimber", "Trotyl", "Gruz", "Szakal", "Py\263", "Hiena", "Szpon", "Kolec", "Gw\363\274d\274", "\257wir", "Rygiel", "Zapa\263ka", "Dzwon", "Puszka", "Kanister", "Be\263t", "\243om", "Grzechotka", "Ceg\263a", "Smar", "Krzemie\361", "Sadza", "Kapsel", "Pi\263a", "Drut", "Rykoszet", "Czacha", "Kotwica", "Skorpion", "Osa", "Szrapnel", "Lont", "Kastet", "Brzytwa", "\306ma", "Mysz", "Rt\352\346", "Kawka", "W\352gielek", "Fuks", "Pech", "Bazyl", "Bunkier"};
+
+static const char *const S_4[9] = {"Stary", "Ma\263a", "Wielki", "Kapitan", "Sier\277ant", "Doktor", "Szef", "Dziadek", "Babka"};
+
+static const char *const S_5[16] = {"Ple\266\361", "Glon", "Ropucha", "B\261bel", "Szczaw", "Mech", "Naro\266l", "Huba", "Pokrzywa", "Rz\352sa", "Grzyb", "Jaszczur", "\243uska", "Kora", "Trzmiel", "Fosfor"};
+
+static const char *const S_6[9] = {"Doktor", "Stary", "Brat", "Ciotka", "Wujek", "Ma\263y", "Zielony", "Krzywy", "\246wi\352ty"};
+
+static const char *const S_7[14] = {"Chrom", "Tytan", "Wolfram", "Kobalt", "O\263\363w", "Magnez", "T\263ok", "Spr\352\277yna", "Z\352batka", "Nit", "Zaw\363r", "Rezystor", "Bolec", "Przek\263adnia"};
+
+static const char *const S_8[6] = {"K", "R", "T", "MK", "ZX", "B"};
+
+static const char *const S_9[16] = {"Sowa", "Kruk", "Wydma", "Kurz", "Burza", "Piasek", "Susza", "Skwar", "Ost\363w", "Szara\361cza", "S\352p", "Kojot", "Wiatr", "Pustu\263ka", "\257mija", "Biegacz"};
+
+static const char *const S_10[9] = {"z Rdzawiska", "ze Studni", "z Wydm", "zza Wydmy", "od Karawany", "z P\263askowy\277u", "spod Komina", "z Pustych Tor\363w", "znad Szlamu"};
+
+static const char *const S_11[14] = {"Sier\277ant", "Kapral", "Taran", "Okop", "Granat", "Salwa", "Bagnet", "Major", "Stalowy", "He\263m", "Mo\274dzierz", "Bastion", "Wachta", "Szaniec"};
+
+static const char *const S_12[14] = {"Sowa", "Jastrz\261b", "Wiatr", "Lis", "Cie\361", "Kania", "Sok\363\263", "Ry\266", "Szept", "Pustu\263ka", "Kruk", "Tropiciel", "Zmierzch", "Mg\263a"};
+
+static const char *const S_13[13] = {"Ig\263a", "Banda\277", "Siostra", "Szew", "Plaster", "Jodyna", "Skalpel", "Konowa\263", "Szpatu\263ka", "Spirytus", "Pigu\263ka", "Opatrunek", "Rumianek"};
+
+static const char *const S_14[14] = {"Lut", "Iskra", "Bezpiecznik", "\246rubka", "Kabel", "Dioda", "Zwora", "Cewka", "Turbina", "Tranzystor", "Antena", "Lampa", "Bit", "Akumulator"};
+
+static const char *const S_15[14] = {"Szczurek", "Kret", "Sroka", "Wytrych", "\243asica", "Pch\263a", "Szperacz", "Paser", "Kuna", "Kiesze\361", "Ga\263gan", "Z\263omiarz", "Fuks", "Myszka"};
+
+static const char *const S_16[14] = {"Bizon", "Grzmot", "Kowad\263o", "Tur", "Dzik", "\243om", "G\263az", "Nied\274wied\274", "Taran", "Buldo\277er", "Walec", "Kafar", "Mamut", "Pi\352\266\346"};
+
+static const char *const S_17[12] = {"Kruk", "Colt", "Rykoszet", "Spust", "B\352ben", "Kabura", "Szeryf", "Pojedynek", "Proch", "\243uska", "Kurek", "Ostroga"};
+
+static const char *const S_18[10] = {"Mur", "Bastion", "Paw\352\277", "Tarcza", "Opoka", "Stra\277nik", "Przysi\352ga", "Zapora", "Rygiel", "Baszta"};
+
+static const char *const S_19[10] = {"Retorta", "Kwas", "Siarka", "Kolba", "Opar", "Zaczyn", "Destylat", "Saletra", "Rt\352\346", "Eter"};
+
+static const char *const S_20[10] = {"Aksamit", "Tuba", "Werbel", "Echo", "Sygna\263", "Hejna\263", "G\263os", "Megafon", "Pie\266\361", "Okrzyk"};
+
+static const char *const S_21[10] = {"Grzmot", "Kastet", "Garda", "Sierp", "Hak", "Rundka", "Nokaut", "Gong", "Podbr\363dek", "Klincz"};
+
+static const char *const S_22[10] = {"Zero", "Bit", "Port", "Skrypt", "Kursor", "Bajt", "Proxy", "Glitch", "Kernel", "Ping"};
+
+const StrList NAMES_FIRST_M = {S_0, 36};
+const StrList NAMES_FIRST_F = {S_1, 32};
+const StrList NAMES_SURNAMES = {S_2, 52};
+const StrList NAMES_NICK = {S_3, 56};
+const StrList NAMES_TITLE_HUMAN = {S_4, 9};
+const StrList NAMES_MUT_CALL = {S_5, 16};
+const StrList NAMES_MUT_TITLE = {S_6, 9};
+const StrList NAMES_CYB_CALL = {S_7, 14};
+const StrList NAMES_CYB_SERIAL = {S_8, 6};
+const StrList NAMES_NOM_CALL = {S_9, 16};
+const StrList NAMES_NOM_FROM = {S_10, 9};
+
+const StrList NAMES_CALL[CLASS_COUNT] = {{S_11, 14}, {S_12, 14}, {S_13, 13}, {S_14, 14}, {S_15, 14}, {S_16, 14}, {S_17, 12}, {S_18, 10}, {S_19, 10}, {S_20, 10}, {S_21, 10}, {S_22, 10}};
+
+const StrPair NAMES_FEM[10] = {{"Stary", "Stara"}, {"Wielki", "Wielka"}, {"Ma\263y", "Ma\263a"}, {"Zielony", "Zielona"}, {"Krzywy", "Krzywa"}, {"\246wi\352ty", "\246wi\352ta"}, {"Brat", "Siostra"}, {"Wujek", "Ciotka"}, {"Dziadek", "Babka"}, {"Stalowy", "Stalowa"}};
+const StrPair NAMES_MASC[3] = {{"Ma\263a", "Ma\263y"}, {"Ciotka", "Wujek"}, {"Babka", "Dziadek"}};
