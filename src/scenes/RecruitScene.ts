@@ -315,8 +315,9 @@ export class RecruitScene extends Phaser.Scene {
       }
       return y;
     };
-    win.add(label(this, PAD, 20, 'Zasady Pathfinder 2e: k20 + modyfikatory, 3 akcje na turę, cztery stopnie sukcesu. Każda klasa i rasa to odpowiednik z PF2e.', { small: true, color: PAL.dim, wrap: W - 2 * PAD }));
-    let y = table(34, ['Klasa', 'PF2e', 'Rola', 'PW/poz.', 'Zdolności'], Object.values(CLASSES).map((c) => ({
+    const intro = label(this, PAD, 20, 'Zasady Pathfinder 2e, 3 akcje na turę. Testy i ataki: k20 + modyfikator vs ST / KP, cztery stopnie sukcesu (±10 od ST; naturalna 20 / 1 przesuwa o stopień). Obrażenia i leczenie: kości broni lub zdolności (k4, k6, k8, k10, k12) + premia; krytyk = obrażenia ×2, udany rzut obronny = połowa. Każda klasa i rasa to odpowiednik z PF2e.', { small: true, color: PAL.dim, wrap: W - 2 * PAD });
+    win.add(intro);
+    let y = table(Math.ceil(20 + intro.displayHeight) + 4, ['Klasa', 'PF2e', 'Rola', 'PW/poz.', 'Zdolności'], Object.values(CLASSES).map((c) => ({
       color: parseColor(c.color, PAL.text),
       cells: [c.name, c.pf2e, c.role, String(c.hpPerLevel), c.abilities.map((id) => abilityDef(id)?.name ?? id).join(', ')],
     })));
