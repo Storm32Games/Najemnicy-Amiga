@@ -4,11 +4,12 @@ import { SoundManager } from '../audio/SoundManager';
 import { RECRUITS } from '../core/data/recruits';
 import { INTRO_SLIDES, type IntroSlideId } from '../core/data/story';
 import {
-  ApproachCurve, IntRng, IntroAction, IntroFlow, Q12, Q8, TickClock, ang, angQ8, icos, idiv, isin, lerpQ12, phaseAt, progressQ12, secToQ8, wave,
+  IntRng, IntroAction, IntroFlow, Q12, Q8, TickClock, ang, angQ8, icos, idiv, isin, lerpQ12, progressQ12, secToQ8, wave,
 } from '../core/frontend';
+import { NukeBlast, paintRuinStreet } from './fx/NukeArt';
 import { addUnit, raiderLook, unitLookOf } from './iso/UnitLooks';
 import {
-  BASE_H, BASE_W, type Ctx2D, Motes, PAL, type Stops, Typewriter, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded,
+  BASE_H, BASE_W, type Ctx2D, Motes, PAL, Typewriter, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded,
   skyGradient, skyline, tiledImage,
 } from './ui/Kit';
 
@@ -167,60 +168,38 @@ export class IntroScene extends Phaser.Scene {
     }
   }
 
-  /** 1 - rakiety, błysk i grzyb atomowy nad miastem. */
+  /** 1 - rakiety, błysk i grzyb atomowy nad miastem, które fala uderzeniowa zamienia w ruiny (fx/NukeArt.ts). */
   private buildBomb(): void {
-    const sky: Stops = [[0, '#1a2038'], [0.5, '#6a4a5a'], [0.85, '#e0905a'], [1, '#f2c27a']];
-    this.bg('intro_bomb', (g, w, h) => {
-      skyGradient(g, w, 200, sky);
-      skyline(g, w, seeded(11), { n: 40, base: 196, hMin: 24, hMax: 104, color: '#2a1f1c', lit: '#ffb84a' });
-      skyline(g, w, seeded(12), { n: 26, base: 202, hMin: 10, hMax: 46, color: '#1d1512', lit: '#ffb84a', wMin: 10, wMax: 26 });
-      dunes(g, w, h, 200, 2, '#3a2a20', 4);
-    });
     const BOOM = secToQ8(2.6), FLIGHT = secToQ8(2.2), TRAIL = 66; // 0.016 w Q12
-    const cx = 262, gy = 198;
-    const grow = new ApproachCurve(0.45);
-    const W_SPIN = angQ8(0.1);
-    const cloud = this.add.graphics().setDepth(2);
+    const blast = new NukeBlast(this, 'intro_bomb_fx', 262, 198);
+    blast.image.setDepth(0);
+    this.bgKeys.push('intro_bomb_fx');
     const missiles = [0, 1, 2].map((i) => ({
       sx: 420 - i * 70, sy: -20 - i * 20, ex: 180 + i * 62, ey: 190, d: secToQ8(0.12 + i * 0.09),
       head: this.add.rectangle(0, 0, 2, 3, 0xffeecc).setDepth(3),
-      trail: Array.from({ length: 14 }, (_, j) => this.add.rectangle(0, 0, 2, 2, j < 4 ? 0xffc060 : 0x8a7a70).setDepth(3)),
+      trail: Array.from({ length: 14 }, (_, j) => this.add.rectangle(0, 0, 1, 1, j < 3 ? 0xffc060 : j < 7 ? 0xa08070 : 0x6a5a5a).setDepth(3)),
     }));
-    this.updaters.push((tq) => {
+    const ash = new Motes(this, 90, { x: 0, y: 0, w: BASE_W, h: 200 }, 0x9a8070, 4, 10, 1, 0.5);
+    this.updaters.push((tq, dt) => {
       for (const m of missiles) {
         const u = progressQ12(tq, m.d, FLIGHT);
         const vis = u > 0 && u < Q12 && tq < BOOM;
-        m.head.setVisible(vis).setPosition(lerpQ12(m.sx, m.ex, u), lerpQ12(m.sy, m.ey, u));
+        m.head.setVisible(vis).setPosition(Math.round(lerpQ12(m.sx, m.ex, u)), Math.round(lerpQ12(m.sy, m.ey, u)));
         m.trail.forEach((b, j) => {
           const uu = u - (j + 1) * TRAIL;
           b.setVisible(vis && uu > 0);
-          if (b.visible) b.setPosition(lerpQ12(m.sx, m.ex, uu), lerpQ12(m.sy, m.ey, uu)).setAlpha(1 - j / 16);
+          if (b.visible) b.setPosition(Math.round(lerpQ12(m.sx, m.ex, uu)), Math.round(lerpQ12(m.sy, m.ey, uu))).setAlpha(1 - j / 16);
         });
       }
-      const k = tq - BOOM, g = grow.at(k); // g: 0..4096
-      cloud.clear();
-      if (k > 0) {
-        const h = (120 * g) >> 12;
-        const sw = 8 + ((8 * g) >> 12);
-        cloud.fillStyle(0xc43d1a, 1).fillRect(cx - (sw >> 1), gy - h, sw, h);
-        cloud.fillStyle(0x8a2a14, 1).fillRect(cx + (sw >> 1) - 3, gy - h, 3, h);
-        const r = 14 + ((38 * g) >> 12);
-        const spin = phaseAt(k, W_SPIN);
-        const ew = idiv((20 * Q12 + 26 * g) * 13, 10 * Q12), eh = 14 + ((14 * g) >> 12);
-        for (let i = 0; i < 7; i++) {
-          const a = idiv(i * 256, 7) + spin;
-          cloud.fillStyle(i % 2 ? 0xff8a30 : 0xc43d1a, 1).fillEllipse(cx + ((icos(a) * r) >> 14), gy - h + 4 + ((isin(a * 2) * 3) >> 14), ew, eh);
-        }
-        cloud.fillStyle(0x5a4a44, 1).fillEllipse(cx, gy - h - ((6 * g) >> 12), 44 + ((62 * g) >> 12), 18 + ((16 * g) >> 12));
-        cloud.fillStyle(0xffc860, 1).fillEllipse(cx, gy - 1, 30 + ((60 * g) >> 12), 5);
-        // fala uderzeniowa przez 3 s: krycie 0.9 - 0.3/s, rozmiar rośnie liniowo
-        if (k < 3 * SEC) cloud.lineStyle(2, 0xffe0a0, Math.max(0, 230 - idiv(k * 77, SEC)) / Q8).strokeEllipse(cx, gy - 2, 20 + idiv(k * 220, SEC), 4 + idiv(k * 26, SEC));
-      }
-      this.flash.setAlpha(k > 0 ? Math.max(0, Q8 - idiv(k * 282, SEC)) / Q8 : 0); // 1 - 1.1/s
+      const k = tq - BOOM;
+      blast.render(k / SEC);
+      // czysta biel przez ~0.1 s (kilka klatek), dalej błysk rysuje już NukeBlast (sylwetki, gasnąca poświata)
+      this.flash.setAlpha(k > 0 && k < secToQ8(0.1) ? 1 : 0);
+      ash.update(k > secToQ8(3) ? dt : 0);
       if (k > 0 && !this.boomed) {
         this.boomed = true;
         SoundManager.sfx('explosion');
-        this.cameras.main.shake(1400, 0.004);
+        this.cameras.main.shake(1600, 0.005);
       }
     });
   }
@@ -228,53 +207,7 @@ export class IntroScene extends Phaser.Scene {
   /** 2 - zrujnowane miasto w zielonej mgle: ulica w perspektywie, ślepia w cieniu, opadający popiół. */
   private buildRuins(): void {
     const VX = 240, VY = 128, F = 46;
-    const img = this.bg('intro_ruins', (g, w, h) => {
-      skyGradient(g, w, h, [[0, '#0f1a14'], [0.6, '#2d4030'], [1, '#4f6a46']]);
-      const rnd = seeded(21);
-      const fog = [63, 96, 69], near = [26, 32, 24];
-      for (let i = 17; i >= 0; i--) {
-        const z = 1.1 + i * 0.75;
-        const k = Math.min(1, i / 12);
-        const col = near.map((c, j) => Math.round(c + (fog[j] - c) * k));
-        for (const side of [-1, 1]) {
-          const bw = 4 + rnd() * 5, bh = 8 + rnd() * 26, X = side * (5.5 + rnd() * 3);
-          const x0 = VX + (X * F) / z, x1 = VX + ((X + side * bw) * F) / z;
-          const yb = VY + (2.2 * F) / z, yt = VY - ((bh - 2.2) * F) / z;
-          const L = Math.round(Math.min(x0, x1)), R = Math.round(Math.max(x0, x1));
-          g.fillStyle = `rgb(${col})`;
-          g.fillRect(L, Math.round(yt), R - L, Math.round(yb - yt));
-          if (rnd() < 0.5) g.fillRect(L + Math.round(rnd() * (R - L) * 0.5), Math.round(yt) - 3, Math.max(2, Math.round((R - L) * 0.4)), 4);
-          // okna: martwe i pojedyncze świecące na zielono
-          const step = Math.max(2, Math.round(9 / z));
-          for (let wy = Math.round(yt) + step; wy < yb - step; wy += step * 2)
-            for (let wx = L + step; wx < R - step; wx += step * 2) {
-              const r = rnd();
-              if (r < 0.1) g.fillStyle = '#c8e890';
-              else if (r < 0.65) g.fillStyle = '#0c120c';
-              else continue;
-              g.fillRect(wx, wy, Math.max(1, step - 1), Math.max(1, step - 1));
-            }
-        }
-      }
-      // ziemia + jezdnia zbiegająca się w punkcie zbiegu, wraki
-      g.fillStyle = '#24301f';
-      g.fillRect(0, VY + 8, w, h);
-      g.fillStyle = '#2a2a28';
-      g.beginPath();
-      g.moveTo(VX - 4, VY + 6);
-      g.lineTo(VX + 4, VY + 6);
-      g.lineTo(VX + 190, h);
-      g.lineTo(VX - 190, h);
-      g.fill();
-      for (let i = 0; i < 12; i++) {
-        const z = 1.4 + rnd() * 9, X = (rnd() - 0.5) * 6;
-        const cw = Math.max(2, Math.round(70 / z)), chh = Math.max(1, Math.round(26 / z));
-        g.fillStyle = '#3a3028';
-        g.fillRect(Math.round(VX + (X * F) / z - cw / 2), Math.round(VY + (2.2 * F) / z - chh), cw, chh);
-        g.fillStyle = '#1c1814';
-        g.fillRect(Math.round(VX + (X * F) / z - cw / 2), Math.round(VY + (2.2 * F) / z - chh * 0.45), cw, 1);
-      }
-    }, VX, VY);
+    const img = this.bg('intro_ruins', (g) => paintRuinStreet(g, VX, VY, F), VX, VY);
     const rnd = seeded(22); // rozstawienie (statyczne)
     const ph = new IntRng(22); // fazy migania (logika)
     const eyes = Array.from({ length: 7 }, (_, i) => {

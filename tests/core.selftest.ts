@@ -480,9 +480,12 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
 
   // menu
   const m = titleMenu(false);
-  ok(m.focused?.id === 'new' && m.items.length === 4, 'menu without save');
+  ok(m.focused?.id === 'new' && m.items.length === 5, 'menu without save');
   m.move(-1);
-  ok(m.focused?.id === 'credits', 'menu wraps up');
+  ok(m.focused?.id === 'quit', 'menu wraps up');
+  m.move(-1);
+  ok(m.focused?.id === 'credits', 'menu moves up');
+  m.move(1);
   m.move(1);
   m.move(1);
   ok(m.activate() === 'options', 'menu move/activate');
@@ -490,7 +493,7 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
   ok(ms.focused?.id === 'continue', 'menu focuses continue');
   ms.items[0].enabled = false;
   ms.move(-1);
-  ok(ms.focused?.id === 'credits' && !ms.setFocus(0), 'menu skips disabled');
+  ok(ms.focused?.id === 'quit' && !ms.setFocus(0), 'menu skips disabled');
 }
 
 // ---------- animacje ekranów (core/frontend/fx.ts)
