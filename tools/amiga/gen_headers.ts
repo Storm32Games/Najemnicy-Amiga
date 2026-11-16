@@ -22,6 +22,7 @@ import { UNARMED } from '../../src/core/data/items.ts';
 import { CONTRACT_TYPES, GIVERS, SIDE_TYPES, STORY_BUDGET, STORY_NEED } from '../../src/core/campaign/contracts.ts';
 import { FAUNA_CHANCE, FAUNA_KINDS, faunaAttackEvent } from '../../src/core/campaign/events.ts';
 import { EASE_OUT3_LUT, SIN_LUT } from '../../src/core/frontend/fixed.ts';
+import { AVENUE_Z, CITY, CRATER, GATE, HALLS, HMAP, HOME, RING_N, RING_S, SECTORS, WQ, heightGrid } from '../../src/core/campaign/region.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -733,6 +734,45 @@ const chunk = (a: number[], n = 16): string => {
 };
 C.push(`const int16_t SIN_LUT[${SIN_LUT.length}] = {\n${chunk(Array.from(SIN_LUT))}\n};\n`);
 C.push(`const uint16_t EASE_OUT3_LUT[${EASE_OUT3_LUT.length}] = {\n${chunk(Array.from(EASE_OUT3_LUT))}\n};\n`);
+
+// ------------------------------------------------------------------ region kampanii (region.ts; Q8 jednostek świata)
+{
+  const wp = (p: { x: number; z: number }): string => `{${p.x}, ${p.z}}`;
+  const q = (v: number): number => Math.round(v * WQ);
+  const MARGIN = q(0.35);
+  H.push(`/* ---- region kampanii (Q8) */
+typedef struct { int32_t x, z; } WPos;
+#define HMAP_X0 (${HMAP.x0})
+#define HMAP_Z0 (${HMAP.z0})
+#define HMAP_STEP ${HMAP.step}
+#define HMAP_W ${HMAP.w}
+#define HMAP_H ${HMAP.h}
+#define REGION_WQ ${WQ}
+extern const int16_t REGION_HEIGHT[HMAP_W * HMAP_H];
+extern const WPos REGION_HOME, REGION_GATE, REGION_CRATER;
+typedef struct { int32_t x, z, rx, rz, g; } CityDef;
+extern const CityDef REGION_CITY;
+#define REGION_AVENUE_Z (${AVENUE_Z})
+typedef struct { uint8_t biome; const char *name, *sub; uint32_t color; int32_t x, z, rx, rz; WPos label; uint8_t n_spots; WPos spots[8]; } SectorDef;
+extern const SectorDef SECTOR_DEFS[${SECTORS.length}];
+#define SECTOR_COUNT ${SECTORS.length}
+extern const WPos RING_S[${RING_S.length}], RING_N[${RING_N.length}];
+#define RING_LEN ${RING_S.length}
+extern const int32_t HALL_BOXES[${HALLS.length}][4]; /* x0, x1, z0, z1 z marginesem */
+#define HALL_COUNT ${HALLS.length}
+`);
+  const hg = Array.from(heightGrid());
+  const rows: string[] = [];
+  for (let i = 0; i < hg.length; i += 20) rows.push('  ' + hg.slice(i, i + 20).join(', ') + ',');
+  C.push(`const int16_t REGION_HEIGHT[HMAP_W * HMAP_H] = {\n${rows.join('\n')}\n};\n`);
+  C.push(`const WPos REGION_HOME = ${wp(HOME)}, REGION_GATE = ${wp(GATE)}, REGION_CRATER = ${wp(CRATER)};\n`);
+  C.push(`const CityDef REGION_CITY = {${CITY.x}, ${CITY.z}, ${CITY.rx}, ${CITY.rz}, ${CITY.g}};\n`);
+  C.push(`const SectorDef SECTOR_DEFS[${SECTORS.length}] = {\n${SECTORS.map((sc) =>
+    `  {${BIOME(sc.id)}, ${cstr(sc.name)}, ${cstr(sc.sub)}, 0x${sc.color.toString(16).toUpperCase()}UL, ${sc.x}, ${sc.z}, ${sc.rx}, ${sc.rz}, ${wp(sc.label)}, ${sc.spots.length}, ${arr(sc.spots.map(wp), 8, '{0, 0}')}},`).join('\n')}\n};\n`);
+  C.push(`const WPos RING_S[${RING_S.length}] = {${RING_S.map(wp).join(', ')}};\nconst WPos RING_N[${RING_N.length}] = {${RING_N.map(wp).join(', ')}};\n`);
+  C.push(`const int32_t HALL_BOXES[${HALLS.length}][4] = {\n${HALLS.map(([hx, hz, hw, hd]) =>
+    `  {${q(hx - hw / 2) - MARGIN}, ${q(hx + hw / 2) + MARGIN}, ${q(hz - hd / 2) - MARGIN}, ${q(hz + hd / 2) + MARGIN}},`).join('\n')}\n};\n`);
+}
 
 H.push('#endif /* GAMEDATA_H */\n');
 writeFileSync(join(OUT, 'gamedata.h'), H.join('\n'));

@@ -757,4 +757,25 @@ extern const char *const CREDITS[7][2];
 extern const int16_t SIN_LUT[256];
 extern const uint16_t EASE_OUT3_LUT[65];
 
+/* ---- region kampanii (Q8) */
+typedef struct { int32_t x, z; } WPos;
+#define HMAP_X0 (-9216)
+#define HMAP_Z0 (-6144)
+#define HMAP_STEP 128
+#define HMAP_W 145
+#define HMAP_H 97
+#define REGION_WQ 256
+extern const int16_t REGION_HEIGHT[HMAP_W * HMAP_H];
+extern const WPos REGION_HOME, REGION_GATE, REGION_CRATER;
+typedef struct { int32_t x, z, rx, rz, g; } CityDef;
+extern const CityDef REGION_CITY;
+#define REGION_AVENUE_Z (845)
+typedef struct { uint8_t biome; const char *name, *sub; uint32_t color; int32_t x, z, rx, rz; WPos label; uint8_t n_spots; WPos spots[8]; } SectorDef;
+extern const SectorDef SECTOR_DEFS[4];
+#define SECTOR_COUNT 4
+extern const WPos RING_S[5], RING_N[5];
+#define RING_LEN 5
+extern const int32_t HALL_BOXES[4][4]; /* x0, x1, z0, z1 z marginesem */
+#define HALL_COUNT 4
+
 #endif /* GAMEDATA_H */
