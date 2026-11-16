@@ -155,6 +155,8 @@ export interface HiResOpts {
    * a skaler na zaszumionej fakturze robi "robaczki" zamiast wygładzać.
    */
   smooth?: boolean;
+  /** Maska w pikselach projektowych (w * h, 0 = przezroczysty): po powiększeniu zeruje alfę tekseli poza maską. */
+  mask?: Uint8Array;
 }
 
 /** Powiększa źródło do (w * ART) x (h * ART) tekseli. */
@@ -171,6 +173,14 @@ export function hiResCanvas(src: Src, o: HiResOpts = {}): HTMLCanvasElement {
     }
   if (img.w < tw || img.h < th) img = nearest(img, Math.ceil(Math.max(tw / img.w, th / img.h)));
   img = resample(img, tw, th);
+  const m = o.mask;
+  if (m) {
+    const mw = o.w ?? base.w, mh = o.h ?? base.h;
+    for (let y = 0; y < th; y++) {
+      const row = Math.min(mh - 1, Math.floor((y * mh) / th)) * mw;
+      for (let x = 0; x < tw; x++) if (!m[row + Math.min(mw - 1, Math.floor((x * mw) / tw))]) img.px[y * tw + x] = 0;
+    }
+  }
   const c = document.createElement('canvas');
   c.width = tw;
   c.height = th;

@@ -7,7 +7,7 @@ import { HOME, SECTORS, WQ, buildRoute, contractSpots, heightQ8, routePointAt, r
 import { campaign } from '../core/campaign/session';
 import { type Contract, campaignPartyLevel } from '../core/campaign/state';
 import { bestForChoice, choiceDC, resolveEventChoice, rollTravelEvent } from '../core/campaign/travel';
-import { TickClock, isin } from '../core/frontend';
+import { TickClock } from '../core/frontend';
 import { shortName } from '../core/data/names';
 import { DEGREE_NAMES, SKILLS } from '../core/data/rules';
 import type { ObjectiveType } from '../core/tactical/mission';
@@ -16,7 +16,7 @@ import { ENEMIES } from '../core/data/enemies';
 import type { EnemyShape } from '../core/data/types';
 import { paintCreatureSheet } from './iso/CreatureArt';
 import { ArtBook } from './iso/IsoArt';
-import { MAP_H, MAP_W, beaconPos, paintRegion, regionFires, scrX, scrY } from './iso/RegionArt';
+import { type Box, MAP_H, MAP_W, beaconPos, paintRegion, regionFires, regionOccluders, scrX, scrXf, scrY, scrYf } from './iso/RegionArt';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, VW, VH, VX, VY, ZOOM, ZOOM_EVENT, type UiButton, button, campfire, cut, enter, fitViewport, goto, label, panel, parseColor, tiledImage } from './ui/Kit';
 import { modalOpen, openWindow } from './ui/Widgets';
@@ -39,6 +39,19 @@ const Q = (v: number): number => Math.round(v * WQ);
 const isoU = (p: WPos): number => p.x - p.z;
 /** Punkt świata (Q8) -> ekran z wysokością terenu. */
 const scr = (p: WPos, up = 0): { x: number; y: number } => ({ x: scrX(Math.round(p.x), Math.round(p.z)), y: scrY(Math.round(p.x), Math.round(p.z), up) });
+/** Jak scr, bez zaokrąglania do piksela mapy - postacie i kamera w marszu suną płynnie. */
+const scrF = (p: WPos): { x: number; y: number } => ({ x: scrXf(p.x, p.z), y: scrYf(p.x, p.z) });
+/**
+ * Głębia w kamerze mapy z klucza x + z (jednostki świata): warstwy przesłaniające (budynki itp.) i postacie
+ * w jednym przedziale 5..6, więc bliższe (większe x + z) zasłaniają dalsze. Szlaki i flagi leżą pod nimi.
+ */
+const keyDepth = (key: number): number => 5 + Phaser.Math.Clamp((key + 60) / 120, 0, 0.999);
+/** Głębia postaci / bestii w punkcie świata (Q8): przed pasmem obiektów, w którym stoi. */
+const unitDepth = (p: WPos): number => keyDepth((p.x + p.z) / WQ) + 0.0005;
+/** Odstęp między członkami drużyny w kolumnie marszowej (Q8 długości trasy). */
+const GAP = Math.round(0.55 * WQ);
+/** Sylwetki zasłoniętych członków drużyny: nad wszystkimi warstwami przesłaniającymi. */
+const GHOST_DEPTH = 6.5;
 
 /** Przybliżenia mapy (krotność zoomu podstawowego). Mapa jest 2x większa od ekranu: 0.5 = cały region. */
 const Z_ALL = Math.max(BASE_W / MAP_W, BASE_H / MAP_H), Z_LEVELS = [Z_ALL, 1, 2, 3, 4], Z_START = 1, Z_TRAVEL = 2, Z_EVENT = 3;
@@ -90,7 +103,10 @@ export class TravelScene extends Phaser.Scene {
   private all: Contract[] = [];
   private routes = new Map<string, Route>();
   private spots = new Map<string, WPos>();
-  private marker!: Phaser.GameObjects.Sprite;
+  /** Cała drużyna na mapie: prowadzący i reszta idąca za nim gęsiego po trasie. */
+  private walkers: { sprite: Phaser.GameObjects.Sprite; ghost: Phaser.GameObjects.Sprite; pos: WPos }[] = [];
+  /** Budynki nad mapą: prostokąt na mapie, podstawa i głębia - do rozstrzygania "przed / za" postaci. */
+  private blocks: { x0: number; y0: number; x1: number; y1: number; box: Box; depth: number }[] = [];
   private route: Route | null = null;
   /** Postęp marszu w tickach 50 Hz i czas całej trasy (Oldgame: max(6 s, długość / 4.2)). */
   private tick = 0;
@@ -183,9 +199,9 @@ export class TravelScene extends Phaser.Scene {
     // krajobraz z wysokościami (w profilu Amiga: kafle <= 256 px)
     paintRegion(this, 'travel_map', MAP_W, MAP_H);
     tiledImage(this, 'travel_map');
-    for (const f of regionFires()) this.fires.push(campfire(this, f.x, f.y, f.size, 2));
+    for (const f of regionFires()) this.fires.push(campfire(this, f.x, f.y, f.size, keyDepth(f.key) + 0.0005));
     const bp = beaconPos();
-    this.beacon = this.add.rectangle(bp.x, bp.y, 2, 2, 0xff3020).setDepth(2);
+    this.beacon = this.add.rectangle(bp.x, bp.y, 2, 2, 0xff3020).setDepth(keyDepth(bp.key) + 0.0005);
 
     // miejsca zleceń: stałe punkty w sektorach; trasy jak w Oldgame (autostrada + ulice, objazd miasta, kręte szlaki)
     const job = this.job;
@@ -201,18 +217,35 @@ export class TravelScene extends Phaser.Scene {
     this.pulse = this.add.circle(0, 0, 6).setDepth(3).setVisible(false);
 
     for (const c of this.all) {
-      const p = scr(this.spots.get(c.id)!);
+      const sp = this.spots.get(c.id)!, p = scr(sp), fd = unitDepth(sp);
       const col = TYPE_COLOR[c.type] ?? 0xffffff;
-      this.add.rectangle(p.x, p.y - 7, 1, 14, 0x1c1c1c).setDepth(3);
-      this.flags.set(c.id, this.add.rectangle(p.x + 4, p.y - 11, 7, 5, col).setDepth(3));
+      this.add.rectangle(p.x, p.y - 7, 1, 14, 0x1c1c1c).setDepth(fd);
+      this.flags.set(c.id, this.add.rectangle(p.x + 4, p.y - 11, 7, 5, col).setDepth(fd));
       // obszar kliknięcia: maszt + flaga (kamera mapy)
       this.add.rectangle(p.x + 2, p.y - 8, 14, 18, 0, 0).setDepth(3).setInteractive({ useHandCursor: true }).on('pointerup', () => this.clickSelect(c));
     }
 
-    const lead = st.party.find((c) => !c.conditions.dead && c.hp > 0) ?? st.party[0];
+    // budynki i inne obiekty przed postaciami zasłaniają je (mapa to jeden obraz - bez tego postacie chodziłyby po dachach)
+    this.blocks = [];
+    for (const o of regionOccluders(this, 'travel_occ')) {
+      const depth = keyDepth(o.key);
+      this.add.image(o.x, o.y, o.tex, o.frame).setOrigin(0).setDepth(depth);
+      if (o.box) this.blocks.push({ x0: o.x, y0: o.y, x1: o.x + o.w, y1: o.y + o.h, box: o.box, depth });
+    }
+
+    // cała drużyna: żywi najpierw (prowadzący = pierwszy żywy), polegli nie wyruszają
+    const alive = st.party.filter((c) => !c.conditions.dead && c.hp > 0);
+    const members = alive.length ? alive : st.party.slice(0, 1);
     this.pos = { x: HOME.x, z: HOME.z };
-    const p0 = scr(this.pos);
-    this.marker = addUnit(this, p0.x, p0.y, `pc_${lead.recruitId ?? lead.id}`, unitLookOf(lead)).setScale(0.6).setDepth(8);
+    this.walkers = members.map((c, i) => {
+      const sprite = addUnit(this, 0, 0, `pc_${c.recruitId ?? c.id}`, unitLookOf(c)).setScale(0.6);
+      // kroki nie w takt: każdy członek drużyny zaczyna animację od innej klatki
+      sprite.anims.setProgress((i * 0.37) % 1);
+      // sylwetka nad budynkami: widać, gdzie idzie drużyna, gdy zasłania ją budynek przed nią
+      const ghost = this.add.sprite(0, 0, sprite.texture.key, sprite.frame.name).setOrigin(sprite.originX, sprite.originY).setScale(0.6);
+      ghost.setTint(0xffd27a).setTintMode(Phaser.TintModes.FILL).setAlpha(0.4).setDepth(GHOST_DEPTH).setVisible(false);
+      return { sprite, ghost, pos: this.formation(i) };
+    });
     this.dust = new Motes(this, 90, { x: 0, y: 0, w: MAP_W, h: MAP_H }, 0xf0c080, 12, 1, 4, 0.35, 9);
     this.spawnFauna();
 
@@ -359,7 +392,7 @@ export class TravelScene extends Phaser.Scene {
     // w marszu kamera podąża za drużyną (Oldgame: focus = pozycja drużyny, bliżej przy zdarzeniu)
     let goal = this.view;
     if (this.state !== 'idle') {
-      const m = scr(this.pos);
+      const m = scrF(this.pos);
       goal = { x: m.x, y: m.y - 8, z: this.state === 'event' ? Z_EVENT : Z_TRAVEL };
       this.clampView(goal);
     }
@@ -426,7 +459,7 @@ export class TravelScene extends Phaser.Scene {
         this.view.y = p.y;
       }
     } else this.pulse?.setVisible(false);
-    if (this.route) this.marker.setFlipX(isoU(routePointAt(this.route, Q(1.5))) < isoU(this.pos));
+    if (this.route) for (const w of this.walkers) w.sprite.setFlipX(isoU(routePointAt(this.route, Q(1.5))) < isoU(HOME));
     this.drawList();
     this.drawSide();
   }
@@ -566,18 +599,81 @@ export class TravelScene extends Phaser.Scene {
     this.backBtn?.setLabel('◀ Zawróć');
     this.drawTop();
     this.msg(`Wyruszacie: ${this.job.title}`);
-    this.marker.play(this.marker.anims.currentAnim!.key.replace('_idle', '_walk'));
+    this.setWalking(true);
     SoundManager.sfx('step');
   }
 
-  /** Marker drużyny na pozycji w świecie: wysokość terenu + lekkie podskakiwanie w marszu. */
-  private placeMarker(): void {
-    const bob = this.state === 'moving' ? Math.abs(isin((this.clock.tick * 6) & 255)) >> 11 : 0;
-    const p = scr(this.pos);
-    this.marker.setPosition(p.x, p.y - bob).setDepth(8 + p.y / 1000);
+  /** Animacja marszu albo postoju dla całej drużyny (bez restartu, gdy już gra właściwa). */
+  private setWalking(on: boolean): void {
+    for (const w of this.walkers) {
+      const cur = w.sprite.anims.currentAnim?.key;
+      if (!cur) continue;
+      const key = on ? cur.replace('_idle', '_walk') : cur.replace('_walk', '_idle');
+      if (key !== cur) w.sprite.play({ key, startFrame: Math.floor(Math.random() * 4) });
+    }
   }
 
-  update(_time: number, delta: number): void {
+  /** Kierunek pierwszego odcinka trasy (Q8, długość ~1 jednostka); bez trasy - na wschód, ku bramie miasta. */
+  private startDir(): WPos {
+    if (!this.route) return { x: WQ, z: 0 };
+    const a = routePointAt(this.route, 0), b = routePointAt(this.route, Q(1));
+    const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    return { x: ((b.x - a.x) * WQ) / l, z: ((b.z - a.z) * WQ) / l };
+  }
+
+  /**
+   * Miejsce i-tego członka drużyny po przebyciu `d` (Q8) przez prowadzącego: na trasie `i` odstępów za nim.
+   * Przed startem trasy (d - i * GAP < 0) kolumna stoi za Przystanią na przedłużeniu pierwszego odcinka -
+   * dzięki temu ustawienie przed wymarszem przechodzi w marsz bez przeskoku.
+   */
+  private formation(i: number, d = 0): WPos {
+    const di = d - i * GAP;
+    if (this.route && di >= 0) return routePointAt(this.route, di);
+    const dir = this.startDir(), back = -di / WQ;
+    // lekko na przemian w bok, żeby postacie stojące nie nakładały się w jednej linii
+    const side = i % 2 ? 0.18 : -0.18;
+    return { x: HOME.x + dir.x * back - dir.z * side * (i ? 1 : 0), z: HOME.z + dir.z * back + dir.x * side * (i ? 1 : 0) };
+  }
+
+  /** Drużyna na mapie: pozycje bez zaokrąglania (płynny ruch), za budynkami znika. */
+  private placeWalkers(): void {
+    for (const w of this.walkers) {
+      const p = scrF(w.pos);
+      w.sprite.setPosition(p.x, p.y);
+      const d = this.depthAt(w.pos, w.sprite);
+      w.sprite.setDepth(d.depth);
+      w.ghost.setVisible(d.hidden).setPosition(p.x, p.y).setFlipX(w.sprite.flipX);
+      if (d.hidden) w.ghost.setFrame(w.sprite.frame.name);
+    }
+  }
+
+  /**
+   * Głębia postaci: z klucza x + z, poprawiona względem budynków, na które nachodzi na ekranie (sam środek bryły
+   * myli się przy dużych wieżowcach). W kolumnie ekranu postaci (u = x - z, przycięte do szerokości budynku)
+   * liczymy przednią krawędź podstawy: ściana wschodnia (x = x1) albo południowa (z = z1). Budynek jest przed
+   * postacią, gdy ta krawędź jest bliżej widza (większe x + z) niż stopy postaci.
+   * Postać ląduje nad budynkami za nią i pod tymi przed nią.
+   */
+  private depthAt(p: WPos, s: Phaser.GameObjects.Sprite): { depth: number; hidden: boolean } {
+    const own = unitDepth(p), k = (p.x + p.z) / WQ, u = (p.x - p.z) / WQ;
+    const sw = s.displayWidth, sh = s.displayHeight;
+    const L = s.x - sw * s.originX, T = s.y - sh * s.originY, R = L + sw, Bm = T + sh;
+    let lo = -Infinity, hi = Infinity;
+    for (const b of this.blocks) {
+      if (b.x1 <= L || b.x0 >= R || b.y1 <= T || b.y0 >= Bm) continue;
+      const { x0, x1, z0, z1 } = b.box;
+      const uc = Math.min(x1 - z0, Math.max(x0 - z1, u));
+      const front = uc >= x1 - z1 ? 2 * x1 - uc : uc + 2 * z1;
+      if (k < front) hi = Math.min(hi, b.depth);
+      else lo = Math.max(lo, b.depth);
+    }
+    const hidden = hi !== Infinity;
+    if (own > lo && own < hi) return { depth: own, hidden };
+    if (lo < hi) return { depth: hi === Infinity ? lo + 0.0005 : lo === -Infinity ? hi - 0.0005 : (lo + hi) / 2, hidden };
+    return { depth: hi - 0.0005, hidden };
+  }
+
+    update(_time: number, delta: number): void {
     const dt = Math.min(delta / 1000, 0.1);
     this.t += dt;
     const ticks = this.clock.advance(delta);
@@ -589,16 +685,30 @@ export class TravelScene extends Phaser.Scene {
     this.updateFauna(dt);
     this.updateCamera(dt);
     if (this.state !== 'moving' || !this.route || !this.job) {
-      this.placeMarker();
+      // postój: drużyna dochodzi do swoich miejsc (np. po zmianie wybranej trasy) zamiast przeskakiwać
+      if (this.state === 'idle') {
+        const k = Math.min(1, dt * 6);
+        this.walkers.forEach((w, i) => {
+          const t = this.formation(i);
+          w.pos = { x: w.pos.x + (t.x - w.pos.x) * k, z: w.pos.z + (t.z - w.pos.z) * k };
+        });
+      }
+      this.placeWalkers();
       return;
     }
     const before = this.tick;
     this.tick = Math.min(this.dur, this.tick + ticks);
-    const d = Math.floor((this.route.len * this.tick) / this.dur);
-    this.pos = routePointAt(this.route, d);
-    const ahead = routePointAt(this.route, d + Q(0.6));
-    if (Math.abs(isoU(ahead) - isoU(this.pos)) > 8) this.marker.setFlipX(isoU(ahead) < isoU(this.pos));
-    this.placeMarker();
+    // postęp z ułamkiem ticka (zegar 50 Hz, ekran zwykle 60+ Hz) - bez szarpania co kilka klatek
+    const tf = Math.min(this.dur, this.tick + (this.tick < this.dur ? this.clock.alphaQ8 / 256 : 0));
+    const d = (this.route.len * tf) / this.dur;
+    this.walkers.forEach((w, i) => {
+      const di = d - i * GAP;
+      w.pos = this.formation(i, d);
+      const here = routePointAt(this.route!, Math.max(0, di)), ahead = routePointAt(this.route!, Math.max(0, di) + Q(0.6));
+      if (Math.abs(isoU(ahead) - isoU(here)) > 8) w.sprite.setFlipX(isoU(ahead) < isoU(here));
+    });
+    this.pos = this.walkers[0].pos;
+    this.placeWalkers();
     this.stepT += dt;
     if (this.stepT > 0.3) {
       this.stepT = 0;
@@ -610,12 +720,13 @@ export class TravelScene extends Phaser.Scene {
     }
     if (this.event && before < this.eventTick && this.tick >= this.eventTick) {
       this.state = 'event';
-      this.marker.play(this.marker.anims.currentAnim!.key.replace('_walk', '_idle'));
+      this.setWalking(false);
       this.showEvent(this.event);
       return;
     }
     if (this.tick >= this.dur) {
       this.state = 'arrived';
+      this.setWalking(false);
       this.msg('Jesteście na miejscu.', 'good');
       this.backBtn?.box.setVisible(false);
       SoundManager.sfx('door');
@@ -679,7 +790,7 @@ export class TravelScene extends Phaser.Scene {
       this.event = null;
       after?.(ev.choices.indexOf(choice), res.degree);
       this.state = 'moving';
-      this.marker.play(this.marker.anims.currentAnim!.key.replace('_idle', '_walk'));
+      this.setWalking(true);
     });
     let y = 22;
     if (res.check && res.who && choice.skill) {
@@ -727,8 +838,9 @@ export class TravelScene extends Phaser.Scene {
 
   /** Bestia na ekranie: rzut z wysokością terenu, głębia po Y. */
   private placeBeast(f: Beast): void {
-    const p = scr(f);
-    f.sprite.setPosition(p.x, p.y).setDepth(7 + p.y / 1000).setAlpha(f.alpha);
+    const p = scrF(f);
+    f.sprite.setPosition(p.x, p.y).setAlpha(f.alpha);
+    f.sprite.setDepth(this.depthAt(f, f.sprite).depth);
   }
 
   /** 5 bestii na nizinach (wysokość < 1.2), z dala od Przystani, miejsc zleceń i trasy (Oldgame spawnFauna). */
@@ -778,7 +890,7 @@ export class TravelScene extends Phaser.Scene {
 
   /** Najbliższa bestia szarżuje na drużynę, potem zdarzenie walka / odstraszenie / ucieczka. */
   private startAmbush(): boolean {
-    const m = this.marker, P = this.pos;
+    const P = this.pos;
     const live = this.fauna.filter((f) => !f.dead);
     if (!live.length) return false;
     const d2 = (f: Beast): number => (f.x - P.x) ** 2 + (f.z - P.z) ** 2;
@@ -791,7 +903,7 @@ export class TravelScene extends Phaser.Scene {
       f.z = P.z + Q(Math.sin(a) * 6);
     }
     this.state = 'event';
-    m.play(m.anims.currentAnim!.key.replace('_walk', '_idle'));
+    this.setWalking(false);
     this.msg(`Uwaga! Zmutowany ${f.name} szarżuje na drużynę!`, 'bad');
     SoundManager.sfx('growl');
     const name = f.sprite.getData('anim') as string;
