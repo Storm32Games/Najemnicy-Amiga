@@ -100,6 +100,9 @@ export const PAL = {
   bad: 0xe0553f,
 } as const;
 
+/** Jeden kolor tytułów wszystkich okien UI (jak nagłówek dziennika misji). */
+export const UI_TITLE = PAL.amber;
+
 export const hex = (c: number): string => `#${c.toString(16).padStart(6, '0')}`;
 /** '#rrggbb' -> 0xRRGGBB (z bezpiecznym zapasem). */
 export const parseColor = (s: string | undefined, fallback: number): number => {
