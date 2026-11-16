@@ -88,10 +88,9 @@ export class RecruitScene extends Phaser.Scene {
       const sprite = spriteIdOf(r);
       let name: PixelText;
       if (hasSprite(this, sprite)) {
-        // cała postać (sprite 64x64 w 2x gęstości = 32 px projektowych) losowo obracająca się w miejscu,
-        // pod nią drobnym drukiem imię, klasa i rasa
-        const sp = this.add.image(x + CARD_W / 2, y + 30, spriteTexKey(sprite, SPRITE_DIRS[i % 8])).setOrigin(0.5, 63 / 64).setScale(0.5);
-        this.turn(`card_${r.id}`, sprite, sp, i % 8);
+        // cała postać przodem (sprite 64x64 w 2x gęstości = 32 px projektowych), pod nią drobnym drukiem imię,
+        // klasa i rasa; obracają się tylko wybrani na placu pod panelami (standFigures)
+        this.add.image(x + CARD_W / 2, y + 30, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64).setScale(0.5);
         const sm = { small: true, maxW: CARD_W - 2 };
         name = label(this, x + CARD_W / 2, y + 30, plainName(r.name), sm).setOrigin(0.5, 0);
         label(this, x + CARD_W / 2, y + 35, classDef(r.classId)?.name ?? r.classId, { ...sm, color: PAL.amber }).setOrigin(0.5, 0);
