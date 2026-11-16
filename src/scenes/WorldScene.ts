@@ -216,10 +216,11 @@ const LOOK_CAPTIVE: UnitLook = { ...LOOK_SOLDIER, skin: 0xc9a27c, cloth: 0x7a6a5
 const LOOK_GUNNER: UnitLook = { ...LOOK_RAIDER, cloth: 0x4a3a2e, accent: 0x8a8a7a, head: 'hood', weapon: 'rifle' };
 
 /** Drużyna i zlecenie demonstracyjne (tylko przy starcie sceny bez kampanii: ?scene=WorldScene). */
-const PARTY: readonly { name: string; acc: string; classId: ClassId }[] = [
-  { name: 'Kruk', acc: 'Kruka', classId: 'soldier' },
-  { name: 'Sowa', acc: 'Sowę', classId: 'scout' },
-  { name: 'Igła', acc: 'Igłę', classId: 'medic' },
+/** Drużyna misji demonstracyjnej; `recruit` = postać PixelLab (iso/SpriteUnits) tego najemnika. */
+const PARTY: readonly { name: string; acc: string; classId: ClassId; recruit: string }[] = [
+  { name: 'Kruk', acc: 'Kruka', classId: 'soldier', recruit: 'kruk' },
+  { name: 'Sowa', acc: 'Sowę', classId: 'scout', recruit: 'sowa' },
+  { name: 'Igła', acc: 'Igłę', classId: 'medic', recruit: 'igla' },
 ];
 const ENEMIES = ['raider_thug', 'raider_gunner', 'raider_thug', 'raider_thug', 'raider_gunner'] as EnemyId[];
 
@@ -397,7 +398,7 @@ export class WorldScene extends Phaser.Scene {
       this.mood = asMood(params.get('mood'));
       const foes = (params.get('enemies') ?? '').split(',').filter((id) => !!enemyDef(id as EnemyId)) as EnemyId[];
       party = PARTY.map((p) => {
-        const ch = createCharacter({ name: p.name, classId: p.classId, ancestry: 'human' });
+        const ch = createCharacter({ name: p.name, classId: p.classId, ancestry: 'human', recruitId: p.recruit });
         ch.nameAcc = p.acc;
         return ch;
       });
@@ -1127,6 +1128,7 @@ export class WorldScene extends Phaser.Scene {
     if (u.sprite.anims.isPlaying && (cur.endsWith('_hide') || cur.endsWith('_drop'))) return;
     const st = this.stance(u);
     const key = `${u.name}_${u.facing}_${st}`;
+    u.sprite.chain(); // bez zaległego łańcucha (np. pętli hakowania po przerwanym przyklęku)
     u.sprite.play(this.anims.exists(key) ? key : `${u.name}_${u.facing}_idle`, true);
   }
 
@@ -1166,6 +1168,7 @@ export class WorldScene extends Phaser.Scene {
 
   /** Jednorazowa animacja postaci (iso/UnitArt ANIMS): cios, strzał, trafienie, użycie, upadek; zostaje na ostatniej klatce. */
   private pose(u: Unit, anim: 'attack' | 'shoot' | 'hurt' | 'cast' | 'die' | 'down'): void {
+    u.sprite.chain();
     u.sprite.play(`${u.name}_${u.facing}_${anim}`);
   }
 
@@ -1181,10 +1184,13 @@ export class WorldScene extends Phaser.Scene {
       else this.idle(u);
       return;
     }
+    u.sprite.chain();
     if (anim === 'getup') u.sprite.playReverse(key);
     else u.sprite.play(key);
     if (anim === 'hide') u.sprite.chain(base + 'crouch');
     else if (anim === 'drop') u.sprite.chain(base + 'prone');
+    // postacie PixelLab: przyklęk raz, potem pętla pracy rąk (iso/SpriteUnits STRIP_USES)
+    else if (anim !== 'getup' && this.anims.exists(key + '_loop')) u.sprite.chain(key + '_loop');
   }
 
   /** Krok o jedno pole z animacją chodu; głębia = większa z sum pól, by nie wejść "pod" ściany. */

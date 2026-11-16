@@ -638,7 +638,7 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
         if (!near || r.trackFrom <= 0) gateOk = false;
       } else for (let k = 0; k < r.n; k++) if (inCity({ x: r.x[k], z: r.z[k] })) avoid = false;
       const t = routeTicks(r);
-      if (t < 300 || Math.abs(t - Math.max(300, Math.round((r.len / WQ / 4.2) * 50))) > 2) ticksOk = false;
+      if (t < 400 || Math.abs(t - Math.max(400, Math.round((r.len / WQ / 2.1) * 50))) > 2) ticksOk = false;
     });
   ok(gateOk && avoid && ends && mono && ticksOk, 'routes: gate / avoid city / endpoints / monotonic / ticks');
   const sp = contractSpots([{ id: 'a', biome: 'ruins' }, { id: 'b', biome: 'ruins' }, { id: 'c', biome: 'bunker' }]);
