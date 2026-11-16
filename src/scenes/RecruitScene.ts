@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { PixelText } from './ui/BitmapFont';
+import { MOODS, backdrop } from './fx/Backdrops';
 import { SoundManager } from '../audio/SoundManager';
 import { recruitCharacter, startCampaign } from '../core/campaign/session';
 import { MAX_PARTY } from '../core/campaign/state';
@@ -12,7 +12,7 @@ import type { AncestryDef, RecruitDef, SkillId } from '../core/data/types';
 import { abilityDef, ancestryOf, classDef, itemDef } from '../core/rules/lookup';
 import { getStat } from '../core/rules/stats';
 import type { Character } from '../core/rules/types';
-import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, canvasTexture, cut, dunes, enter, goto, hex, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, PixelText, SMALL_TEXT, type UiButton, button, cut, enter, goto, hex, label, panel, parseColor } from './ui/Kit';
 import { SPRITE_DIRS, hasSprite, spriteIdOf, spriteTexKey } from './iso/SpriteUnits';
 import { Tip, miniButton, modalOpen, namePrompt, openWindow, portrait } from './ui/Widgets';
 
@@ -31,6 +31,8 @@ interface Card {
 }
 
 export class RecruitScene extends Phaser.Scene {
+  private bgUpdate: (t: number, dt: number) => void = () => {};
+  private bgT = 0;
   private picks: RecruitDef[] = [];
   private cards: Card[] = [];
   private previews = new Map<string, Character>();
@@ -70,12 +72,8 @@ export class RecruitScene extends Phaser.Scene {
     this.flipTo = null;
     this.turners = new Map();
 
-    canvasTexture(this, 'recruit_bg', BASE_W, BASE_H, (g, w, h) => {
-      skyGradient(g, w, h, [[0, '#1a1030'], [0.45, '#6a3440'], [0.7, '#c0683a'], [0.85, '#e0a060']]);
-      skyline(g, w, seeded(9), { n: 30, base: 214, hMin: 30, hMax: 120, color: '#1d1410', lit: '#ffb84a', wMin: 12, wMax: 30 });
-      dunes(g, w, h, 236, 1, '#4a3c30', 2, 0.02);
-    });
-    this.add.image(0, 0, 'recruit_bg').setOrigin(0);
+    this.bgT = 0;
+    this.bgUpdate = backdrop(this, 'recruit', { mood: MOODS.dusk, seed: 9, orb: [452, 196, 22], farBase: 226, midBase: 234, midH: [40, 150], groundY: 236, clouds: 9 });
     this.dust = new Motes(this, 60, { x: 0, y: 120, w: BASE_W, h: 150 }, 0xf0c080, 10, 1, 3, 0.4, 1);
 
     label(this, GRID_X, 6, 'ZBIERZ DRUŻYNĘ', { size: 12, bold: true, color: PAL.amber });
@@ -296,34 +294,37 @@ export class RecruitScene extends Phaser.Scene {
 
   /** Pomoc: klasy i rasy gry obok odpowiedników z Pathfindera 2e. */
   private help(): void {
-    const W = 452, H = 250;
+    const W = 468, H = 256;
     const win = openWindow(this, W, H, 'Pomoc — klasy i rasy a Pathfinder 2e');
-    const T = (x: number, y: number, t: string, color: number = PAL.text, bold = false) => win.add(label(this, x, y, t, { size: 5.5, color, bold }));
-    T(8, 20, 'Zasady Pathfinder 2e: k20 + modyfikatory, 3 akcje na turę, cztery stopnie sukcesu. Każda klasa i rasa to odpowiednik z PF2e.', PAL.dim);
-    let y = 31;
-    const cx = [8, 68, 132, 222, 256];
-    ['Klasa', 'PF2e', 'Rola', 'PW/poz.', 'Zdolności'].forEach((h, i) => T(cx[i], y, h, PAL.amber, true));
-    for (const c of Object.values(CLASSES)) {
-      y += 7.5;
-      T(cx[0], y, c.name, parseColor(c.color, PAL.text), true);
-      T(cx[1], y, c.pf2e);
-      T(cx[2], y, cut(c.role, 24));
-      T(cx[3], y, String(c.hpPerLevel));
-      T(cx[4], y, cut(c.abilities.map((id) => abilityDef(id)?.name ?? id).join(', '), 58), 0xcbbf9f);
-    }
-    y += 12;
-    const ax = [8, 68, 132, 162, 200];
-    ['Rasa', 'PF2e', 'PW', 'Prędk.', 'Premie / wada'].forEach((h, i) => T(ax[i], y, h, PAL.amber, true));
-    for (const a of Object.values(ANCESTRIES) as AncestryDef[]) {
-      y += 7.5;
+    // drobny druk (SMALL_TEXT): kolumny liczone z szerokości napisów, ostatnia kolumna przycinana do ramki okna
+    const K = SMALL_TEXT, PAD = 8, GAP = 6, ROW = 7, RIGHT = W - PAD;
+    const T = (x: number, y: number, t: string, color: number = PAL.text, maxW = RIGHT - x): void => {
+      win.add(label(this, x, y, t, { small: true, color, maxW }));
+    };
+    const cols = (rows: string[][]): number[] => {
+      const xs = [PAD];
+      for (let c = 0; c < rows[0].length - 1; c++) xs.push(xs[c] + Math.max(...rows.map((r) => PixelText.measure(r[c]) * K)) + GAP);
+      return xs;
+    };
+    const table = (y: number, head: string[], rows: { cells: string[]; color: number }[]): number => {
+      const xs = cols([head, ...rows.map((r) => r.cells)]);
+      head.forEach((h, i) => T(xs[i], y, h, PAL.amber));
+      for (const r of rows) {
+        y += ROW;
+        r.cells.forEach((c, i) => T(xs[i], y, c, i === 0 ? r.color : i === r.cells.length - 1 ? 0xcbbf9f : PAL.text));
+      }
+      return y;
+    };
+    win.add(label(this, PAD, 20, 'Zasady Pathfinder 2e: k20 + modyfikatory, 3 akcje na turę, cztery stopnie sukcesu. Każda klasa i rasa to odpowiednik z PF2e.', { small: true, color: PAL.dim, wrap: W - 2 * PAD }));
+    let y = table(34, ['Klasa', 'PF2e', 'Rola', 'PW/poz.', 'Zdolności'], Object.values(CLASSES).map((c) => ({
+      color: parseColor(c.color, PAL.text),
+      cells: [c.name, c.pf2e, c.role, String(c.hpPerLevel), c.abilities.map((id) => abilityDef(id)?.name ?? id).join(', ')],
+    })));
+    table(y + 11, ['Rasa', 'PF2e', 'PW', 'Prędk.', 'Premie / wada'], (Object.values(ANCESTRIES) as AncestryDef[]).map((a) => {
       const boosts = Object.entries(a.attrBoosts).map(([k, v]) => (k === 'free' ? ((v ?? 0) > 1 ? `${v} dowolne` : 'jedna dowolna') : ATTR_NAMES[k as keyof typeof ATTR_NAMES] ?? k));
       const flaws = Object.keys(a.attrFlaw ?? {}).map((k) => '−' + (ATTR_NAMES[k as keyof typeof ATTR_NAMES] ?? k));
-      T(ax[0], y, a.name, PAL.text, true);
-      T(ax[1], y, a.pf2e);
-      T(ax[2], y, String(a.hp));
-      T(ax[3], y, String(a.speed));
-      T(ax[4], y, cut(boosts.join(', ') + (flaws.length ? ' / ' + flaws.join(', ') : '') + (a.perk ? ` — ${a.perk}` : ''), 74), 0xcbbf9f);
-    }
+      return { color: PAL.text, cells: [a.name, a.pf2e, String(a.hp), String(a.speed), boosts.join(', ') + (flaws.length ? ' / ' + flaws.join(', ') : '') + (a.perk ? ` — ${a.perk}` : '')] };
+    }));
     win.add(button(this, W - 62, H - 20, 'Zamknij', () => win.close(), { w: 54, size: 7, primary: true }).box);
   }
 
@@ -429,6 +430,8 @@ export class RecruitScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.bgT += Math.min(delta / 1000, 0.1);
+    this.bgUpdate(this.bgT, Math.min(delta / 1000, 0.1));
     this.dust?.update(Math.min(delta / 1000, 0.1));
   }
 }

@@ -4,6 +4,7 @@ import { type ResSetting, Settings, UI_ALPHAS, resPreset } from './Settings';
 import { FLAME_TONGUES, MoteField, Q12, Q8, TickClock, TypeProgress, flameKQ12, flameSwayQ8, glowAlphaQ8, potTiles, secToQ8 } from '../../core/frontend';
 import { PixelText, pixelText } from './BitmapFont';
 import { addHiRes } from '../iso/HiRes';
+import { ditherGradient, ground, mix, ruins } from '../fx/Painter';
 
 export { PixelText } from './BitmapFont';
 
@@ -414,22 +415,9 @@ export function tiledImage(scene: Phaser.Scene, key: string, x = 0, y = 0, ox = 
   return box;
 }
 
-/** Pasmowany (pixel-artowy) gradient nieba. */
-export function skyGradient(g: Ctx2D, w: number, h: number, stops: Stops, band = 3): void {
-  const grad = g.createLinearGradient(0, 0, 0, h);
-  for (const [p, c] of stops) grad.addColorStop(p, c);
-  const tmp = document.createElement('canvas');
-  tmp.width = 1;
-  tmp.height = h;
-  const tg = tmp.getContext('2d')!;
-  tg.fillStyle = grad;
-  tg.fillRect(0, 0, 1, h);
-  const d = tg.getImageData(0, 0, 1, h).data;
-  for (let y = 0; y < h; y += band) {
-    const i = Math.min(h - 1, y + (band >> 1)) * 4;
-    g.fillStyle = `rgb(${d[i]},${d[i + 1]},${d[i + 2]})`;
-    g.fillRect(0, y, w, band);
-  }
+/** Gradient nieba: pasma ograniczonej palety z ditheringiem Bayera na granicach (fx/Painter.ts). */
+export function skyGradient(g: Ctx2D, w: number, h: number, stops: Stops, _band = 3): void {
+  ditherGradient(g, 0, 0, w, h, stops, Math.max(10, Math.round(h / 9)));
 }
 
 export interface SkylineOptions {
@@ -441,37 +429,26 @@ export interface SkylineOptions {
   lit?: string | null;
   wMin?: number;
   wMax?: number;
+  /** Obwódka światła (domyślnie fasada rozjaśniona w stronę ciepłego światła zachodu); null = bez. */
+  rim?: string | null;
+  /** Strona światła: -1 z lewej (domyślnie), 1 z prawej. */
+  light?: number;
+  /** Ilość szczegółów 0..1. */
+  detail?: number;
 }
 
-/** Rząd zrujnowanych wieżowców (sylwetki z poszarpanymi szczytami i pojedynczymi światłami w oknach). */
+/** Rząd zrujnowanych wieżowców z bryłą: ściana boczna, okna, stropy, szczerby, zbrojenie, anteny (fx/Painter.ts ruins). */
 export function skyline(g: Ctx2D, w: number, rnd: () => number, o: SkylineOptions): void {
-  const wMin = o.wMin ?? 8, wMax = o.wMax ?? 20;
-  for (let i = 0; i < o.n; i++) {
-    const bw = Math.round(wMin + rnd() * (wMax - wMin));
-    const bh = Math.round(o.hMin + rnd() * (o.hMax - o.hMin));
-    const x = Math.round(((i + rnd() * 0.6) / o.n) * (w + 20)) - 10;
-    g.fillStyle = o.color;
-    g.fillRect(x, o.base - bh, bw, bh);
-    // wyszczerbiony szczyt
-    if (rnd() < 0.6) {
-      const cw = Math.max(2, Math.round(bw * (0.3 + rnd() * 0.4)));
-      g.fillRect(x + Math.round(rnd() * (bw - cw)), o.base - bh - 1 - Math.round(rnd() * 4), cw, 5);
-    }
-    if (rnd() < 0.35) g.clearRect(x + Math.round(rnd() * (bw - 3)), o.base - bh, 3, 2 + Math.round(rnd() * 3));
-    if (o.lit) {
-      g.fillStyle = o.lit;
-      for (let wy = o.base - bh + 3; wy < o.base - 3; wy += 4) for (let wx = x + 2; wx < x + bw - 2; wx += 3) if (rnd() < 0.07) g.fillRect(wx, wy, 1, 2);
-    }
-  }
+  ruins(g, rnd, {
+    base: o.base, n: o.n, hMin: o.hMin, hMax: o.hMax, wMin: o.wMin ?? 8, wMax: o.wMax ?? 20,
+    body: o.color, side: mix(o.color, '#000000', 0.4), rim: o.rim === null ? null : o.rim ?? mix(o.color, '#ff9a50', 0.22),
+    win: mix(o.color, '#000000', 0.45), lit: o.lit ?? null, litChance: 0.08, light: o.light ?? -1, detail: o.detail ?? 1, x0: -10, x1: w + 10,
+  });
 }
 
-/** Pasmo wydm: sinusoidalna linia horyzontu wypełniona w dół. */
+/** Pasmo wydm: sinusoidalny grzbiet z jasną krawędzią, cień ditherowany w dół i drobny gruz. */
 export function dunes(g: Ctx2D, w: number, h: number, y0: number, amp: number, color: string, seed: number, freq = 0.03): void {
-  g.fillStyle = color;
-  for (let x = 0; x < w; x++) {
-    const y = Math.round(y0 + Math.sin(x * freq + seed) * amp + Math.sin(x * freq * 2.7 + seed * 1.7) * amp * 0.4);
-    g.fillRect(x, y, 1, h - y);
-  }
+  ground(g, w, h, y0, { crest: mix(color, '#ffd8a0', 0.28), body: color, deep: mix(color, '#000000', 0.3), amp, freq, seed, debris: 0.12, rnd: seeded(seed * 7 + 1) });
 }
 
 /** Pył / popiół / iskry: ruch liczy core/frontend MoteField (Q8 pikseli, tick 50 Hz), tu tylko prostokąty 1x1. */

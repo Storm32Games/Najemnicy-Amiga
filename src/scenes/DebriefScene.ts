@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { MOODS, backdrop } from './fx/Backdrops';
 import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { type DebriefSummary, applyMissionResult } from '../core/campaign/debrief';
@@ -8,7 +9,7 @@ import { XP_PER_LEVEL } from '../core/data/rules';
 import { abilityDef, classDef, itemDef } from '../core/rules/lookup';
 import type { MissionResult } from '../core/tactical/mission';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, button, campfire, canvasTexture, cut, dunes, enter, goto, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
+import { BASE_W, Motes, PAL, button, campfire, cut, enter, goto, label, panel, parseColor } from './ui/Kit';
 import { Save, Tip, itemIconImage, itemTip, portrait } from './ui/Widgets';
 
 // Podsumowanie misji (port Oldgame/src/scenes/debrief.js): rozliczenie w src/core/campaign/debrief.ts,
@@ -23,6 +24,8 @@ const HEAD: Record<string, [string, number]> = { success: ['ZLECENIE WYKONANE', 
 const PX = 24, PY = 14, PW = BASE_W - 48, PH = 228;
 
 export class DebriefScene extends Phaser.Scene {
+  private bgUpdate: (t: number, dt: number) => void = () => {};
+  private bgT = 0;
   private input_!: DebriefSceneData;
   private sum!: DebriefSummary;
   private queue: { t: number; fn: () => void }[] = [];
@@ -60,12 +63,10 @@ export class DebriefScene extends Phaser.Scene {
     // Oldgame/src/scenes/debrief.js:44 - po TPK zapis zostaje (ekran porażki proponuje "Wczytaj ostatni zapis").
     if (!sum.tpk) Save.write();
 
-    canvasTexture(this, 'debrief_bg', BASE_W, BASE_H, (g, w, h) => {
-      skyGradient(g, w, h, ok ? [[0, '#1a1030'], [0.45, '#6a3440'], [0.7, '#c0683a'], [0.85, '#e0a060']] : [[0, '#04060e'], [0.6, '#10182c'], [1, '#2a2838']]);
-      skyline(g, w, seeded(8), { n: 24, base: 236, hMin: 30, hMax: 110, color: '#1a1210', lit: '#ffb84a', wMin: 12, wMax: 28 });
-      dunes(g, w, h, 248, 1, ok ? '#5a4030' : '#2a2420', 5, 0.02);
-    });
-    this.add.image(0, 0, 'debrief_bg').setOrigin(0);
+    this.bgT = 0;
+    this.bgUpdate = backdrop(this, 'debrief', ok
+      ? { mood: MOODS.dusk, seed: 8, orb: [240, 222, 24], farBase: 240, midBase: 246, midH: [40, 150], groundY: 248, clouds: 9 }
+      : { mood: MOODS.night, seed: 8, orb: [400, 30, 10], farBase: 240, midBase: 246, midH: [40, 150], groundY: 248, clouds: 6 });
     this.fire = campfire(this, BASE_W / 2, 264, 1.3, 2);
     campaign.state.party.forEach((ch, i, a) => addUnit(this, BASE_W / 2 + (i - (a.length - 1) / 2) * 30 + (i >= a.length / 2 ? 14 : -14), 266, `pc_${ch.recruitId ?? ch.id}`, unitLookOf(ch)).setDepth(3).setFlipX(i >= a.length / 2));
     this.dust = new Motes(this, 50, { x: 0, y: 150, w: BASE_W, h: 120 }, 0xf0c080, 9, 1, 3, 0.4, 1);
@@ -196,6 +197,8 @@ export class DebriefScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.bgT += Math.min(delta / 1000, 0.1);
+    this.bgUpdate(this.bgT, Math.min(delta / 1000, 0.1));
     const dt = Math.min(delta / 1000, 0.1);
     this.t += dt;
     this.fire(this.t);

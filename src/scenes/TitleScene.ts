@@ -5,7 +5,9 @@ import { RECRUITS } from '../core/data/recruits';
 import { CREDITS, GAME_SUBTITLE, GAME_TITLE } from '../core/data/story';
 import { type MenuModel, Q8, TickClock, type TitleMenuId, angQ8, blinkAlphaQ8, icos, phaseAt, secToQ8, titleMenu } from '../core/frontend';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, seeded, skyGradient, skyline, tiledImage } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, enter, goto, label, seeded, tiledImage } from './ui/Kit';
+import { MOODS, backdrop, paintWreck } from './fx/Backdrops';
+import { deadTree } from './fx/Painter';
 import { titleTexture } from './ui/PixelFont';
 import { Save, dialog, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
 
@@ -20,6 +22,7 @@ export class TitleScene extends Phaser.Scene {
   private logo: Phaser.GameObjects.Container | null = null;
   private sub: Phaser.GameObjects.Container | null = null;
   private fire: (t: number) => void = () => {};
+  private bgUpdate: (t: number, dt: number) => void = () => {};
   private dust: Motes | null = null;
   private credits: Phaser.GameObjects.Container | null = null;
   private menu: MenuModel<TitleMenuId> = titleMenu(false);
@@ -36,38 +39,29 @@ export class TitleScene extends Phaser.Scene {
     this.data.set('quit', false);
     this.data.set('leaving', false);
 
-    canvasTexture(this, 'title_bg', BASE_W, BASE_H, (g, w, h) => {
-      skyGradient(g, w, h, [[0, '#1a1030'], [0.35, '#7a3a4a'], [0.58, '#e0803a'], [0.76, '#f6c070']]);
-      g.fillStyle = '#ffe0a0';
-      g.beginPath();
-      g.arc(196, 150, 34, 0, Math.PI * 2);
-      g.fill();
-      skyline(g, w, seeded(5), { n: 46, base: 186, hMin: 14, hMax: 84, color: '#24141a', lit: null });
-      skyline(g, w, seeded(6), { n: 28, base: 192, hMin: 8, hMax: 40, color: '#1a0f12', lit: '#ffb84a', wMin: 10, wMax: 24 });
-      dunes(g, w, h, 190, 4, '#5a3424', 21, 0.02);
-      dunes(g, w, h, 208, 3, '#3c2218', 7, 0.035);
-      // wrak samochodu i martwe drzewo na pierwszym planie
-      g.fillStyle = '#1c1210';
-      g.fillRect(318, 214, 54, 12);
-      g.fillRect(330, 204, 28, 11);
-      g.fillStyle = '#e0803a';
-      g.fillRect(334, 207, 9, 6);
-      g.fillRect(346, 207, 9, 6);
-      g.fillStyle = '#0e0908';
-      g.fillRect(324, 224, 10, 6);
-      g.fillRect(356, 224, 10, 6);
-      g.fillStyle = '#1c1210';
-      g.fillRect(70, 170, 4, 58);
-      for (const [x, y, dx, dy] of [[72, 184, -18, -14], [72, 176, 16, -18], [72, 196, 14, -8], [56, 172, -8, -10]] as const) {
-        g.strokeStyle = '#1c1210';
-        g.lineWidth = 2;
-        g.beginPath();
-        g.moveTo(x, y);
-        g.lineTo(x + dx, y + dy);
-        g.stroke();
-      }
+    this.bgUpdate = backdrop(this, 'title', {
+      mood: MOODS.dusk, seed: 5, orb: [196, 150, 28], farBase: 196, midBase: 202, midH: [12, 58], groundY: 200,
+      props: (g) => {
+        paintWreck(g, 318, 230, '#1e1012', '#d0784a', '#e88a40');
+        deadTree(g, 72, 232, 70, seeded(77), '#1a0e0c', '#c0683a', -1);
+        // drogowskaz i beczki
+        g.fillStyle = '#1a0e0c';
+        g.fillRect(426, 196, 2, 34);
+        g.fillRect(414, 198, 24, 7);
+        g.fillStyle = '#c0683a';
+        g.fillRect(414, 198, 24, 1);
+        g.fillRect(426, 196, 1, 34);
+        for (const [x, y] of [[392, 230], [402, 233]] as const) {
+          g.fillStyle = '#2a1510';
+          g.fillRect(x, y - 10, 8, 10);
+          g.fillStyle = '#5a2a18';
+          g.fillRect(x, y - 7, 8, 1);
+          g.fillRect(x, y - 3, 8, 1);
+          g.fillStyle = '#d07040';
+          g.fillRect(x, y - 10, 1, 10);
+        }
+      },
     });
-    tiledImage(this, 'title_bg');
     this.fire = campfire(this, 150, 230, 1.6, 4);
     [RECRUITS[1], RECRUITS[0]].forEach((r, i) => addUnit(this, 178 + i * 30, 232 + i * 3, `rec_${r.id}`, unitLookOf(r), 'idle', 2).setDepth(5).setFlipX(true));
     this.dust = new Motes(this, 150, { x: 0, y: 90, w: BASE_W, h: 150 }, 0xf0c080, 18, 1, 8, 0.5, 6);
@@ -222,6 +216,7 @@ export class TitleScene extends Phaser.Scene {
     this.clock.advance(delta, 10);
     const tq = this.clock.timeQ8;
     this.fire(tq / SEC);
+    this.bgUpdate(tq / SEC, dt);
     this.dust?.update(dt);
     // logo: 50 -> 47 -> 50 px w 4 s (cosinus z tablicy), podtytuł: krótkie przygaszenie co ~4.8 s
     this.logo?.setY(50 - (3 * (16384 - icos(phaseAt(tq, W_LOGO)))) / 32768);
