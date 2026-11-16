@@ -11,6 +11,7 @@ import { CREDITS, EPILOGUE, GAMEOVER_LINES } from '../core/data/story';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, Typewriter, type UiButton, button, campfire, canvasTexture, enter, goto, label, panel } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
+import { wastelandTexture } from './ui/WastelandFont';
 import { Save, toast } from './ui/Widgets';
 
 // Ekrany końcowe (port Oldgame/src/scenes/gameover.js i victory.js).
@@ -101,7 +102,7 @@ export class GameOverScene extends Phaser.Scene {
     });
     this.add.image(0, 0, vignette).setOrigin(0).setDepth(5);
     this.dust = new Motes(this, 80, { x: 0, y: 60, w: BASE_W, h: 150 }, 0xa08070, 14, 2, 9, 0.4, 6);
-    this.add.image(BASE_W / 2, 34, titleTexture(this, 'over_title', 'KONIEC DROGI', 5, { top: '#e07a6a', bottom: '#6a1410', spacing: 2 })).setDepth(7);
+    this.add.image(BASE_W / 2, 34, wastelandTexture(this, 'over_title', 'KONIEC DROGI', 4, { top: '#e07a6a', bottom: '#6a1410', spacing: 2 })).setDepth(7);
 
     panel(this, 56, 196, BASE_W - 112, 68, PAL.blood, 0.93).setDepth(8);
     label(this, BASE_W / 2, 200, 'Polegli: ' + (this.names.map(plainName).join(', ') || '—'), { size: 7, color: PAL.bad, wrap: BASE_W - 132, align: 'center' }).setOrigin(0.5, 0).setDepth(9);
@@ -178,7 +179,7 @@ export class VictoryScene extends Phaser.Scene {
     this.fire = campfire(this, BASE_W / 2, 204, 1.5, 3);
     campaign.state.party.forEach((ch, i, a) => addUnit(this, BASE_W / 2 + (i - (a.length - 1) / 2) * 44, 206, `pc_${ch.recruitId ?? ch.id}`, unitLookOf(ch), 'idle', 2).setDepth(4).setFlipX(i >= a.length / 2));
     this.dust = new Motes(this, 100, { x: 0, y: 80, w: BASE_W, h: 140 }, 0xffe0a0, 10, -3, 21, 0.6, 6);
-    this.title = this.add.image(BASE_W / 2, 36, titleTexture(this, 'win_title', 'ZWYCIĘSTWO', 5, { top: '#fff0a0', bottom: '#d0801e', spacing: 2 })).setDepth(10);
+    this.title = this.add.image(BASE_W / 2, 36, wastelandTexture(this, 'win_title', 'ZWYCIĘSTWO', 4, { top: '#fff0a0', bottom: '#d0801e', spacing: 2 })).setDepth(10);
 
     this.box = panel(this, 56, 212, BASE_W - 112, 50, PAL.edgeHi, 0.93).setDepth(10);
     this.text = label(this, 8, 6, '', { size: 7, wrap: BASE_W - 200, lineSpacing: 2 });
@@ -217,7 +218,7 @@ export class VictoryScene extends Phaser.Scene {
     this.tweens.add({ targets: shade, alpha: 1, duration: 1200 });
     const col = this.add.container(BASE_W / 2, BASE_H + 10).setDepth(12);
     let y = 0;
-    col.add(this.add.image(0, y, titleTexture(this, 'win_game', 'PYŁ I RDZA', 4, { top: '#ffe08a', bottom: '#c0501e', spacing: 2 })));
+    col.add(this.add.image(0, y, wastelandTexture(this, 'win_game', 'PYŁ I RDZA', 3, { top: '#ffe08a', bottom: '#c0501e', spacing: 2 })));
     y += 40;
     for (const [a, b] of CREDITS) {
       col.add(label(this, 0, y, a.toUpperCase(), { size: 6, color: PAL.amber }).setOrigin(0.5, 0));
