@@ -5,10 +5,11 @@
 ## Overview
 We are migrating an existing pure-JavaScript isometric post-apocalyptic turn-based RPG from Three.js (`Oldgame/`) to **Phaser 3 + TypeScript + Vite**. All graphics and audio in the original game are procedurally generated in code.
 
-## Status: Amiga port paused (browser version first)
-- The A1200 + PiStorm Lite 32 (miniGL) port is **paused**. Backup of that state: branch `backup/amiga-minigl` (commit `74ba0af`); notes in `docs/AMIGA_MINIGL.md`.
-- Focus is the **browser version**. New code does not need to follow miniGL limits (textures <= 256 px, integer-only math, 50 Hz ticks, no FPU). Existing fixed-point code in `src/core/frontend/` and `src/core/campaign/region.ts` stays as is; don't rewrite it just to remove that.
-- The `?profile=amiga` profile is kept but not maintained.
+## Status: Amiga port active (browser version paused)
+- The A1200 + PiStorm Lite 32 (miniGL) port is **active again** and is the focus. Earlier port work: branch `backup/amiga-minigl` (commit `74ba0af`); notes and hardware limits in `docs/AMIGA_MINIGL.md`.
+- New code must follow the miniGL limits: textures power-of-two, max 256x256, no shaders, no render-to-texture; integer/fixed-point math only (Q12/Q8, no FPU); logic in 50 Hz ticks (`TickClock`); menus usable with joystick/keyboard. Follow the existing patterns in `src/core/frontend/` and `src/core/campaign/region.ts`.
+- The `?profile=amiga` profile is maintained again; check changes with it.
+- The **browser version is paused**: no new browser-only features or browser-specific polish. Keep it building (`npm run build`), since it is the reference the port is written against.
 
 ## Tech Stack & Environment
 - **Language:** TypeScript (strict mode).
