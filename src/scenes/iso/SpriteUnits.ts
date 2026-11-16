@@ -234,6 +234,20 @@ function poseFrame(s: Src, pose: Pose, front: boolean): PixelCanvas {
   return pc;
 }
 
+/** Odbicie klatki w poziomie (w miejscu). */
+function mirrorX(pc: PixelCanvas): void {
+  const row = pc.w * 4;
+  for (let y = 0; y < pc.h; y++)
+    for (let x = 0; x < pc.w >> 1; x++) {
+      const a = y * row + x * 4, b = y * row + (pc.w - 1 - x) * 4;
+      for (let c = 0; c < 4; c++) {
+        const t = pc.data[a + c];
+        pc.data[a + c] = pc.data[b + c];
+        pc.data[b + c] = t;
+      }
+    }
+}
+
 function tint(pc: PixelCanvas, c: number, k: number): void {
   const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
   for (let i = 0; i < pc.data.length; i += 4) {
@@ -401,13 +415,16 @@ export function paintSpriteSheet(scene: Phaser.Scene, id: string): UnitSheet & {
   };
   const msOf = (u: StripUse, k: number): number => (typeof u.ms === 'number' ? u.ms : u.ms[Math.min(k, u.ms.length - 1)]);
 
-  (['f', 'b'] as const).forEach((facing) => {
-    const dir: SpriteDir = facing === 'f' ? 'south-east' : 'north-east';
+  // przód / tył (klatki 'f_' / 'b_', w lewo odbite) oraz własne obroty w lewo (SW / NW, prefiks = kierunek)
+  const sides = [['f', 'south-east'], ['b', 'north-east'], ['south-west', 'south-west'], ['north-west', 'north-west']] as const;
+  for (const [facing, dir] of sides) {
     const src = restOf(dir);
-    for (const name of names) cells.push({ name: `${facing}_${name}`, pc: poseFrame(src, poses.get(name)!, facing === 'f') });
+    const own = facing !== 'f' && facing !== 'b';
+    if (!own) for (const name of names) cells.push({ name: `${facing}_${name}`, pc: poseFrame(src, poses.get(name)!, facing === 'f') });
     // paski PixelLab
     const strips = new Map<StripAnim, Src[] | null>();
     for (const u of STRIP_USES) {
+      if (own && u.strip === 'walk') continue; // chód SW / NW jest w animacjach 8 kierunków
       if (!strips.has(u.strip)) strips.set(u.strip, stripFrames(scene, id, u.strip, dir));
       const fr = strips.get(u.strip);
       if (!fr || !fr.length) continue;
@@ -417,14 +434,17 @@ export function paintSpriteSheet(scene: Phaser.Scene, id: string): UnitSheet & {
         const pc = stripCell(src, fr[0], fr[k], !!u.ground);
         if (u.flash !== undefined && (j === u.flash || j === u.flash + 1)) {
           const h = src.bottom - src.top + 1;
+          // błysk przed lufą: w lewo (SW / NW) na odbitej klatce
+          if (own) mirrorX(pc);
           muzzle(pc, j === u.flash ? 1 : 2, FOOT_Y - Math.round(h * 0.55));
+          if (own) mirrorX(pc);
         }
         cells.push({ name, pc });
         return name;
       });
       anims.push({ suffix: `${facing}_${u.anim}`, frames, durs: idx.map((_, j) => msOf(u, j)), loop: u.loop, yoyo: u.yoyo });
     }
-  });
+  }
 
   // mapa regionu: 8 kierunków (chód z paska albo kołysanie nóg na obrocie, spoczynek = oddech)
   const walkPoses = ANIMS.walk.poses, idleDef = ANIMS.idle;
