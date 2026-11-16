@@ -86,7 +86,7 @@ const PARTY_DRAG_MIN = 3;
 const PARTY_BTN = 9;
 /** Odległość kursora od górnej / dolnej krawędzi, przy której karty drużyny przechodzą w układ poziomy. */
 const PARTY_EDGE = 14;
-/** Menu po prawej (port .m-menu): siatka 2 kolumn + szeroki "Odwrót". */
+/** Menu po prawej (port .m-menu): siatka 2 kolumn ("Odwrót" + "Wyjdź z gry" w ostatnim rzędzie). */
 const BTN_W = 78;
 const BTN_H = 12;
 const BTN_GAP = 2;
@@ -229,6 +229,7 @@ export class UIScene extends Phaser.Scene {
   private btnGroup!: Button;
   private btnSpeed!: Button;
   private btnRetreat!: Button;
+  private btnQuit!: Button;
   private btnOptions!: Button;
   private btnZoomOut!: Button;
   private btnZoomIn!: Button;
@@ -337,7 +338,8 @@ export class UIScene extends Phaser.Scene {
     this.btnZoomOut = this.button(bx, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1 / 1.25 }), 'normal', MP);
     this.btnZoomIn = this.button(bx2, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }), 'normal', MP);
     this.btnInv = this.button(bx, row(3), RCOL_W, '', () => this.toggleSheet(), 'normal', MP);
-    this.btnRetreat = this.button(bx, row(4), RCOL_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger', MP);
+    this.btnRetreat = this.button(bx, row(4), BTN_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger', MP);
+    this.btnQuit = this.button(bx2, row(4), BTN_W, '', () => this.hud.command({ kind: 'quit' }), 'normal', MP);
     this.objLayer = this.add.container(0, OBJ_Y);
     MP.add(this.objLayer);
     this.actionLayer = this.add.container(0, 0);
@@ -817,6 +819,7 @@ export class UIScene extends Phaser.Scene {
     this.btnZoomIn.set('MAPA +', true);
     this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ [I]' : 'EKWIPUNEK [I]', true);
     this.btnRetreat.set('ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
+    this.btnQuit.set('WYJDŹ Z GRY', !locked || (hud.inCombat && !enemy && !hud.busy));
   }
 
   // ================================================================== cele zlecenia (port H.objective)

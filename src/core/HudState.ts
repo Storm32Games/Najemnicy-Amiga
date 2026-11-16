@@ -38,6 +38,8 @@ export type HudCommand =
   /** Esc: anuluj tryb celowania / podmenu. */
   | { kind: 'cancel' }
   | { kind: 'retreat' }
+  /** Wyjście z gry do ekranu tytułowego (misja przepada). */
+  | { kind: 'quit' }
   | { kind: 'toggleGroup' }
   | { kind: 'cycleSpeed' }
   /** Mapa − / Mapa + (przybliżenie kamery; f = mnożnik). */
