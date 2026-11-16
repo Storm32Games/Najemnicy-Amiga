@@ -41,7 +41,8 @@ import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, op
 //   panel (I):    karta postaci: statystyki, wyposażenie, plecak       <- H.sheet
 // Menu, pasek rundy, panel akcji, karta postaci i dziennik mają własną skalę (−/+ w nagłówku; kółko nad nagłówkiem
 // poza dziennikiem), własną czcionkę (a/A w nagłówku: treść panelu w tej samej szerokości okna) i dają się przesuwać
-// za nagłówek; PPM na nagłówku = pozycja, skala i czcionka domyślna. Karty drużyny mają stałą, mniejszą czcionkę.
+// za nagłówek; PPM na nagłówku = pozycja, skala i czcionka domyślna.
+// Menu i panel akcji mają osobny układ dla eksploracji i dla walki (przełączany sam przy zmianie trybu). Karty drużyny mają stałą, mniejszą czcionkę.
 // Karty drużyny (w walce razem z kartami wrogów) przesuwa się, przeciągając kartę / ramkę; skala: uchwyt w prawym
 // dolnym rogu kart (jak w dzienniku). Domyślnie leżą poziomo przy górnej krawędzi; upuszczone dalej od górnej / dolnej
 // krawędzi układają się pionowo, a przyciągnięte z powrotem do krawędzi - znowu poziomo.
@@ -193,6 +194,47 @@ function keepAnchor(x: number, w0: number, w1: number, total: number): number {
   if (c > (total * 2) / 3) return Math.round(x + w0 - w1);
   return Math.round(c - w1 / 2);
 }
+/**
+ * Menu i panel akcji mają osobny układ (pozycja, skala okna, czcionka) w eksploracji i w walce: w walce panel akcji
+ * ma dużo więcej przycisków, więc zwykle chce się go mniejszego / gdzie indziej. Aktywny tryb siedzi w panelPos /
+ * panelScale / fontStep (reszta kodu czyta tylko je); drugi tryb czeka w modeStore i podmienia się przy zmianie trybu.
+ */
+type ModePanel = 'menu' | 'actions';
+type LayoutMode = 'explore' | 'combat';
+const MODE_PANELS: readonly ModePanel[] = ['menu', 'actions'];
+/** Klucz zapisu układu walki (eksploracja zostaje pod starym kluczem panelu - zgodność z dawnymi zapisami). */
+const COMBAT_KEY = (id: ModePanel): string => `${id}@walka`;
+interface ModeState {
+  pos: { x: number; y: number } | null;
+  scale: number;
+  font: number;
+}
+const freshMode = (): Record<ModePanel, ModeState> => ({ menu: { pos: null, scale: 1, font: 0 }, actions: { pos: null, scale: 1, font: 0 } });
+const modeStore: Record<LayoutMode, Record<ModePanel, ModeState>> = { explore: freshMode(), combat: freshMode() };
+let layoutMode: LayoutMode = 'explore';
+const modeName = (m: LayoutMode = layoutMode): string => (m === 'combat' ? 'walka' : 'eksploracja');
+/** Bieżące wartości menu / akcji -> modeStore aktywnego trybu. */
+function stashMode(): void {
+  for (const id of MODE_PANELS) modeStore[layoutMode][id] = { pos: panelPos[id] ? { ...panelPos[id]! } : null, scale: panelScale[id], font: fontStep[id] };
+}
+/** modeStore trybu `m` -> bieżące wartości menu / akcji. */
+function loadMode(m: LayoutMode): void {
+  layoutMode = m;
+  for (const id of MODE_PANELS) {
+    const st = modeStore[m][id];
+    panelPos[id] = st.pos ? { ...st.pos } : null;
+    panelScale[id] = st.scale;
+    fontStep[id] = st.font;
+  }
+}
+/** Zmiana trybu (eksploracja <-> walka); true = układ menu / akcji się zmienił. */
+function switchMode(m: LayoutMode): boolean {
+  if (m === layoutMode) return false;
+  stashMode();
+  loadMode(m);
+  return true;
+}
+
 /** Rozmiar dziennika (zmieniany uchwytem w prawym dolnym rogu). */
 let logSize = { w: LOG_W, h: LOG_H };
 const LOG_MIN_W = 120;
@@ -204,6 +246,8 @@ function resetLayout(): void {
     panelScale[k] = 1;
     fontStep[k] = 0;
   }
+  modeStore.explore = freshMode();
+  modeStore.combat = freshMode();
   partyPos = null;
   partyHoriz = true;
   partyScale = 1;
@@ -218,12 +262,39 @@ function loadLayout(): void {
     if (d.panelScale?.[k]) panelScale[k] = d.panelScale[k]!;
     if (d.fontStep?.[k] !== undefined) fontStep[k] = Phaser.Math.Clamp(d.fontStep[k]!, -FONT_STEP_MAX, FONT_STEP_MAX);
   }
+  // menu / akcje: eksploracja pod kluczem panelu, walka pod COMBAT_KEY (brak = jak w eksploracji, np. stary zapis)
+  for (const id of MODE_PANELS) {
+    const ex: ModeState = { pos: panelPos[id], scale: panelScale[id], font: fontStep[id] };
+    modeStore.explore[id] = ex;
+    const ck = COMBAT_KEY(id);
+    const cb: ModeState = { ...ex, pos: ex.pos ? { ...ex.pos } : null };
+    if (d.panelPos && ck in d.panelPos) cb.pos = d.panelPos[ck] ?? null;
+    if (d.panelScale?.[ck]) cb.scale = d.panelScale[ck]!;
+    if (d.fontStep?.[ck] !== undefined) cb.font = Phaser.Math.Clamp(d.fontStep[ck]!, -FONT_STEP_MAX, FONT_STEP_MAX);
+    modeStore.combat[id] = cb;
+  }
+  loadMode(layoutMode);
   if (d.partyPos !== undefined) partyPos = d.partyPos;
   if (d.partyHoriz !== undefined) partyHoriz = d.partyHoriz;
   if (d.partyScale) partyScale = d.partyScale;
   if (d.logSize) logSize = { w: Math.max(LOG_MIN_W, Math.round(d.logSize.w)), h: Math.max(LOG_HEAD + 3 * LH + 3, Math.round(d.logSize.h)) };
 }
-const layoutSnapshot = (): MissionLayoutData => ({ panelPos: { ...panelPos }, panelScale: { ...panelScale }, partyPos, partyHoriz, partyScale, logSize: { ...logSize }, fontStep: { ...fontStep } });
+function layoutSnapshot(): MissionLayoutData {
+  stashMode();
+  const pos: Record<string, { x: number; y: number } | null> = { ...panelPos };
+  const scale: Record<string, number> = { ...panelScale };
+  const font: Record<string, number> = { ...fontStep };
+  for (const id of MODE_PANELS) {
+    const ex = modeStore.explore[id], cb = modeStore.combat[id], ck = COMBAT_KEY(id);
+    pos[id] = ex.pos;
+    scale[id] = ex.scale;
+    font[id] = ex.font;
+    pos[ck] = cb.pos;
+    scale[ck] = cb.scale;
+    font[ck] = cb.font;
+  }
+  return { panelPos: pos, panelScale: scale, partyPos, partyHoriz, partyScale, logSize: { ...logSize }, fontStep: font };
+}
 const saveLayout = (): void => MissionLayout.save(layoutSnapshot());
 MissionLayout.setSource(layoutSnapshot);
 MissionLayout.onReset(resetLayout);
@@ -349,6 +420,7 @@ export class UIScene extends Phaser.Scene {
     if (!this.hud) throw new Error('UIScene: brak HudState - uruchom przez scene.launch("UIScene", { hud })');
     fitCamera(this);
     loadLayout();
+    switchMode(this.hud.inCombat ? 'combat' : 'explore');
 
     // ---- lewy górny: drużyna
     this.partyLayer = this.add.container(M, M);
@@ -477,6 +549,11 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onHudChange(c: HudChange): void {
+    // początek / koniec walki: menu i panel akcji przechodzą na układ (skala, czcionka, pozycja) drugiego trybu
+    if (switchMode(this.hud.inCombat ? 'combat' : 'explore')) {
+      this.relayout('menu');
+      if (c !== 'actions' && c !== 'stats' && c !== 'turn' && c !== 'inventory') this.drawActions();
+    }
     switch (c) {
       case 'stats':
         this.drawParty();
@@ -876,7 +953,7 @@ export class UIScene extends Phaser.Scene {
     this.btnGroup.set(hud.groupMove ? 'RUCH: DRUŻ. [G]' : 'RUCH: SOLO [G]', !hud.inCombat);
     this.btnZoomOut.set('MAPA −', true);
     this.btnZoomIn.set('MAPA +', true);
-    this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ [I]' : 'EKWIPUNEK [I]', true);
+    this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ EKWIPUNEK [I]' : 'EKWIPUNEK [I]', true);
     this.btnRetreat.style(hud.contractDone ? 'primary' : 'danger');
     this.btnRetreat.set(hud.contractDone ? 'POWRÓT' : 'ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
     this.btnQuit.set('WYJDŹ Z GRY', !locked || (hud.inCombat && !enemy && !hud.busy));
@@ -1382,7 +1459,7 @@ export class UIScene extends Phaser.Scene {
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
       ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni (albo klik w broń w panelu akcji), PgUp/PgDn/Home/End = przewijanie dziennika, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
-      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar. W nagłówku każdego panelu: − / + = skala okna (czcionka zmienia się razem z nim), a / A = mniejsza / większa czcionka przy tym samym oknie, ● = przezroczystość. Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; prawy dolny róg kart = skala wszystkich kart; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
+      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar. W nagłówku każdego panelu: − / + = skala okna (czcionka zmienia się razem z nim), a / A = mniejsza / większa czcionka przy tym samym oknie, ● = przezroczystość. Menu i panel akcji pamiętają osobny układ (skala, czcionka, miejsce) w eksploracji i w walce. Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; prawy dolny róg kart = skala wszystkich kart; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
     // Czcionka ma stały rozmiar (6x8): okno układa się w pełnej skali, a gdy nie mieści się w wysokości ekranu,
@@ -1444,7 +1521,8 @@ export class UIScene extends Phaser.Scene {
     r.on('pointerover', () => {
       r.setFillStyle(C.amber, 0.08);
       const how = target === 'log' ? '− +' : 'kółko / − +';
-      this.hud.setHover(`Przeciągnij: przesuń · ${how}: okno ${Math.round(panelScale[target] * 100)}% · a / A: czcionka · PPM: domyślnie`);
+      const mode = (MODE_PANELS as readonly PanelId[]).includes(target) ? ` (${modeName()})` : '';
+      this.hud.setHover(`Przeciągnij: przesuń · ${how}: okno ${Math.round(panelScale[target] * 100)}%${mode} · a / A: czcionka · PPM: domyślnie`);
     });
     r.on('pointerout', () => {
       r.setFillStyle(C.amber, 0);
@@ -1491,8 +1569,9 @@ export class UIScene extends Phaser.Scene {
       });
       return b;
     };
-    const fontTip = (dir: number) => (): string => `${dir < 0 ? 'Mniejsza' : 'Większa'} czcionka (${Math.round(fontScaleOf(id) * 100)}% panelu) · PPM na nagłówku: domyślnie`;
-    const sizeTip = (dir: number) => (): string => `${dir < 0 ? 'Zmniejsz' : 'Powiększ'} okno (skala ${Math.round(panelScale[id] * 100)}%) · PPM na nagłówku: domyślnie`;
+    const fontTip = (dir: number) => (): string => `${dir < 0 ? 'Mniejsza' : 'Większa'} czcionka (${Math.round(fontScaleOf(id) * 100)}% panelu${mode()}) · PPM na nagłówku: domyślnie`;
+    const mode = (): string => ((MODE_PANELS as readonly PanelId[]).includes(id) ? `, ${modeName()}` : '');
+    const sizeTip = (dir: number) => (): string => `${dir < 0 ? 'Zmniejsz' : 'Powiększ'} okno (skala ${Math.round(panelScale[id] * 100)}%${mode()}) · PPM na nagłówku: domyślnie`;
     const out = [
       alpha,
       ctl('a', () => this.setFontStep(id, -1), fontTip(-1)),
@@ -1566,7 +1645,8 @@ export class UIScene extends Phaser.Scene {
     SoundManager.sfx('click');
     this.relayout(id);
     saveLayout();
-    this.hud.setHover(`Skala okna: ${Math.round(s1 * 100)}%`);
+    const mode = (MODE_PANELS as readonly PanelId[]).includes(id) ? ` (${modeName()})` : '';
+    this.hud.setHover(`Skala okna: ${Math.round(s1 * 100)}%${mode}`);
   }
 
   /** a / A: czcionka panelu o stopień mniejsza / większa (szerokość panelu bez zmian). */
