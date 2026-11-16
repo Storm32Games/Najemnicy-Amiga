@@ -6,7 +6,7 @@ from PIL import Image
 CH={'zgrzyt':'7ffc9972-074c-4530-bab3-47ff42982bc1','szept':'edd81d76-1094-4786-a008-2f11a5ab5d79','iskra':'33ad4274-57fb-4cf0-9f19-df7228bfd66f',
 'lut':'ef6b6fd6-d50e-4219-9c3c-a3f91ffb4073','zero':'723b7ae4-be0b-4011-b95d-3cfa0f0f6f5a','grzmot':'270389f8-d7c9-45a0-9414-86f05ac77b17',
 'aksamit':'8dc2cc7d-b33f-437e-960d-d878862fa6da','retorta':'5046ad43-aaab-4093-978c-901841ca4c92','mur':'76cfdb9c-d3d9-4d3c-b5af-fd2946c85e07',
-'kruk':'dc73d50b-4df9-44c3-9104-69960914a639','bizon':'5cc3213b-9b4a-4ead-a117-b19c7f6171fb','szczurek':'b572bcbc-7453-410b-a0f6-0f78d3dc8af6',
+'kruk':'dc73d50b-4df9-44c3-9104-69960914a639','bizon':'5cc3213b-9b4a-4ead-a117-b19c7f6171fb','szczurek':'c11c7eb6-508d-4e38-afad-d2fcc19e13f7',
 'igla':'bd785f0d-3c25-4b02-8dff-2e90f0cecd94','sowa':'0b0a27d6-274a-49ba-a69e-3f2879d65b89','hak':'78e6a020-648e-48cb-8b3c-da7f88dba7f7',
 'plesn':'f1094a30-9592-41b6-b476-944d0425110d'}
 ALL8=['south','south-east','east','north-east','north','north-west','west','south-west']

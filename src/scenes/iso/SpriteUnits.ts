@@ -65,6 +65,11 @@ export function spriteIdOf(src: { recruitId?: string; id?: string } | null | und
   return id && UNITS.has(id) ? id : null;
 }
 
+/** Id sprite'a wroga: szablon (EnemyId, np. raider_thug) z katalogiem src/assets/units/<templateId>/. */
+export function enemySpriteId(templateId: string | null | undefined): string | null {
+  return templateId && UNITS.has(templateId) ? templateId : null;
+}
+
 /** Czy postać ma wczytany sprite (obrazy są w menedżerze tekstur). */
 export function hasSprite(scene: Phaser.Scene, id: string | null): id is string {
   return !!id && scene.textures.exists(spriteTexKey(id, 'south-east')) && scene.textures.exists(spriteTexKey(id, 'north-east'));

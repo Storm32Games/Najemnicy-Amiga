@@ -1,0 +1,46 @@
+{
+ "szczurek": {
+  "character_id": "c11c7eb6-508d-4e38-afad-d2fcc19e13f7",
+  "job": "e6760498-922f-418c-8ff6-89493d0460d1"
+ },
+ "raider_thug": {
+  "character_id": "1aad889f-1fdb-49ba-99fe-34f403e1beab",
+  "job": "2158e6cc-114f-4b67-bf07-6795206307a0"
+ },
+ "raider_gunner": {
+  "character_id": "89d4beec-c140-4ab2-9c7c-cd9d502fe068",
+  "job": "b3741bd6-c5a3-411c-9ffb-bc111f0e764f"
+ },
+ "raider_burner": {
+  "character_id": "9976c705-bc6d-439f-aeb0-a3138ca8b445",
+  "job": "529ddd5f-57a6-446c-abdf-0fe9063711f6"
+ },
+ "raider_psycho": {
+  "character_id": "f5f118bc-17fc-4ddb-9b68-ccc4f9350f48",
+  "job": "18cdb55e-4976-4c88-a955-d21978f974e3"
+ },
+ "raider_sniper": {
+  "character_id": "f70e25ca-d148-4ad9-a397-b3c1ef3da393",
+  "job": "01e42906-df86-4046-bce0-fd0298ffe23c"
+ },
+ "raider_chief": {
+  "character_id": "43f9a7fc-9557-42b8-b91f-c0cd37c0fd4c",
+  "job": "911f1fed-d9ae-4e81-8b07-23f9194fe6e6"
+ },
+ "szczureka": {
+  "character_id": "c11c7eb6-508d-4e38-afad-d2fcc19e13f7",
+  "job": "e6760498-922f-418c-8ff6-89493d0460d1"
+ },
+ "szczurekb": {
+  "character_id": "9011f566-12d2-44f3-8e65-5467aa72d5da",
+  "job": "9cd6475b-e136-46ce-9b6a-4f194cf0f418"
+ },
+ "szczurekc": {
+  "character_id": "352fea10-3116-499a-b084-69499f501c75",
+  "job": "a2a33673-95cb-4b71-ac49-94dc6aff33e4"
+ },
+ "szczurek_rejected": {
+  "character_id": "4cc3cbdc-9ae7-459a-92c3-627bc9f87f56",
+  "job": "ed00f5ef-b716-4675-a08a-ed5aca00bbed"
+ }
+}
