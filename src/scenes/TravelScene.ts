@@ -29,7 +29,10 @@ import { modalOpen, openWindow } from './ui/Widgets';
 // WSAD / strzałki = przesuwanie; R = cały region; w marszu podąża za drużyną) i kamera interfejsu (panele, napisy,
 // okna zdarzeń) ze stałym zoomem. Obiekty dodane po zbudowaniu mapy trafiają do warstwy interfejsu (ADDED_TO_SCENE).
 
-const TYPE_COLOR: Record<ObjectiveType, number> = { eliminate: 0xc43d2f, retrieve: 0x7fc46a, rescue: 0x4aa8ff, hunt: 0xf2a93b, boss: 0xff30ff };
+const TYPE_COLOR: Record<ObjectiveType, number> = {
+  eliminate: 0xc43d2f, retrieve: 0x7fc46a, rescue: 0x4aa8ff, hunt: 0xf2a93b, boss: 0xff30ff,
+  hack: 0x40e0d0, liberate: 0xe8d070, purge: 0x9c6ad8, defend: 0xe0e0e0,
+};
 const TONE = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 const Q = (v: number): number => Math.round(v * WQ);
 /** Pozioma oś ekranu w rzucie izometrycznym (x - z): do odwracania postaci w kierunku marszu. */
@@ -369,8 +372,11 @@ export class TravelScene extends Phaser.Scene {
     this.cameras.main.setZoom(ZOOM * c.z).centerOn(c.x, c.y);
     // napisy przypięte do mapy (warstwa interfejsu): rzut punktu mapy na ekran
     const travel = this.state !== 'idle';
-    const listBottom = LIST_Y + 18 + this.all.length * (ROW_H + 2);
-    for (const l of this.labels) {
+    const listBottom = LIST_Y + 18 + this.all.length * (this.rowH() + 2);
+    // napisy zleceń nie nachodzą na siebie: wybrane zlecenie pierwsze, kolejne kolidujące są chowane (flaga zostaje)
+    const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    const order = [...this.labels].sort((a, b) => Number(b.id === this.job?.id) - Number(a.id === this.job?.id));
+    for (const l of order) {
       let x = BASE_W / 2 + (l.wx - c.x) * c.z;
       const y = BASE_H / 2 + (l.wy - c.y) * c.z;
       if (l.id) x = Phaser.Math.Clamp(x, 40, BASE_W - 40);
@@ -384,7 +390,14 @@ export class TravelScene extends Phaser.Scene {
       }
       const vis = !under && x > -30 && x < BASE_W + 30 && y > (l.id ? 38 : 16) && y < BASE_H + 10;
       const sel = l.id === this.job?.id;
-      l.box.setPosition(Math.round(x), Math.round(y)).setVisible(vis);
+      let show = vis;
+      if (vis && l.id) {
+        const hw = (l.hw ??= l.box.getBounds().width / 2);
+        const r = { x0: x - hw, y0: y - 21, x1: x + hw, y1: y };
+        show = sel || !placed.some((o) => r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0);
+        if (show) placed.push(r);
+      }
+      l.box.setPosition(Math.round(x), Math.round(y)).setVisible(show);
       if (l.id) l.box.setAlpha(travel ? (sel ? 1 : 0.3) : this.job && !sel ? 0.8 : 1).setDepth(sel ? D_LABEL + 1 : D_LABEL);
     }
   }
@@ -436,25 +449,33 @@ export class TravelScene extends Phaser.Scene {
     T.add(label(this, BASE_W - 8, 3, this.state === 'idle' ? 'Kliknij flagę zlecenia, aby je wybrać' : 'W drodze…', { size: 6, color: PAL.dim }).setOrigin(1, 0));
   }
 
+  /** Wysokość wiersza listy: kompaktowa przy długiej tablicy (10+ zleceń). */
+  private rowH(): number {
+    return this.all.length > 7 ? 17 : ROW_H;
+  }
+
   private drawList(): void {
     const L = this.list, st = campaign.state, lvl = campaignPartyLevel(st);
     L.removeAll(true);
-    const H = 16 + this.all.length * (ROW_H + 2);
+    // przy długiej tablicy (10+ zleceń) wiersze kompaktowe: tytuł + trudność i nagroda, bez nazwy sektora
+    const RH = this.rowH(), compact = RH !== ROW_H;
+    const H = 16 + this.all.length * (RH + 2);
     L.add(panel(this, 0, 0, LIST_W, H));
     L.add(label(this, 6, 4, 'ZLECENIA', { size: 7, color: PAL.amber }));
     this.all.forEach((c, i) => {
-      const y = 14 + i * (ROW_H + 2), on = c === this.job, col = TYPE_COLOR[c.type] ?? 0xffffff, df = difficulty(c.level, lvl);
-      const bg = this.add.rectangle(4, y, LIST_W - 8, ROW_H, on ? 0x3a2c1e : PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, on ? PAL.amber : PAL.edge).setInteractive({ useHandCursor: true });
+      const y = 14 + i * (RH + 2), on = c === this.job, col = TYPE_COLOR[c.type] ?? 0xffffff, df = difficulty(c.level, lvl);
+      const bg = this.add.rectangle(4, y, LIST_W - 8, RH, on ? 0x3a2c1e : PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, on ? PAL.amber : PAL.edge).setInteractive({ useHandCursor: true });
       bg.on('pointerover', () => !on && bg.setStrokeStyle(1, PAL.edgeHi));
       bg.on('pointerout', () => !on && bg.setStrokeStyle(1, PAL.edge));
       bg.on('pointerdown', () => this.state === 'idle' && !modalOpen(this) && this.select(c, true));
       L.add(bg);
-      L.add(this.add.rectangle(4, y, 3, ROW_H, col).setOrigin(0));
+      L.add(this.add.rectangle(4, y, 3, RH, col).setOrigin(0));
       L.add(label(this, 10, y + 2, (c.story ? '★ ' : '') + c.title, { size: 6, color: on ? 0xffffff : PAL.text, maxW: LIST_W - 18 }));
-      const a = label(this, 10, y + 10, BIOME_NAMES[c.biome] ?? c.biome, { size: 5, color: PAL.dim, maxW: LIST_W - 18 });
-      const b = label(this, 10, y + 18, df.label, { size: 5, color: TONE[df.tone] });
-      const r = label(this, 10 + b.displayWidth, y + 18, ` · ${c.reward.scrap} Z`, { size: 5, color: PAL.dim });
-      L.add([a, b, r]);
+      if (!compact) L.add(label(this, 10, y + 10, BIOME_NAMES[c.biome] ?? c.biome, { size: 5, color: PAL.dim, maxW: LIST_W - 18 }));
+      const by = y + (compact ? 10 : 18);
+      const b = label(this, 10, by, df.label, { size: 5, color: TONE[df.tone] });
+      const r = label(this, 10 + b.displayWidth, by, ` · ${c.reward.scrap} Z · ${TYPE_NAMES[c.type] ?? c.type}`, { size: 5, color: PAL.dim, maxW: LIST_W - 18 - b.displayWidth });
+      L.add([b, r]);
     });
   }
 
