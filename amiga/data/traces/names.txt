@@ -1,0 +1,583 @@
+name human soldier m 0 Zenon "Szpon"
+name human soldier m 1 Hełm
+name human soldier f 0 Bożena "Klucz" Smolarek
+name human soldier f 1 Jola Krawiec
+name human soldier - 0 Stefa Kubiak
+name human soldier - 1 Bronka "Klucz" Rudnicka
+name human scout m 0 Wiesiek Wilczek
+name human scout m 1 Jastrząb Kurek
+name human scout f 0 Agata "Cień"
+name human scout f 1 Wanda "Puszka" Sikora
+name human scout - 0 Kazik Chmiel
+name human scout - 1 Ewa "Bunkier"
+name human medic m 0 Dziadek Zenon
+name human medic m 1 Edek "Klucz" Zawada
+name human medic f 0 Babka Wanda
+name human medic f 1 Julka Sobczak
+name human medic - 0 Jola "Węgielek"
+name human medic - 1 Gienek "Hiena" Wroński
+name human techie m 0 Węgielek Żelazny
+name human techie m 1 Szakal Grabarz
+name human techie f 0 Stara Ola
+name human techie f 1 Szef Nina
+name human techie - 0 Waldek "Mysz" Smolarek
+name human techie - 1 Babka Teresa
+name human scavenger m 0 Ćma Wierzbicki
+name human scavenger m 1 Szymon Zięba
+name human scavenger f 0 Bimber Wilczek
+name human scavenger f 1 Bożena Skowron
+name human scavenger - 0 Jadwiga Gawron
+name human scavenger - 1 Krystyna "Myszka"
+name human brute m 0 Janek "Mysz"
+name human brute m 1 Pech Głodny
+name human brute f 0 Wiesia "Pył" Kruczek
+name human brute f 1 Mżawka Woźniak
+name human brute - 0 Hiena Bednarz
+name human brute - 1 Jola "Ząb" Żuraw
+name human gunslinger m 0 Mirek Wroński
+name human gunslinger m 1 Szeryf Kaczmarek
+name human gunslinger f 0 Weronika "Żwir"
+name human gunslinger f 1 Marta "Trotyl" Sikora
+name human gunslinger - 0 Bożena Kołodziej
+name human gunslinger - 1 Kabura
+name human champion m 0 Dziadek Janek
+name human champion m 1 Bronek "Ząb" Kowal
+name human champion f 0 Śruba
+name human champion f 1 Lena "Rykoszet" Szewczyk
+name human champion - 0 Sadza Wierzbicka
+name human champion - 1 Babka Mira
+name human alchemist m 0 Stary Feliks
+name human alchemist m 1 Sadza Brzeziński
+name human alchemist f 0 Teresa "Lont"
+name human alchemist f 1 Kanister Gajewska
+name human alchemist - 0 Piła
+name human alchemist - 1 Józek "Ząb" Zawada
+name human herald m 0 Gienek "Sadza" Kurek
+name human herald m 1 Kazik "Kapsel" Czajka
+name human herald f 0 Krystyna "Osa" Bednarz
+name human herald f 1 Wiesia "Ćma" Bagińska
+name human herald - 0 Grzechotka
+name human herald - 1 Bartek "Szrapnel" Duda
+name human monk m 0 Mirek "Szczęka"
+name human monk m 1 Kanister
+name human monk f 0 Sierżant Irena
+name human monk f 1 Szef Tola
+name human monk - 0 Halina Rataj
+name human monk - 1 Żyleta Sikora
+name human hacker m 0 Józek "Kotwica" Czajka
+name human hacker m 1 Śruba
+name human hacker f 0 Tola "Szakal" Bagińska
+name human hacker f 1 Nina Bednarz
+name human hacker - 0 Zenon Mielnik
+name human hacker - 1 Bajt
+name humanoid soldier m 0 Zenon "Osa"
+name humanoid soldier m 1 Stalowy
+name humanoid soldier f 0 Teresa "Krzemień" Zając
+name humanoid soldier f 1 Brzytwa
+name humanoid soldier - 0 Brzytwa
+name humanoid soldier - 1 Leszek Sikora
+name humanoid scout m 0 Zmierzch
+name humanoid scout m 1 Roman Rdzawy
+name humanoid scout f 0 Sowa
+name humanoid scout f 1 Dorota "Kret" Rudnicka
+name humanoid scout - 0 Bronka "Wiatr"
+name humanoid scout - 1 Mgła
+name humanoid medic m 0 Mały Marek
+name humanoid medic m 1 Pigułka
+name humanoid medic f 0 Rdza Wierzbicka
+name humanoid medic f 1 Julka "Bazyl" Pająk
+name humanoid medic - 0 Opatrunek
+name humanoid medic - 1 Bolek Gajewski
+name humanoid techie m 0 Bolek "Kastet" Kaczmarek
+name humanoid techie m 1 Stefan Rdest
+name humanoid techie f 0 Ząb Woźniak
+name humanoid techie f 1 Zośka "Smar" Smolarek
+name humanoid techie - 0 Nina "Zapałka" Rataj
+name humanoid techie - 1 Kawka
+name humanoid scavenger m 0 Doktor Zenon
+name humanoid scavenger m 1 Franek Smolarek
+name humanoid scavenger f 0 Mała Bronka
+name humanoid scavenger f 1 Marta "Krzemień" Wróbel
+name humanoid scavenger - 0 Kret
+name humanoid scavenger - 1 Leszek "Klucz"
+name humanoid brute m 0 Jurek Popławski
+name humanoid brute m 1 Witold "Lont"
+name humanoid brute f 0 Ewa Rataj
+name humanoid brute f 1 Dorota "Niedźwiedź"
+name humanoid brute - 0 Kosa Smolarek
+name humanoid brute - 1 Weronika "Szczęka" Kowal
+name humanoid gunslinger m 0 Szef Czesiek
+name humanoid gunslinger m 1 Ignac "Drut" Rdest
+name humanoid gunslinger f 0 Irena Sikora
+name humanoid gunslinger f 1 Cegła Ślusarz
+name humanoid gunslinger - 0 Stara Krystyna
+name humanoid gunslinger - 1 Kolec Kowal
+name humanoid champion m 0 Pech
+name humanoid champion m 1 Zapora
+name humanoid champion f 0 Halina Popiel
+name humanoid champion f 1 Nina "Zapałka"
+name humanoid champion - 0 Edek Smolarek
+name humanoid champion - 1 Szef Tadek
+name humanoid alchemist m 0 Skorpion Woźniak
+name humanoid alchemist m 1 Gienek "Osa" Wróbel
+name humanoid alchemist f 0 Fuks
+name humanoid alchemist f 1 Babka Grażyna
+name humanoid alchemist - 0 Kaśka Rataj
+name humanoid alchemist - 1 Leszek "Młot" Zawada
+name humanoid herald m 0 Krzemień Ślusarz
+name humanoid herald m 1 Trotyl Mielnik
+name humanoid herald f 0 Mira "Kotwica" Smolarek
+name humanoid herald f 1 Osa
+name humanoid herald - 0 Zenon "Czacha" Zięba
+name humanoid herald - 1 Zenon "Drut" Ślusarz
+name humanoid monk m 0 Rysiek "Skorpion"
+name humanoid monk m 1 Gienek Rdest
+name humanoid monk f 0 Stefa "Wiertło" Głodna
+name humanoid monk f 1 Ola Gruszka
+name humanoid monk - 0 Kuba "Kosa"
+name humanoid monk - 1 Bolek "Szpon" Brzeziński
+name humanoid hacker m 0 Maciej "Śruba" Pyłko
+name humanoid hacker m 1 Stach "Hiena" Rudnicki
+name humanoid hacker f 0 Kolec
+name humanoid hacker f 1 Ewa "Pech" Siwa
+name humanoid hacker - 0 Kursor
+name humanoid hacker - 1 Kernel
+name mutant soldier m 0 Franek "Narośl"
+name mutant soldier m 1 Ignac "Trzmiel"
+name mutant soldier f 0 Bożena "Fosfor"
+name mutant soldier f 1 Łuska
+name mutant soldier - 0 Ropucha
+name mutant soldier - 1 Okop
+name mutant scout m 0 Stary Jaszczur
+name mutant scout m 1 Krzywy Rzęsa
+name mutant scout f 0 Mała Ropucha
+name mutant scout f 1 Mira "Rzęsa"
+name mutant scout - 0 Święty Fosfor
+name mutant scout - 1 Narośl
+name mutant medic m 0 Pigułka
+name mutant medic m 1 Szczaw
+name mutant medic f 0 Krzywa Narośl
+name mutant medic f 1 Fosfor
+name mutant medic - 0 Jaszczur
+name mutant medic - 1 Zenon "Grzyb"
+name mutant techie m 0 Antena
+name mutant techie m 1 Łuska
+name mutant techie f 0 Danka "Glon"
+name mutant techie f 1 Bezpiecznik
+name mutant techie - 0 Jaszczur
+name mutant techie - 1 Narośl
+name mutant scavenger m 0 Wujek Jaszczur
+name mutant scavenger m 1 Krzywy Kora
+name mutant scavenger f 0 Wytrych
+name mutant scavenger f 1 Irena "Grzyb"
+name mutant scavenger - 0 Rysiek "Bąbel"
+name mutant scavenger - 1 Zielona Rzęsa
+name mutant brute m 0 Stary Szczaw
+name mutant brute m 1 Narośl
+name mutant brute f 0 Grzyb
+name mutant brute f 1 Siostra Łuska
+name mutant brute - 0 Nina "Fosfor"
+name mutant brute - 1 Siostra Kora
+name mutant gunslinger m 0 Adam "Pleśń"
+name mutant gunslinger m 1 Stary Ropucha
+name mutant gunslinger f 0 Jaszczur
+name mutant gunslinger f 1 Święta Bąbel
+name mutant gunslinger - 0 Tadek "Huba"
+name mutant gunslinger - 1 Marta "Rzęsa"
+name mutant champion m 0 Zapora
+name mutant champion m 1 Leszek "Trzmiel"
+name mutant champion f 0 Trzmiel
+name mutant champion f 1 Bastion
+name mutant champion - 0 Wujek Narośl
+name mutant champion - 1 Mała Fosfor
+name mutant alchemist m 0 Janek "Trzmiel"
+name mutant alchemist m 1 Destylat
+name mutant alchemist f 0 Kora
+name mutant alchemist f 1 Siarka
+name mutant alchemist - 0 Jola "Kora"
+name mutant alchemist - 1 Narośl
+name mutant herald m 0 Jurek "Jaszczur"
+name mutant herald m 1 Łuska
+name mutant herald f 0 Łuska
+name mutant herald f 1 Dorota "Szczaw"
+name mutant herald - 0 Narośl
+name mutant herald - 1 Wujek Bąbel
+name mutant monk m 0 Kastet
+name mutant monk m 1 Brat Narośl
+name mutant monk f 0 Ciotka Łuska
+name mutant monk f 1 Pokrzywa
+name mutant monk - 0 Doktor Szczaw
+name mutant monk - 1 Mirek "Fosfor"
+name mutant hacker m 0 Grzyb
+name mutant hacker m 1 Święty Narośl
+name mutant hacker f 0 Mech
+name mutant hacker f 1 Baśka "Rzęsa"
+name mutant hacker - 0 Stary Bąbel
+name mutant hacker - 1 Doktor Ropucha
+name cyborg soldier m 0 Zębatka
+name cyborg soldier m 1 Tłok
+name cyborg soldier f 0 ZX-256 "Sprężyna"
+name cyborg soldier f 1 Chrom
+name cyborg soldier - 0 Nit
+name cyborg soldier - 1 Chrom
+name cyborg scout m 0 Magnez-71
+name cyborg scout m 1 Magnez-85
+name cyborg scout f 0 Zmierzch
+name cyborg scout f 1 R-368 "Przekładnia"
+name cyborg scout - 0 Szept
+name cyborg scout - 1 Ołów-97
+name cyborg medic m 0 Tytan
+name cyborg medic m 1 Chrom-25
+name cyborg medic f 0 Ołów
+name cyborg medic f 1 Wanda "Ołów" Duda
+name cyborg medic - 0 Bolec-61
+name cyborg medic - 1 Kobalt
+name cyborg techie m 0 Tytan
+name cyborg techie m 1 Tłok
+name cyborg techie f 0 Bolec-62
+name cyborg techie f 1 Zębatka-94
+name cyborg techie - 0 Zawór
+name cyborg techie - 1 Marek "Zębatka" Zając
+name cyborg scavenger m 0 MK-656 "Łasica"
+name cyborg scavenger m 1 Szymon "Wolfram" Rataj
+name cyborg scavenger f 0 Sprężyna-85
+name cyborg scavenger f 1 Zawór
+name cyborg scavenger - 0 T-48 "Fuks"
+name cyborg scavenger - 1 Sprężyna
+name cyborg brute m 0 Leszek "Kobalt" Wróbel
+name cyborg brute m 1 Zawór
+name cyborg brute f 0 MK-337 "Kafar"
+name cyborg brute f 1 Chrom
+name cyborg brute - 0 Mamut
+name cyborg brute - 1 T-767 "Pięść"
+name cyborg gunslinger m 0 Sprężyna-87
+name cyborg gunslinger m 1 Tytan-72
+name cyborg gunslinger f 0 Kobalt
+name cyborg gunslinger f 1 Chrom-49
+name cyborg gunslinger - 0 Rezystor
+name cyborg gunslinger - 1 ZX-680 "Spust"
+name cyborg champion m 0 Wolfram
+name cyborg champion m 1 MK-751 "Kobalt"
+name cyborg champion f 0 Rezystor
+name cyborg champion f 1 Zębatka
+name cyborg champion - 0 Przekładnia-32
+name cyborg champion - 1 Zawór-88
+name cyborg alchemist m 0 Czesiek "Sprężyna" Kurek
+name cyborg alchemist m 1 Zębatka
+name cyborg alchemist f 0 Przekładnia
+name cyborg alchemist f 1 Wolfram-78
+name cyborg alchemist - 0 Bolec-51
+name cyborg alchemist - 1 Opar
+name cyborg herald m 0 Chrom-23
+name cyborg herald m 1 Tytan-97
+name cyborg herald f 0 Dorota "Tłok" Mielnik
+name cyborg herald f 1 Głos
+name cyborg herald - 0 Chrom-83
+name cyborg herald - 1 Wolfram-83
+name cyborg monk m 0 Kobalt
+name cyborg monk m 1 Wolfram
+name cyborg monk f 0 ZX-776 "Klincz"
+name cyborg monk f 1 K-841 "Wolfram"
+name cyborg monk - 0 Chrom
+name cyborg monk - 1 Rundka
+name cyborg hacker m 0 Zero
+name cyborg hacker m 1 Zębatka-66
+name cyborg hacker f 0 Mira "Ołów" Kruczek
+name cyborg hacker f 1 Rezystor
+name cyborg hacker - 0 Witold "Ołów" Duda
+name cyborg hacker - 1 Zawór-84
+name nomad soldier m 0 Szarańcza znad Szlamu
+name nomad soldier m 1 Skwar spod Komina
+name nomad soldier f 0 Julka zza Wydmy
+name nomad soldier f 1 Wydma z Wydm
+name nomad soldier - 0 Ostów z Pustych Torów
+name nomad soldier - 1 Piasek znad Szlamu
+name nomad scout m 0 Lucjan z Rdzawiska
+name nomad scout m 1 Kojot Rudnicki
+name nomad scout f 0 Wiatr ze Studni
+name nomad scout f 1 Irena spod Komina
+name nomad scout - 0 Marek z Rdzawiska
+name nomad scout - 1 Sowa Bednarz
+name nomad medic m 0 Pustułka z Rdzawiska
+name nomad medic m 1 Mirek od Karawany
+name nomad medic f 0 Susza Sobczak
+name nomad medic f 1 Wiatr
+name nomad medic - 0 Burza z Rdzawiska
+name nomad medic - 1 Burza Głodny
+name nomad techie m 0 Sowa Sobczak
+name nomad techie m 1 Piasek
+name nomad techie f 0 Skwar
+name nomad techie f 1 Kruk Zając
+name nomad techie - 0 Halina zza Wydmy
+name nomad techie - 1 Szarańcza
+name nomad scavenger m 0 Ignac znad Szlamu
+name nomad scavenger m 1 Kurz Głodny
+name nomad scavenger f 0 Wiatr
+name nomad scavenger f 1 Gośka od Karawany
+name nomad scavenger - 0 Kurz Sikora
+name nomad scavenger - 1 Żmija zza Wydmy
+name nomad brute m 0 Sowa ze Studni
+name nomad brute m 1 Kurz
+name nomad brute f 0 Burza
+name nomad brute f 1 Piasek z Pustych Torów
+name nomad brute - 0 Susza
+name nomad brute - 1 Sowa z Pustych Torów
+name nomad gunslinger m 0 Ostów
+name nomad gunslinger m 1 Kurz Wierzbicki
+name nomad gunslinger f 0 Sęp z Pustych Torów
+name nomad gunslinger f 1 Sęp Gawron
+name nomad gunslinger - 0 Rysiek z Wydm
+name nomad gunslinger - 1 Biegacz spod Komina
+name nomad champion m 0 Ostów spod Komina
+name nomad champion m 1 Ostów
+name nomad champion f 0 Kojot ze Studni
+name nomad champion f 1 Skwar
+name nomad champion - 0 Edek ze Studni
+name nomad champion - 1 Kurz
+name nomad alchemist m 0 Wydma Smolarek
+name nomad alchemist m 1 Kurz ze Studni
+name nomad alchemist f 0 Skwar Skowron
+name nomad alchemist f 1 Julka ze Studni
+name nomad alchemist - 0 Wiatr Kamińska
+name nomad alchemist - 1 Wydma spod Komina
+name nomad herald m 0 Ostów Kruczek
+name nomad herald m 1 Ostów z Pustych Torów
+name nomad herald f 0 Susza Dziedzic
+name nomad herald f 1 Irena z Wydm
+name nomad herald - 0 Sęp
+name nomad herald - 1 Żmija Zawada
+name nomad monk m 0 Witold spod Komina
+name nomad monk m 1 Burza Rataj
+name nomad monk f 0 Pustułka
+name nomad monk f 1 Kaśka z Rdzawiska
+name nomad monk - 0 Sęp znad Szlamu
+name nomad monk - 1 Skwar Wilczek
+name nomad hacker m 0 Kruk z Pustych Torów
+name nomad hacker m 1 Wiatr
+name nomad hacker f 0 Sęp z Pustych Torów
+name nomad hacker f 1 Kruk z Wydm
+name nomad hacker - 0 Sowa
+name nomad hacker - 1 Szarańcza z Płaskowyżu
+name vault soldier m 0 Hełm
+name vault soldier m 1 Bagnet
+name vault soldier f 0 Brzytwa Gawron
+name vault soldier f 1 Baśka "Skorpion" Głodna
+name vault soldier - 0 Wanda "Łom" Zięba
+name vault soldier - 1 Kawka Ślusarz
+name vault scout m 0 Tadek "Brzytwa" Bednarz
+name vault scout m 1 Szczęka Pająk
+name vault scout f 0 Bunkier Sikora
+name vault scout f 1 Szept Zawada
+name vault scout - 0 Jola Brzezińska
+name vault scout - 1 Bunkier
+name vault medic m 0 Antek Kaczmarek
+name vault medic m 1 Józek "Bazyl" Wróbel
+name vault medic f 0 Doktor Bożena
+name vault medic f 1 Jadwiga "Mysz" Rudnicka
+name vault medic - 0 Lucjan "Gruz" Kołodziej
+name vault medic - 1 Czacha Skowron
+name vault techie m 0 Antek "Bagnet" Mielnik
+name vault techie m 1 Antek "Wiertło" Żelazny
+name vault techie f 0 Tranzystor Sikora
+name vault techie f 1 Krystyna "Rygiel" Czajka
+name vault techie - 0 Sierżant Jola
+name vault techie - 1 Krzemień Zawada
+name vault scavenger m 0 Paser
+name vault scavenger m 1 Marek "Rykoszet" Zając
+name vault scavenger f 0 Julka Zawada
+name vault scavenger f 1 Złomiarz
+name vault scavenger - 0 Szymon "Kawka" Bednarz
+name vault scavenger - 1 Bronek "Kapsel"
+name vault brute m 0 Witold Rdzawy
+name vault brute m 1 Bunkier Skowron
+name vault brute f 0 Stefa Rdest
+name vault brute f 1 Ewa "Smar"
+name vault brute - 0 Żwir Żelazny
+name vault brute - 1 Mirek "Kosa" Siwy
+name vault gunslinger m 0 Bęben
+name vault gunslinger m 1 Colt
+name vault gunslinger f 0 Kapsel Żuraw
+name vault gunslinger f 1 Agata "Popiół"
+name vault gunslinger - 0 Ola "Żyleta" Wróbel
+name vault gunslinger - 1 Edek Szewczyk
+name vault champion m 0 Pawęż
+name vault champion m 1 Józek "Bełt" Kruczek
+name vault champion f 0 Irena Starosta
+name vault champion f 1 Gośka "Łom" Bagińska
+name vault champion - 0 Trotyl Wroński
+name vault champion - 1 Dzwon Kowal
+name vault alchemist m 0 Mirek "Gruz" Szewczyk
+name vault alchemist m 1 Rtęć Sobczak
+name vault alchemist f 0 Sierżant Krystyna
+name vault alchemist f 1 Destylat Kurek
+name vault alchemist - 0 Saletra
+name vault alchemist - 1 Kawka
+name vault herald m 0 Stach Ostrowski
+name vault herald m 1 Kazik "Kastet" Ostrowski
+name vault herald f 0 Mysz
+name vault herald f 1 Renata Grabarz
+name vault herald - 0 Bagnet Wilczek
+name vault herald - 1 Kapitan Kaśka
+name vault monk m 0 Szakal Smolarek
+name vault monk m 1 Gong
+name vault monk f 0 Bagnet
+name vault monk f 1 Halina "Szakal" Sobczak
+name vault monk - 0 Klincz
+name vault monk - 1 Szymon "Brzytwa" Kruczek
+name vault hacker m 0 Dzwon Rdzawy
+name vault hacker m 1 Sierżant Waldek
+name vault hacker f 0 Zośka "Rtęć" Gajewska
+name vault hacker f 1 Wiesia "Brzytwa"
+name vault hacker - 0 Bunkier Wroński
+name vault hacker - 1 Bełt Gruszka
+name ratling soldier m 0 Janek Kruczek
+name ratling soldier m 1 Tadek Garbarz
+name ratling soldier f 0 Zośka "Żyleta" Chmiel
+name ratling soldier f 1 Salwa
+name ratling soldier - 0 Marek "Kawka" Smolarek
+name ratling soldier - 1 Kapral
+name ratling scout m 0 Bełt Garbarz
+name ratling scout m 1 Sadza
+name ratling scout f 0 Klucz Kowal
+name ratling scout f 1 Bagnet Sikora
+name ratling scout - 0 Zbyszek "Bimber"
+name ratling scout - 1 Szrapnel Bednarz
+name ratling medic m 0 Śruba Bednarz
+name ratling medic m 1 Dziadek Józek
+name ratling medic f 0 Szakal Gawron
+name ratling medic f 1 Igła
+name ratling medic - 0 Bolek "Młot" Gruszka
+name ratling medic - 1 Brzytwa Wilczek
+name ratling techie m 0 Wiesiek Głodny
+name ratling techie m 1 Puszka
+name ratling techie f 0 Kapsel
+name ratling techie f 1 Mira Pająk
+name ratling techie - 0 Zośka Zawada
+name ratling techie - 1 Szef Krystyna
+name ratling scavenger m 0 Bolek "Bazyl" Wroński
+name ratling scavenger m 1 Szef Zbyszek
+name ratling scavenger f 0 Trotyl
+name ratling scavenger f 1 Klucz Kaczmarek
+name ratling scavenger - 0 Kuna
+name ratling scavenger - 1 Zapałka Żuraw
+name ratling brute m 0 Zenon Kołodziej
+name ratling brute m 1 Szymon "Kret" Popławski
+name ratling brute f 0 Hanka Kurek
+name ratling brute f 1 Łom
+name ratling brute - 0 Witold "Buldożer"
+name ratling brute - 1 Czacha Lisowski
+name ratling gunslinger m 0 Ostroga
+name ratling gunslinger m 1 Łuska
+name ratling gunslinger f 0 Bazyl Woźniak
+name ratling gunslinger f 1 Kret
+name ratling gunslinger - 0 Kazik "Sadza" Kaczmarek
+name ratling gunslinger - 1 Bolek Kamiński
+name ratling champion m 0 Tadek Wierzbicki
+name ratling champion m 1 Waldek "Bełt" Bagiński
+name ratling champion f 0 Mżawka Czajka
+name ratling champion f 1 Weronika Wrońska
+name ratling champion - 0 Stara Stefa
+name ratling champion - 1 Szef Ula
+name ratling alchemist m 0 Bronek "Bagnet" Mielnik
+name ratling alchemist m 1 Szymon "Gwóźdź" Kruczek
+name ratling alchemist f 0 Destylat
+name ratling alchemist f 1 Renata "Rykoszet" Pająk
+name ratling alchemist - 0 Szakal Pająk
+name ratling alchemist - 1 Lena "Hiena" Bednarz
+name ratling herald m 0 Tadek "Szakal" Kruczek
+name ratling herald m 1 Hejnał Żuraw
+name ratling herald f 0 Lena "Szczęka"
+name ratling herald f 1 Okrzyk
+name ratling herald - 0 Rysiek "Pech" Kruczek
+name ratling herald - 1 Dziadek Waldek
+name ratling monk m 0 Szczęka
+name ratling monk m 1 Sierżant Waldek
+name ratling monk f 0 Ola "Kotwica" Czajka
+name ratling monk f 1 Jola Rdzawa
+name ratling monk - 0 Wiesiek Kubiak
+name ratling monk - 1 Jurek "Drut"
+name ratling hacker m 0 Edek "Żwir" Mazur
+name ratling hacker m 1 Kursor
+name ratling hacker f 0 Gośka "Kret"
+name ratling hacker f 1 Halina Wróbel
+name ratling hacker - 0 Zero Kurek
+name ratling hacker - 1 Bimber Sikora
+name ogrin soldier m 0 Waldek Lisowski
+name ogrin soldier m 1 Stach Popiel
+name ogrin soldier f 0 Babka Jadwiga
+name ogrin soldier f 1 Szczęka
+name ogrin soldier - 0 Popiół Mazur
+name ogrin soldier - 1 Mira Rdzawa
+name ogrin scout m 0 Piła Rataj
+name ogrin scout m 1 Jastrząb
+name ogrin scout f 0 Kolec Kowal
+name ogrin scout f 1 Mira Głodna
+name ogrin scout - 0 Stary Roman
+name ogrin scout - 1 Hanka Wrońska
+name ogrin medic m 0 Konował
+name ogrin medic m 1 Marek "Drut" Sikora
+name ogrin medic f 0 Czacha
+name ogrin medic f 1 Drut Popiel
+name ogrin medic - 0 Igła
+name ogrin medic - 1 Rumianek
+name ogrin techie m 0 Janek "Klucz" Gruszka
+name ogrin techie m 1 Czesiek Pająk
+name ogrin techie f 0 Stefa Kurek
+name ogrin techie f 1 Bit
+name ogrin techie - 0 Zwora
+name ogrin techie - 1 Kapitan Julka
+name ogrin scavenger m 0 Lucjan "Młot"
+name ogrin scavenger m 1 Kuna
+name ogrin scavenger f 0 Jadwiga "Szpon" Dymarska
+name ogrin scavenger f 1 Szperacz
+name ogrin scavenger - 0 Roman Sikora
+name ogrin scavenger - 1 Marek "Gruz" Żelazny
+name ogrin brute m 0 Antek "Klucz"
+name ogrin brute m 1 Ignac "Kastet" Krawiec
+name ogrin brute f 0 Grażyna "Bimber" Rdzawa
+name ogrin brute f 1 Doktor Ewa
+name ogrin brute - 0 Kolec
+name ogrin brute - 1 Józek "Czacha" Gawron
+name ogrin gunslinger m 0 Dzwon
+name ogrin gunslinger m 1 Kapsel Kruczek
+name ogrin gunslinger f 0 Stefa Wróbel
+name ogrin gunslinger f 1 Tola "Żyleta"
+name ogrin gunslinger - 0 Teresa Szewczyk
+name ogrin gunslinger - 1 Kabura
+name ogrin champion m 0 Adam Mazur
+name ogrin champion m 1 Mały Mirek
+name ogrin champion f 0 Danka Duda
+name ogrin champion f 1 Mira "Szakal" Czajka
+name ogrin champion - 0 Puszka Rataj
+name ogrin champion - 1 Pawęż
+name ogrin alchemist m 0 Stefan "Kastet" Zając
+name ogrin alchemist m 1 Tymon "Kolec"
+name ogrin alchemist f 0 Ola "Szczęka" Wrońska
+name ogrin alchemist f 1 Julka "Rdza"
+name ogrin alchemist - 0 Wiesiek "Bagnet" Mazur
+name ogrin alchemist - 1 Ola "Lont" Głodna
+name ogrin herald m 0 Marek "Klucz" Rdzawy
+name ogrin herald m 1 Kastet Garbarz
+name ogrin herald f 0 Teresa "Klucz"
+name ogrin herald f 1 Bronka "Bełt" Lisowska
+name ogrin herald - 0 Tola "Kanister"
+name ogrin herald - 1 Bimber Gajewski
+name ogrin monk m 0 Damian "Żyleta"
+name ogrin monk m 1 Damian Mazur
+name ogrin monk f 0 Julka Zawada
+name ogrin monk f 1 Pech Mazur
+name ogrin monk - 0 Kaśka "Szakal" Lisowska
+name ogrin monk - 1 Podbródek
+name ogrin hacker m 0 Bajt
+name ogrin hacker m 1 Skorpion Rudnicki
+name ogrin hacker f 0 Port
+name ogrin hacker f 1 Nina "Hiena"
+name ogrin hacker - 0 Kapitan Jurek
+name ogrin hacker - 1 Zbyszek Kurek
+fem Zawada,Kowal,Dymarska,Wrońska,Rdest,Mazur,Sobczak,Kurek,Wilczek,Grabarz,Szewczyk,Kaczmarek,Żuraw,Krawiec,Popiel,Bednarz,Skowron,Zięba,Rataj,Garbarz,Kołodziej,Ślusarz,Mielnik,Smolarek,Gajewska,Brzezińska,Sikora,Gawron,Czajka,Rudnicka,Żelazna,Wierzbicka,Ostrowska,Pająk,Wróbel,Kruczek,Zając,Bagińska,Siwa,Głodna,Rdzawa,Kamińska,Pyłko,Chmiel,Dziedzic,Starosta,Woźniak,Lisowska,Popławska,Duda,Gruszka,Kubiak
+hire 0 1 BIZON|Sowa|Igła Wrońska|Huba
+hire 1 1 KRUK DYMARSKI|Igła Wrońska|Lut|Rysiek ze Studni
+hire 2 1 DOKTOR PLEŚŃ|Lut|Szczurek|Szpatułka
+hire 3 1 ISKRA|Szczurek|Bizon|Irena Zawada
+hire 4 1 GRZMOT|Bizon|Kruk Dymarski|Edek "Cegła"
+hire 5 1 SZEPT|Kruk Dymarski|Doktor Pleśń|Pustułka

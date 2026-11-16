@@ -224,8 +224,8 @@ export function highway(): WPos[] {
 }
 
 /** Objazdy miasta od południa i północy (Oldgame worldmap.road) - szlaki nigdy nie przecinają ruin. */
-const RING_S: readonly WPos[] = [P(-9.5, 11.2), P(-3, 13.8), P(2.5, 14.6), P(9, 13.6), P(15, 10.6)];
-const RING_N: readonly WPos[] = [P(-11.5, -4.6), P(-5, -8.4), P(2.5, -10.2), P(9, -9), P(14.5, -6)];
+export const RING_S: readonly WPos[] = [P(-9.5, 11.2), P(-3, 13.8), P(2.5, 14.6), P(9, 13.6), P(15, 10.6)];
+export const RING_N: readonly WPos[] = [P(-11.5, -4.6), P(-5, -8.4), P(2.5, -10.2), P(9, -9), P(14.5, -6)];
 
 /**
  * Trasa z Przystani do celu. Miasto: autostrada do bramy + ulice (aleja i przecznica).
