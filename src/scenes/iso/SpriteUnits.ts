@@ -102,14 +102,41 @@ function measure(p: { w: number; h: number; data: Uint8ClampedArray }): Src {
 /** Kąt obrotu (stopnie, + = głową do przodu) dla etapów śmierci: pada do tyłu. */
 const DIE_ANGLE = [0, -8, -24, -48, -74, -90, -90];
 
-/** Maluje jedną klatkę: obraz `s` przekształcony wg pozy. */
-function poseFrame(s: Src, pose: Pose): PixelCanvas {
+/** Pikseli obrazu na jednostkę pozy (pozy z UnitArt.ANIMS są w pikselach projektowych). */
+const PX = SPRITE_DENSITY;
+
+/**
+ * Kolumna rozdzielająca nogi w obrazie źródłowym: średnie x nieprzezroczystych pikseli w dolnej połowie nóg.
+ * Lewa / prawa strona tej kolumny to dwie nogi (przód: bliższa po lewej, tył: bliższa po prawej).
+ */
+function legSplit(s: Src, hipRow: number): number {
+  const y0 = Math.round(hipRow + (s.bottom - hipRow) * 0.4);
+  let sum = 0, n = 0;
+  for (let y = y0; y <= s.bottom; y++)
+    for (let x = s.left; x <= s.right; x++)
+      if (s.data[(y * s.w + x) * 4 + 3]) {
+        sum += x;
+        n++;
+      }
+  return n ? sum / n : (s.left + s.right + 1) / 2;
+}
+
+/**
+ * Maluje jedną klatkę: obraz `s` przekształcony wg pozy, z tym samym ruchem co klatki malowane kodem (UnitArt):
+ * nogi osobno (krok: przesunięcie stopy do przodu / tyłu i uniesienie - zgięcie w kolanie), tułów (oddech, pochylenie),
+ * głowa z opóźnieniem (hbob), wypad / odrzut, przysiad, upadek i leżenie. `front` = obrót przodem (south-east).
+ */
+function poseFrame(s: Src, pose: Pose, front: boolean): PixelCanvas {
   const pc = new PixelCanvas(FW, FH);
   const height = s.bottom - s.top + 1;
   // obraz ustawiony stopami w (FOOT_X, FOOT_Y)
   const ox = FOOT_X - Math.round((s.left + s.right + 1) / 2);
   const oy = FOOT_Y - s.bottom;
   const hip = FOOT_Y - Math.round(height * 0.42);
+  const legH = Math.max(1, FOOT_Y - hip);
+  /** Dół głowy (wiersze nad nim = głowa, ruch hbob). */
+  const neck = FOOT_Y - height + 1 + Math.round(height * 0.26);
+  const split = legSplit(s, hip - oy) + ox;
 
   const lying = pose.die >= 0 ? DIE_ANGLE[pose.die] : pose.prone;
   const angle = (lying * Math.PI) / 180;
@@ -122,16 +149,32 @@ function poseFrame(s: Src, pose: Pose): PixelCanvas {
 
   // przysiad / klęk: ściśnięcie w pionie wokół stóp
   const squash = pose.kneel ? 0.8 : 1 - pose.crouch * 0.07;
-  // wypad / odrzut całej postaci, pochylenie i oddech tułowia (w pikselach obrazu)
-  const shiftX = (pose.lunge + pose.dx) * 2;
-  const lean = pose.lean * 2 + (pose.kneel ? 2 : 0);
-  const bob = pose.bob;
-  // chód: nogi kołyszą się na boki (ścinanie dolnej części)
-  const stride = pose.anim === 'walk' || pose.anim === 'sneak' ? pose.stride : 0;
+  // wypad / odrzut całej postaci, pochylenie, oddech tułowia i głowa (piksele projektowe -> piksele obrazu)
+  const shiftX = (pose.lunge + pose.dx) * PX;
+  const lean = pose.lean * PX + (pose.kneel ? PX : 0);
+  const bob = pose.bob * PX;
+  const hbob = pose.hbob * PX;
+  // nogi: [bliższa przesunięcie, uniesienie, dalsza przesunięcie, uniesienie] (UnitArt.WALK_LEGS); przy leżeniu bez kroku
+  const legs = lying ? null : pose.legs.some((v) => v !== 0) ? pose.legs : null;
+  // bliższa noga: przodem (patrzy w prawo-w dół) po lewej stronie obrazu, tyłem (w prawo-w górę) po prawej
+  const legDefs = legs
+    ? ([
+        { left: front, shift: legs[0] * PX, lift: legs[1] * PX },
+        { left: !front, shift: legs[2] * PX, lift: legs[3] * PX },
+      ] as const)
+    : null;
+
+  /** Piksel źródła w punkcie klatki (px, py) lub -1. */
+  const at = (px: number, py: number): number => {
+    const sx = Math.round(px) - ox, sy = Math.round(py) - oy;
+    if (sx < 0 || sy < 0 || sx >= s.w || sy >= s.h) return -1;
+    const i = (sy * s.w + sx) * 4;
+    return s.data[i + 3] ? i : -1;
+  };
 
   for (let y = 0; y < FH; y++)
     for (let x = 0; x < FW; x++) {
-      // odwrotne przekształcenia: obrót wokół stóp -> ściśnięcie -> pochylenie / oddech / nogi -> obraz źródłowy
+      // odwrotne przekształcenia: obrót wokół stóp -> ściśnięcie -> tułów / głowa / nogi -> obraz źródłowy
       let px = x - tx - shiftX, py = y - ty;
       if (lying) {
         const rx = px - FOOT_X, ry = py - FOOT_Y;
@@ -139,16 +182,29 @@ function poseFrame(s: Src, pose: Pose): PixelCanvas {
         py = FOOT_Y - rx * sin + ry * cos;
       }
       py = FOOT_Y - (FOOT_Y - py) / squash;
+      let i = -1;
       if (py < hip) {
+        // tułów opada / unosi się o `bob`, głowa dodatkowo o `hbob` (oddech z opóźnieniem)
         px -= lean;
         py -= bob;
-      } else if (stride) {
-        px -= Math.round((stride * (py - hip)) / Math.max(1, FOOT_Y - hip));
-      }
-      const sx = Math.round(px) - ox, sy = Math.round(py) - oy;
-      if (sx < 0 || sy < 0 || sx >= s.w || sy >= s.h) continue;
-      const i = (sy * s.w + sx) * 4;
-      if (!s.data[i + 3]) continue;
+        if (py < neck + hbob) py -= hbob;
+        i = at(px, py);
+      } else if (legDefs) {
+        // każda noga osobno: góra uda zostaje w biodrze, stopa przesuwa się o `shift` i unosi o `lift`
+        // (bliższa noga rysowana na dalszej)
+        for (const l of legDefs) {
+          const c = l.lift / legH;
+          const sy = (py - c * hip) / (1 - c);
+          if (sy < hip - 0.5) continue;
+          const sx = px - (l.shift * (sy - hip)) / legH;
+          const j = at(sx, sy);
+          if (j >= 0 && Math.round(sx) < split === l.left) {
+            i = j;
+            break;
+          }
+        }
+      } else i = at(px, py);
+      if (i < 0) continue;
       const o = (y * FW + x) * 4;
       pc.data[o] = s.data[i];
       pc.data[o + 1] = s.data[i + 1];
@@ -241,7 +297,7 @@ export function paintSpriteSheet(scene: Phaser.Scene, id: string): UnitSheet & {
   (['f', 'b'] as const).forEach((facing, row) => {
     const src = measure(texturePixels(scene, spriteTexKey(id, facing === 'f' ? 'south-east' : 'north-east')));
     names.forEach((name, i) => {
-      const fpc = poseFrame(src, poses.get(name)!);
+      const fpc = poseFrame(src, poses.get(name)!, facing === 'f');
       const { x, y } = at(i, row);
       for (let yy = 0; yy < FH; yy++) pc.data.set(fpc.data.subarray(yy * FW * 4, (yy + 1) * FW * 4), ((y + yy) * pc.w + x) * 4);
       frames.push({ name: `${facing}_${name}`, x, y, w: FW, h: FH });
