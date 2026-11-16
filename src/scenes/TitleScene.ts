@@ -5,7 +5,7 @@ import { RECRUITS } from '../core/data/recruits';
 import { CREDITS, GAME_SUBTITLE, GAME_TITLE } from '../core/data/story';
 import { type MenuModel, Q8, TickClock, type TitleMenuId, angQ8, blinkAlphaQ8, icos, phaseAt, secToQ8, titleMenu } from '../core/frontend';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline, tiledImage } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, seeded, skyGradient, skyline, tiledImage } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
 import { Save, dialog, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
 
@@ -97,7 +97,7 @@ export class TitleScene extends Phaser.Scene {
       return b;
     });
     this.paintFocus();
-    label(this, 6, BASE_H - 6, `Robert Magdziarz · v${__GAME_VERSION__} · Pathfinder 2e w świecie po zagładzie`, { size: 6, color: PAL.dim }).setOrigin(0, 1).setDepth(10);
+    label(this, 6, BASE_H - 6, 'Pathfinder 2e w świecie po zagładzie', { size: 6, color: PAL.dim }).setOrigin(0, 1).setDepth(10);
 
     const kb = this.input.keyboard;
     const nav = (dir: -1 | 1) => () => {
@@ -123,6 +123,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private focus(i: number, sound: boolean): void {
+    if (this.credits) return; // okno Autorzy blokuje menu do zamknięcia
     this.menu.setFocus(i);
     this.paintFocus();
     if (sound) SoundManager.sfx('hover');
@@ -133,7 +134,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private run(id: TitleMenuId): void {
-    if (this.data.get('quit')) return;
+    if (this.data.get('quit') || this.credits) return;
     switch (id) {
       case 'new':
         SoundManager.sfx('door');
@@ -197,7 +198,12 @@ export class TitleScene extends Phaser.Scene {
       return;
     }
     const w = 280, h = 34 + (CREDITS.length + 1) * 14;
-    const box = panel(this, (BASE_W - w) / 2, (BASE_H - h) / 2, w, h, PAL.edgeHi, 0.97).setDepth(50);
+    // własne, zawsze w pełni kryjące tło (bez ustawienia przezroczystości okien) + zasłona łapiąca kliknięcia w menu
+    const box = this.add.container((BASE_W - w) / 2, (BASE_H - h) / 2, [
+      this.add.rectangle(-BASE_W, -BASE_H, BASE_W * 3, BASE_H * 3, 0x000000, 0.001).setOrigin(0).setInteractive(),
+      this.add.rectangle(2, 2, w, h, 0x000000, 0.5).setOrigin(0),
+      this.add.rectangle(0, 0, w, h, PAL.panel, 1).setOrigin(0).setStrokeStyle(1, PAL.edgeHi).setInteractive(),
+    ]).setDepth(50);
     box.add(label(this, 10, 8, 'AUTORZY', { size: 9, bold: true, color: PAL.amber }));
     CREDITS.forEach(([a, b], i) => {
       const k = label(this, 10, 26 + i * 14, `${a}: `, { color: PAL.amber });
