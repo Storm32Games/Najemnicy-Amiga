@@ -10,7 +10,7 @@ CH={'zgrzyt':'7ffc9972-074c-4530-bab3-47ff42982bc1','szept':'edd81d76-1094-4786-
 'igla':'bd785f0d-3c25-4b02-8dff-2e90f0cecd94','sowa':'0b0a27d6-274a-49ba-a69e-3f2879d65b89','hak':'78e6a020-648e-48cb-8b3c-da7f88dba7f7',
 'plesn':'f1094a30-9592-41b6-b476-944d0425110d'}
 ALL8=['south','south-east','east','north-east','north','north-west','west','south-west']
-FB=['south-east','north-east']
+FB=['south-east','north-east','south-west','north-west']
 SPEC={
  'walk':dict(template_animation_id='walking-8-frames',dirs=ALL8),
  'sneak':dict(template_animation_id='crouched-walking',dirs=FB),
