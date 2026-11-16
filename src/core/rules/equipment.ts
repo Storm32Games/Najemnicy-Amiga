@@ -1,6 +1,7 @@
 // Ekwipunek: sloty, broń dwuręczna vs tarcza, zamiana broni, wspólna skrytka drużyny.
 // Migracja logiki z Oldgame/src/scenes/hub.js (okno Drużyna) i scenes/meta/common.js (addToStash).
 import type { ItemType } from '../data/types.ts';
+import { newItem } from './character.ts';
 import { itemDef } from './lookup.ts';
 import type { Character, EquipSlot, ItemInstance } from './types.ts';
 
@@ -68,9 +69,18 @@ export function swapWeapons(ch: Character): boolean {
   return true;
 }
 
-/** Przenosi przedmiot między listami (plecak <-> skrytka). */
-export function moveItem(inst: ItemInstance, from: ItemInstance[], to: ItemInstance[]): void {
+/**
+ * Przenosi przedmiot między listami (plecak <-> skrytka). Ze stosu (np. 3x bandaż)
+ * przenoszona jest jedna sztuka; cały stos tylko gdy `all`.
+ */
+export function moveItem(inst: ItemInstance, from: ItemInstance[], to: ItemInstance[], all = false): void {
   const i = from.indexOf(inst);
-  if (i >= 0) from.splice(i, 1);
+  if (i < 0) return;
+  if (!all && (inst.qty || 1) > 1) {
+    inst.qty -= 1;
+    addToStack(to, newItem(inst.id, 1));
+    return;
+  }
+  from.splice(i, 1);
   addToStack(to, inst);
 }

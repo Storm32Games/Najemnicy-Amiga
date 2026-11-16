@@ -185,11 +185,11 @@ ok(createCharacter({ name: 'X', ancestry: 'nomad-born', classId: 'scout' }).ance
   ok(skillCheck(q, 'athletics', 15, rng0).dc === 15, 'skillCheck');
   longRest(q);
   ok(q.hp === q.maxHp && Object.keys(q.conditions).length === 0, 'long rest');
-  // odporność wroga liczona raz; dane mają wartości efektywne z Oldgame (rój much: resist P 6 = stare 3 odjęte dwa razy)
+  // odporność wroga liczona raz (dane mają wartości efektywne, np. rój much: resist P)
   const sw = createEnemy('fly_swarm');
   const before = sw.hp;
   applyDamage(sw, 10, 'P');
-  ok(before - sw.hp === 4, 'enemy resistance applied once (old effective value)');
+  ok(before - sw.hp === 10 - (ENEMIES.fly_swarm as { resist: { P: number } }).resist.P, 'enemy resistance applied once');
   ok(createEnemy('raider_thug', { levelAdj: 1 }).level === 2 && createEnemy('raider_thug', { levelAdj: -1 }).level === 0, 'levelAdj');
 }
 

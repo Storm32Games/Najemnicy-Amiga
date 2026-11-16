@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
 import { type SfxName, SoundManager } from '../audio/SoundManager';
 import { campaign } from '../core/campaign/session';
-import type { Contract } from '../core/campaign/state';
+import { type CampaignState, type Contract, freshState } from '../core/campaign/state';
 import type { EnemyId } from '../core/data/ids';
 import type { AbilityDef, AbilityId, ClassId, EnemyLook, SkillId } from '../core/data/types';
 import { GAMEOVER_LINES } from '../core/data/story';
 import { SKILLS } from '../core/data/rules';
-import { type ActionButton, type HudCommand, type InitEntry, HudState } from '../core/HudState';
+import { type ActionButton, type HudCommand, type InitEntry, type PromptOption, HudState } from '../core/HudState';
 import { usesLeft } from '../core/rules/abilities';
 import { createCharacter } from '../core/rules/character';
 import { useConsumable } from '../core/rules/consumables';
@@ -34,7 +34,8 @@ import { Atmosphere, type MoodName, type WorldLight, asMood, fogMemoryTint } fro
 import { WorldFx, tracerStyleFor } from './fx/WorldFx';
 import { paintScorch } from './iso/FxArt';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, SX0, SY0, VH, VW, ZOOM, PAL, fitViewport, label } from './ui/Kit';
+import { BASE_H, BASE_W, SX0, SY0, VH, VW, ZOOM, PAL, fitViewport, goto, label } from './ui/Kit';
+import { Save } from './ui/Widgets';
 import { FRAME_CORPSE, FRAME_DOWN, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
 
 // Pełna walka PF2e z src/core/tactical (Mission + Combat + AI): drużyna 3 najemników, grupy wrogów,
@@ -228,6 +229,8 @@ export interface WorldSceneData {
 export class WorldScene extends Phaser.Scene {
   /** Zlecenie z tablicy (null = tryb demonstracyjny). */
   private job: Contract | null = null;
+  /** Stan kampanii z chwili wejścia na teren (do "Zapisz i wyjdź" - misja i jej nagrody przepadają). */
+  private entrySnapshot: string | null = null;
   private map!: TacticalMap;
   private biome: Biome = 'ruins';
   private art!: ArtBook;
@@ -362,7 +365,9 @@ export class WorldScene extends Phaser.Scene {
     // Demo: ?biome=ruins|wastes|industrial|bunker&seed=abc
     let party: Character[];
     let contract: MissionContract;
+    this.entrySnapshot = null;
     if (this.job && campaign.state.party.length) {
+      this.entrySnapshot = JSON.stringify(campaign.state);
       party = campaign.state.party;
       contract = this.job;
       this.biome = this.job.biome;
@@ -565,6 +570,9 @@ export class WorldScene extends Phaser.Scene {
         break;
       case 'retreat':
         void this.askRetreat();
+        break;
+      case 'quit':
+        void this.askQuit();
         break;
       case 'zoom':
         this.zoomBy(c.f);
@@ -1820,6 +1828,48 @@ export class WorldScene extends Phaser.Scene {
     if (v === 'go') {
       this.mission.retreat();
       await this.flush();
+      return;
+    }
+    this.hud.setBusy(wasBusy);
+    this.refreshOverlay();
+  }
+
+  /**
+   * Wyjście do ekranu tytułowego. W odróżnieniu od Odwrotu misja przepada w całości:
+   * żadnych łupów, PD ani nagrody. "Zapisz i wyjdź" zapisuje kampanię w stanie z chwili
+   * wejścia na teren (zlecenie zostaje na tablicy), "Wyjdź bez zapisu" wraca do ostatniego zapisu.
+   */
+  private async askQuit(): Promise<void> {
+    if (this.over || (!this.hud.canAct && !this.hud.inCombat)) return;
+    if (this.hud.inCombat && !this.playerTurn) {
+      this.hud.pushLog('Wyjście możliwe w turze najemnika.');
+      SoundManager.sfx('error', { vol: 0.4 });
+      return;
+    }
+    const wasBusy = this.hud.busy;
+    this.hud.setBusy(true);
+    const options: PromptOption[] = [{ label: 'Zostań', value: null }];
+    if (this.entrySnapshot) options.push({ label: 'Zapisz i wyjdź', value: 'save' });
+    options.push({ label: this.entrySnapshot ? 'Wyjdź bez zapisu' : 'Wyjdź', value: 'quit', danger: true });
+    const v = await this.hud.ask({
+      title: 'Wyjść z gry?',
+      body: this.entrySnapshot
+        ? 'Wracacie do ekranu tytułowego. W odróżnieniu od Odwrotu tracicie wszystko z tej misji: łupy, doświadczenie i nagrodę.\n\n"Zapisz i wyjdź" zapisze grę w stanie sprzed wejścia na teren (zlecenie zostaje na tablicy). "Wyjdź bez zapisu" wraca do ostatniego zapisu.'
+        : 'Wracacie do ekranu tytułowego.',
+      options,
+    });
+    if (this.over) return;
+    if (v === 'save' || v === 'quit') {
+      this.over = true;
+      if (v === 'save' && this.entrySnapshot) {
+        campaign.state = Object.assign(freshState(), JSON.parse(this.entrySnapshot) as CampaignState);
+        Save.write();
+      } else if (this.entrySnapshot) {
+        // porzucony stan z misji (rany, zużyte przedmioty) nie może zostać w pamięci
+        if (!Save.load()) campaign.state = freshState();
+      }
+      this.scene.get('UIScene')?.cameras.main?.fadeOut(600, 0, 0, 0);
+      goto(this, 'TitleScene', undefined, 600);
       return;
     }
     this.hud.setBusy(wasBusy);

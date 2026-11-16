@@ -238,11 +238,13 @@ const SCENARIOS = [
   ['raider_thug', 'raider_gunner', 'rat_mutant'],
   ['fly_swarm', 'raider_thug', 'raider_gunner', 'rat_mutant'],
 ];
+// Próbki muszą być duże: przy 60-80 walkach szum (±6-10 pkt) przekraczał progi przy zwykłych zmianach strumienia RNG.
+const N_L1 = 400, N_BOSS = 300;
 const rngS = makeRng(777);
 let totalWin = 0, totalN = 0, rounds = 0;
 for (const foesIds of SCENARIOS) {
   let w = 0;
-  const n = 80;
+  const n = N_L1;
   for (let i = 0; i < n; i++) {
     const r = fight(randomParty(rngS, 1), foesIds.map((f) => createEnemy(f as any)), rngS);
     if (r.win) w++;
@@ -257,13 +259,13 @@ console.log(`4v4 level 1: ${totalN} fights, win rate ${(rate * 100).toFixed(1)}%
 ok(rate >= 0.6 && rate <= 0.9, 'level-1 win rate in 60-90%');
 {
   let w = 0;
-  for (let i = 0; i < 60; i++) if (fight(randomParty(rngS, 3), ['raider_chief', 'raider_sniper', 'raider_thug', 'raider_gunner'].map((f) => createEnemy(f as any)), rngS).win) w++;
-  console.log(`4v4 level 3 vs Herszt+świta: win ${((w / 60) * 100).toFixed(0)}%`);
-  ok(w / 60 >= 0.35 && w / 60 <= 0.95, 'lvl3 chief fight sane');
+  for (let i = 0; i < N_BOSS; i++) if (fight(randomParty(rngS, 3), ['raider_chief', 'raider_sniper', 'raider_thug', 'raider_gunner'].map((f) => createEnemy(f as any)), rngS).win) w++;
+  console.log(`4v4 level 3 vs Herszt+świta: win ${((w / N_BOSS) * 100).toFixed(0)}%`);
+  ok(w / N_BOSS >= 0.35 && w / N_BOSS <= 0.95, 'lvl3 chief fight sane');
   w = 0;
-  for (let i = 0; i < 60; i++) if (fight(randomParty(rngS, 6), ['kostucha', 'raider_chief', 'raider_sniper', 'raider_thug'].map((f) => createEnemy(f as any)), rngS).win) w++;
-  console.log(`4v4 level 6 vs Kostucha+świta: win ${((w / 60) * 100).toFixed(0)}%`);
-  ok(w / 60 >= 0.2 && w / 60 <= 0.95, 'boss fight sane');
+  for (let i = 0; i < N_BOSS; i++) if (fight(randomParty(rngS, 6), ['kostucha', 'raider_chief', 'raider_sniper', 'raider_thug'].map((f) => createEnemy(f as any)), rngS).win) w++;
+  console.log(`4v4 level 6 vs Kostucha+świta: win ${((w / N_BOSS) * 100).toFixed(0)}%`);
+  ok(w / N_BOSS >= 0.2 && w / N_BOSS <= 0.95, 'boss fight sane');
 }
 
 console.log(`\n${checks} checks, ${fails} failures`);
