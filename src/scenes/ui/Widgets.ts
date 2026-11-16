@@ -415,9 +415,9 @@ export function dialog<T>(scene: Phaser.Scene, o: { title: string; body: string;
 /** Okno opcji: dźwięk + wyciszenie, pełny ekran, rozmiar interfejsu, efekty retro, rozdzielczość. Esc / klik w tło zamyka. */
 export function openOptions(scene: Phaser.Scene): Promise<void> {
   return new Promise<void>((resolve) => {
-    const W = 330, H = 266;
+    const W = 400, H = 266;
     const win = openWindow(scene, W, H, 'Opcje', resolve);
-    const L = 12, R = 172;
+    const L = 12, R = 200;
     const head = (x: number, y: number, t: string): void => void win.add(label(scene, x, y, t.toUpperCase(), { size: 6, bold: true, color: PAL.dim }));
 
     // --- dźwięk (lewa kolumna)
@@ -456,7 +456,7 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
       }, { w: 44, h: 12, size: 6 });
       b.setLabel(get() ? 'Wł.' : 'Wył.');
       win.add(b.box);
-      if (tipText) win.add(label(scene, x, y + 11, tipText, { size: 5, color: PAL.dim }));
+      if (tipText) win.add(label(scene, x, y + 12, tipText, { small: true, maxW: W - 12 - x, color: PAL.dim }));
     };
     toggle(L, 84, 'Wycisz wszystko', () => SoundManager.muted, (v) => (SoundManager.muted = v));
 
@@ -466,46 +466,46 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
       if (scene.scale.isFullscreen) scene.scale.stopFullscreen();
       else scene.scale.startFullscreen();
       scene.time.delayedCall(300, () => fs.setLabel(scene.scale.isFullscreen ? 'Wyjdź z pełnego ekranu' : 'Pełny ekran'));
-    }, { w: 144, h: 13, size: 6.5 });
+    }, { w: 168, h: 13, size: 6.5 });
     fs.setLabel(scene.scale.isFullscreen ? 'Wyjdź z pełnego ekranu' : 'Pełny ekran');
     win.add(fs.box);
 
     // --- efekty retro (prawa kolumna)
     head(R, 22, 'Efekty retro');
     toggle(R, 32, 'Linie skanowania', () => Settings.values.scanlines, (v) => Settings.set('scanlines', v), 'poziome pasy jak na monitorze CRT');
-    toggle(R, 54, 'Ziarno filmu', () => Settings.values.grain, (v) => Settings.set('grain', v), 'migoczący szum obrazu');
-    toggle(R, 76, 'Dithering', () => Settings.values.dither, (v) => Settings.set('dither', v), 'raster Bayera jak przy ograniczonej palecie');
-    toggle(R, 98, 'Profil Amiga', () => Settings.values.amiga, (v) => Settings.set('amiga', v), 'A1200/PiStorm: 50 Hz, bez nakładek (restart)');
-    toggle(R, 118, 'Układ okien misji', () => Settings.values.layout, (v) => MissionLayout.setEnabled(v), 'zapamiętuj pozycje i skale okien HUD');
+    toggle(R, 53, 'Ziarno filmu', () => Settings.values.grain, (v) => Settings.set('grain', v), 'migoczący szum obrazu');
+    toggle(R, 74, 'Dithering', () => Settings.values.dither, (v) => Settings.set('dither', v), 'raster Bayera jak przy ograniczonej palecie');
+    toggle(R, 95, 'Profil Amiga', () => Settings.values.amiga, (v) => Settings.set('amiga', v), 'A1200/PiStorm: 50 Hz, bez nakładek (restart)');
+    toggle(R, 116, 'Układ okien misji', () => Settings.values.layout, (v) => MissionLayout.setEnabled(v), 'zapamiętuj pozycje i skale okien HUD');
 
     // --- rozmiar interfejsu (Oldgame/src/core/settings.js:56-57): skala okien, podpowiedzi i komunikatów
-    head(L, 134, 'Rozmiar interfejsu');
+    head(L, 142, 'Rozmiar interfejsu');
     const uiMarks: [number, UiButton][] = [];
     const paintUi = (): void => {
       for (const [k, b] of uiMarks) b.setLabel((Math.abs(Settings.uiScale - k) < 0.01 ? '● ' : '○ ') + (UI_SIZES.find(([v]) => v === k)?.[1] ?? '').replace('Bardzo', 'B.'));
     };
     UI_SIZES.forEach(([k], i) => {
-      const b = button(scene, L + i * 77, 144, '', () => {
+      const b = button(scene, L + i * 94, 152, '', () => {
         Settings.set('ui', k);
         fitWindow(win.box, W, H);
         paintUi();
-      }, { w: 74, h: 13, size: 6 });
+      }, { w: 90, h: 13, size: 6 });
       uiMarks.push([k, b]);
       win.add(b.box);
     });
     paintUi();
 
     // --- przezroczystość okien UI (to samo co przełącznik ●/◐/○ w nagłówku każdego okna)
-    head(L, 164, 'Przezroczystość okien');
+    head(L, 172, 'Przezroczystość okien');
     const alphaMarks: [UiAlpha, UiButton][] = [];
     const paintAlpha = (): void => {
       for (const [k, b] of alphaMarks) b.setLabel((Settings.values.uiAlpha === k ? '● ' : '○ ') + (UI_ALPHAS.find(([v]) => v === k)?.[1] ?? ''));
     };
     UI_ALPHAS.forEach(([k], i) => {
-      const b = button(scene, L + 128 + i * 58, 161, '', () => {
+      const b = button(scene, L + 148 + i * 76, 169, '', () => {
         Settings.set('uiAlpha', k);
         paintAlpha();
-      }, { w: 55, h: 13, size: 6 });
+      }, { w: 72, h: 13, size: 6 });
       alphaMarks.push([k, b]);
       win.add(b.box);
     });
@@ -514,7 +514,7 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     paintAlpha();
 
     // --- rozdzielczość (dół, pełna szerokość); poza misją zmienia się od razu, w misji po ponownym uruchomieniu
-    head(L, 182, 'Rozdzielczość obrazu');
+    head(L, 188, 'Rozdzielczość obrazu');
     const marks: [ResSetting, UiButton][] = [];
     const zoomTxt = (z: number): string => (Number.isInteger(z) ? `${z}` : z.toFixed(2));
     const paintRes = (): void => {
@@ -525,17 +525,18 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
       restart.box.setVisible(want.id !== RES);
     };
     RES_PRESETS.forEach((r, i) => {
-      const b = button(scene, L + i * 61, 192, '', () => {
+      const b = button(scene, L + i * 76, 198, '', () => {
         Settings.set('res', r.id);
         if (canApplyZoomLive(scene.game)) applyResolution(scene.game, r.id);
         paintRes();
-      }, { w: 58, h: 13, size: 6 });
+      }, { w: 72, h: 13, size: 6 });
       marks.push([r.id, b]);
       win.add(b.box);
     });
-    const resNote = win.add(label(scene, L, 209, '', { size: 5.5, color: PAL.dim }));
-    win.add(label(scene, L, 218, 'Domyślna: Full HD 1920×1080. Przy 640×480 (4:3) obraz ma czarne pasy.', { size: 5.5, color: PAL.dim }));
-    win.add(label(scene, L, 226, 'W trakcie misji zmiana rozdzielczości wymaga ponownego uruchomienia.', { size: 5.5, color: PAL.dim }));
+    const note = { small: true, maxW: W - L * 2, color: PAL.dim };
+    const resNote = win.add(label(scene, L, 215, '', note));
+    win.add(label(scene, L, 222, 'Domyślna: Full HD 1920×1080. Przy 640×480 (4:3) obraz ma czarne pasy.', note));
+    win.add(label(scene, L, 229, 'W trakcie misji zmiana rozdzielczości wymaga ponownego uruchomienia.', note));
     const restart = button(scene, L, H - 22, 'Uruchom ponownie', async () => {
       const inMission = scene.scene.isActive('WorldScene');
       const ok = await dialog(scene, {
@@ -546,10 +547,10 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
       if (!ok) return;
       if (!inMission && campaign.state.party.length && !scene.scene.isActive('TitleScene')) Save.write();
       window.location.reload();
-    }, { w: 100, size: 6.5 });
+    }, { w: 118, size: 6.5 });
     win.add(restart.box);
     paintRes();
-    const resetLayout = button(scene, L + 106, H - 22, 'Domyślny układ okien', () => {
+    const resetLayout = button(scene, L + 124, H - 22, 'Domyślny układ okien', () => {
       MissionLayout.reset();
       SoundManager.sfx('click');
       toast(scene, 'Przywrócono domyślny układ okien misji');
