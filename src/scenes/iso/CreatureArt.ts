@@ -5,7 +5,7 @@
 // Klatki 'b_*' patrzą w prawo-od-kamery (NE), 'f_*' w prawo-do-kamery (SE); lewe kierunki = flipX.
 import type { EnemyShape } from '../../core/data/types';
 import { PixelCanvas, type RGB, hash2, mix, pick, ramp } from './Pixel';
-import { type Pose, type UnitSheet, blitRotated, buildUnitSheet } from './UnitArt';
+import { BASE_ANIMS, type Pose, type UnitSheet, blitRotated, buildUnitSheet } from './UnitArt';
 
 export type CreatureSpecies = 'scorpion' | 'mole' | 'wolf' | 'boar' | 'spider' | 'beetle' | 'rat' | 'dog';
 
@@ -528,5 +528,6 @@ export function paintCreatureSheet(shape: EnemyShape, skinColor: RGB, accentColo
       if (paint === swarm) { if (d >= 5) pool(pc, 12, d === 5 ? 2 : 3, ichor); return; }
       if (d >= 5) pool(pc, 11, (d === 5 ? 3 : 5) * (big ? 1.2 : 1), ROLLS.has(paint) && paint !== mole ? ichor : [0x3a0808, 0x5a0e0c, 0x7a1812]);
     },
+    BASE_ANIMS,
   );
 }

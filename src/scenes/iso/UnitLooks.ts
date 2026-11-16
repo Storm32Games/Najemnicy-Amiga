@@ -350,6 +350,8 @@ export function ensureUnit(scene: Phaser.Scene, name: string, look: UnitLook | C
     for (const a of ANIM_ORDER) {
       const key = `${name}_${f}_${a}`;
       if (scene.anims.exists(key)) continue;
+      // arkusze bestii nie mają postaw / czynności (iso/CreatureArt maluje tylko BASE_ANIMS)
+      if (!scene.textures.get(tex).has(`${f}_${a}0`)) continue;
       const def = ANIMS[a];
       const seq = def.seq ?? def.poses.map((_, i) => i);
       scene.anims.create({
