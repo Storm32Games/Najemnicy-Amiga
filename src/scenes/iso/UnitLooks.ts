@@ -8,7 +8,7 @@ import { mix, shade } from './Pixel';
 import { RECRUITS } from '../../core/data/recruits';
 import { hashStr } from './Pixel';
 import { addHiRes } from './HiRes';
-import { hasSprite, paintSpriteSheet, spriteIdOf, type SheetAnim } from './SpriteUnits';
+import { enemySpriteId, hasSprite, paintSpriteSheet, spriteIdOf, type SheetAnim } from './SpriteUnits';
 import {
   ANIMS, ANIM_ORDER, type AncestryLook, type BodyBuild, type HeadKind, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW,
   type UnitLook, type UnitSheet, type WeaponKind, paintUnitSheet,
@@ -311,6 +311,9 @@ export function enemyUnitLook(templateId: string | undefined | null, look?: Enem
   if (mask) result.mask = true;
   if (mutation) result.mutation = true;
   if (cyber) { result.cyber = true; result.eye = result.eye ?? 0xff3a2a; }
+  // gotowa postać PixelLab dla szablonu (szabrownicy: src/assets/units/raider_*/) zamiast klatek malowanych kodem
+  const sprite = enemySpriteId(templateId);
+  if (sprite) result.sprite = sprite;
   return result;
 }
 
