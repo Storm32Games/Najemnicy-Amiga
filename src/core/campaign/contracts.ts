@@ -44,7 +44,7 @@ function pickTitle(titles: readonly string[], board: BoardUse | undefined, rng: 
   return t;
 }
 
-interface ContractTemplate {
+export interface ContractTemplate {
   factions: readonly string[];
   biomes: readonly Biome[];
   moods: readonly Mood[];
@@ -53,10 +53,10 @@ interface ContractTemplate {
   /** Zleceniodawca zawsze z tej frakcji (domyślnie losowo). */
   giver?: FactionId;
 }
-type SideType = Exclude<ObjectiveType, 'boss'>;
+export type SideType = Exclude<ObjectiveType, 'boss'>;
 export const SIDE_TYPES: readonly SideType[] = ['eliminate', 'retrieve', 'rescue', 'hunt', 'hack', 'liberate', 'purge', 'defend'];
 
-const TYPES: Readonly<Record<SideType, ContractTemplate>> = {
+export const CONTRACT_TYPES: Readonly<Record<SideType, ContractTemplate>> = {
   eliminate: {
     factions: ['raider'], biomes: ['ruins', 'industrial', 'wastes'], moods: ['dusk', 'day', 'night'],
     titles: ['Oczyścić skład', 'Wyplenić gniazdo Szabrowników', 'Odbić stację przekaźnikową', 'Dym nad Rdzawiskiem', 'Rozbić obóz Żelaznych Szczęk', 'Wyczyścić zajezdnię'],
@@ -130,7 +130,7 @@ const TYPES: Readonly<Record<SideType, ContractTemplate>> = {
     ],
   },
 };
-const GIVERS: Readonly<Record<FactionId, readonly string[]>> = {
+export const GIVERS: Readonly<Record<FactionId, readonly string[]>> = {
   survivors: ['Starsza Wiera', 'Kapitan Dobosz', 'Mechanik Rudy', 'Siostra Hanna', 'Burmistrz Kalinowski'],
   nomads: ['Stary Tuareg', 'Handlarka Zeyna', 'Przewodnik Kasim', 'Wędrowiec Orzeł', 'Matka Karawany'],
 };
@@ -143,7 +143,7 @@ export function makeContract(
   type: SideType, level: number, state: Pick<CampaignState, 'party' | 'day'> | null, rng: Rng = Math.random, board?: BoardUse,
 ): Contract {
   const biomeUse = board?.biomes;
-  const base = TYPES[type];
+  const base = CONTRACT_TYPES[type];
   // obrona: jedna frakcja napastników na zlecenie (fale z tej samej bandy / stada)
   const T: ContractTemplate = type === 'defend' ? { ...base, factions: [pickOne(base.factions, rng)] } : base;
   const faction: FactionId = T.giver ?? (rng() < 0.55 ? 'survivors' : 'nomads');
@@ -223,8 +223,8 @@ export const STORY_CONTRACTS: readonly Readonly<Contract>[] = [
   },
 ];
 /** Wymagania kolejnych zleceń fabularnych: c = ukończone zlecenia, r = suma reputacji. */
-const STORY_NEED: readonly { c: number; r: number }[] = [{ c: 2, r: 2 }, { c: 4, r: 6 }, { c: 7, r: 10 }];
-const STORY_BUDGET: readonly number[] = [100, 110, 115];
+export const STORY_NEED: readonly { c: number; r: number }[] = [{ c: 2, r: 2 }, { c: 4, r: 6 }, { c: 7, r: 10 }];
+export const STORY_BUDGET: readonly number[] = [100, 110, 115];
 
 export function storyUnlocked(state: CampaignState): boolean {
   const s = state.story || 0;
