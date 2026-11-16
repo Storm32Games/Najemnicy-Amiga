@@ -332,6 +332,11 @@ export class WorldScene extends Phaser.Scene {
 
   create(): void {
     // Pola klasy nie są resetowane przy scene.restart(), więc ustawiamy je tutaj.
+    // To samo dotyczy scene.data: flaga 'leaving' z goto() przeżywa restart i blokowałaby
+    // kolejne wyjście do ekranu tytułowego (czarny ekran z muzyką misji). Kit.enter() robi to samo,
+    // ale WorldScene ma własne wejście kamery.
+    this.data.set('leaving', false);
+    this.input.enabled = true;
     this.elapsed = 0;
     this.cells = [];
     this.tall = [];
