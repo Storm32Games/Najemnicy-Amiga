@@ -14,6 +14,7 @@ import { getStat } from '../core/rules/stats';
 import type { Character } from '../core/rules/types';
 import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, canvasTexture, cut, dunes, enter, goto, hex, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
+import { SPRITE_DIRS, hasSprite, spriteIdOf, spriteTexKey } from './iso/SpriteUnits';
 import { Tip, miniButton, modalOpen, namePrompt, openWindow, portrait } from './ui/Widgets';
 
 // Werbunek (port Oldgame/src/scenes/recruit.js): wybierz dokładnie 4 z 16 gotowych najemników.
@@ -44,7 +45,9 @@ export class RecruitScene extends Phaser.Scene {
   private dust: Motes | null = null;
   private tip!: Tip;
   /** Wybrani najemnicy stojący na placu pod panelami (Oldgame/src/scenes/recruit.js:122-123). */
-  private figures = new Map<string, Phaser.GameObjects.Sprite>();
+  private figures = new Map<string, Phaser.GameObjects.Image>();
+  /** Zegary losowych obrotów sylwetek (sprite'y z 8 kierunkami). */
+  private turners = new Map<string, Phaser.Time.TimerEvent>();
 
   constructor() {
     super('RecruitScene');
@@ -63,6 +66,7 @@ export class RecruitScene extends Phaser.Scene {
     this.previews = new Map();
     this.custom = new Map();
     this.figures = new Map();
+    this.turners = new Map();
 
     canvasTexture(this, 'recruit_bg', BASE_W, BASE_H, (g, w, h) => {
       skyGradient(g, w, h, [[0, '#1a1030'], [0.45, '#6a3440'], [0.7, '#c0683a'], [0.85, '#e0a060']]);
@@ -294,21 +298,57 @@ export class RecruitScene extends Phaser.Scene {
   private standFigures(): void {
     for (const [id, sp] of this.figures) {
       if (this.picks.some((r) => r.id === id)) continue;
+      this.turners.get(id)?.remove();
+      this.turners.delete(id);
       sp.destroy();
       this.figures.delete(id);
     }
     const n = this.picks.length;
     this.picks.forEach((r, i) => {
       const x = Math.round(142 + (i - (n - 1) / 2) * 34), y = BASE_H - 3 - (i % 2);
+      const sprite = spriteIdOf(r);
       let sp = this.figures.get(r.id);
       if (!sp) {
-        sp = addUnit(this, x, y, `pc_${r.id}`, unitLookOf(this.preview(r))).setDepth(2).setScale(0.6);
-        this.tweens.add({ targets: sp, scale: 1, duration: 250, ease: 'Back.easeOut' });
+        let scale = 1;
+        if (hasSprite(this, sprite)) {
+          // sprite 64x64 w 2x gęstości: skala 0.5 = 32 px projektowych, stopy przy dolnej krawędzi obrazu
+          scale = 0.5;
+          sp = this.add.image(x, y, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64).setDepth(2);
+          this.turn(r.id, sprite, sp, 2);
+        } else sp = addUnit(this, x, y, `pc_${r.id}`, unitLookOf(this.preview(r))).setDepth(2);
+        sp.setScale(scale * 0.6).setData('scale', scale);
+        this.tweens.add({ targets: sp, scale, duration: 250, ease: 'Back.easeOut' });
         this.figures.set(r.id, sp);
       }
       this.tweens.add({ targets: sp, x, y, duration: 180 });
-      sp.setFlipX(i >= n / 2 && n > 1);
+      // obracające się sprite'y same patrzą w różne strony; proceduralne odbite do środka placu
+      if (!this.turners.has(r.id)) sp.setFlipX(i >= n / 2 && n > 1);
     });
+  }
+
+  /**
+   * Losowe rozglądanie się: co 0.6-2.4 s postać wybiera nowy kierunek (1-4 kroki w lewo lub prawo) i obraca się
+   * do niego krok po kroku przez sąsiednie kierunki (80 ms na krok), jak żywa postać, a nie przeskakując.
+   */
+  private turn(id: string, sprite: string, sp: Phaser.GameObjects.Image, dir: number): void {
+    const wait = Phaser.Math.Between(600, 2400);
+    const timer = this.time.delayedCall(wait, () => {
+      if (!sp.active) return;
+      const steps = Phaser.Math.Between(1, 4) * (Math.random() < 0.5 ? -1 : 1);
+      let cur = dir;
+      const stepTimer = this.time.addEvent({
+        delay: 80,
+        repeat: Math.abs(steps) - 1,
+        callback: () => {
+          if (!sp.active) return;
+          cur = (cur + Math.sign(steps) + SPRITE_DIRS.length) % SPRITE_DIRS.length;
+          sp.setTexture(spriteTexKey(sprite, SPRITE_DIRS[cur]));
+          if (stepTimer.getRepeatCount() === 0) this.turn(id, sprite, sp, cur);
+        },
+      });
+      this.turners.set(id, stepTimer);
+    });
+    this.turners.set(id, timer);
   }
 
   private begin(): void {

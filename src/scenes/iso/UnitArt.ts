@@ -58,6 +58,8 @@ export interface UnitLook {
   robot?: boolean;
   /** Kolor płaszcza (brak = bez płaszcza). */
   cloak?: RGB;
+  /** Gotowy sprite postaci (iso/SpriteUnits, id rekruta): zastępuje klatki malowane kodem. */
+  sprite?: string;
   /** Kolor świecących oczu (mutacja / robot / implant). */
   eye?: RGB;
   /** Przygarbiony (ghule, mutanci). */
@@ -246,6 +248,8 @@ const FRAME_ALIASES: Record<string, string> = { attack: 'attack2', hurt: 'hurt0'
 export interface UnitSheet {
   pc: PixelCanvas;
   frames: { name: string; x: number; y: number; w: number; h: number }[];
+  /** Pikseli płótna na piksel projektowy (sprite'y z obrazów: 2); brak = 1. */
+  density?: number;
 }
 
 /**
