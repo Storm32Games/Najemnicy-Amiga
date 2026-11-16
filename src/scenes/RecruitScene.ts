@@ -46,8 +46,8 @@ export class RecruitScene extends Phaser.Scene {
   private tip!: Tip;
   /** Wybrani najemnicy stojący na placu pod panelami (Oldgame/src/scenes/recruit.js:122-123). */
   private figures = new Map<string, Phaser.GameObjects.Image>();
-  /** Zegary losowych obrotów sylwetek (sprite'y z 8 kierunkami). */
-  private turners = new Map<string, Phaser.Time.TimerEvent>();
+  /** Zatrzymanie trwającego obrotu sylwetki (sprite'y z 8 kierunkami): zegar oczekiwania albo przenikanie kroku. */
+  private turners = new Map<string, () => void>();
 
   constructor() {
     super('RecruitScene');
@@ -311,7 +311,7 @@ export class RecruitScene extends Phaser.Scene {
   private standFigures(): void {
     for (const [id, sp] of this.figures) {
       if (this.picks.some((r) => r.id === id)) continue;
-      this.turners.get(id)?.remove();
+      this.turners.get(id)?.();
       this.turners.delete(id);
       sp.destroy();
       this.figures.delete(id);
@@ -340,28 +340,41 @@ export class RecruitScene extends Phaser.Scene {
   }
 
   /**
-   * Losowe rozglądanie się: co 0.6-2.4 s postać wybiera nowy kierunek (1-4 kroki w lewo lub prawo) i obraca się
-   * do niego krok po kroku przez sąsiednie kierunki (80 ms na krok), jak żywa postać, a nie przeskakując.
+   * Losowe rozglądanie się: co 0.6-2.4 s postać wybiera nowy kierunek (1-4 kroki w lewo lub prawo) i obraca się do
+   * niego przez sąsiednie kierunki. Sprite ma tylko 8 obrotów, więc każdy krok to przenikanie: następna klatka
+   * pojawia się nad bieżącą (alfa 0 -> 1), a potem zastępuje ją. Pierwszy i ostatni krok są wolniejsze (rozpęd
+   * i hamowanie), środkowe szybsze.
    */
   private turn(id: string, sprite: string, sp: Phaser.GameObjects.Image, dir: number): void {
-    const wait = Phaser.Math.Between(600, 2400);
-    const timer = this.time.delayedCall(wait, () => {
+    const timer = this.time.delayedCall(Phaser.Math.Between(600, 2400), () => {
       if (!sp.active) return;
-      const steps = Phaser.Math.Between(1, 4) * (Math.random() < 0.5 ? -1 : 1);
-      let cur = dir;
-      const stepTimer = this.time.addEvent({
-        delay: 80,
-        repeat: Math.abs(steps) - 1,
-        callback: () => {
-          if (!sp.active) return;
-          cur = (cur + Math.sign(steps) + SPRITE_DIRS.length) % SPRITE_DIRS.length;
-          sp.setTexture(spriteTexKey(sprite, SPRITE_DIRS[cur]));
-          if (stepTimer.getRepeatCount() === 0) this.turn(id, sprite, sp, cur);
-        },
-      });
-      this.turners.set(id, stepTimer);
+      const n = Phaser.Math.Between(1, 4), sgn = Math.random() < 0.5 ? -1 : 1;
+      const step = (k: number, cur: number): void => {
+        if (!sp.active) return;
+        const next = (cur + sgn + SPRITE_DIRS.length) % SPRITE_DIRS.length;
+        const dur = n === 1 ? 190 : k === 0 || k === n - 1 ? 160 : 110;
+        // ta sama głębia, dodany później = rysowany nad sylwetką; podąża za nią (przesuwanie / "wyrastanie")
+        const ghost = this.add.image(sp.x, sp.y, spriteTexKey(sprite, SPRITE_DIRS[next]))
+          .setOrigin(sp.originX, sp.originY).setScale(sp.scaleX, sp.scaleY).setDepth(sp.depth).setAlpha(0);
+        const tw = this.tweens.add({
+          targets: ghost,
+          alpha: 1,
+          duration: dur,
+          ease: 'Sine.easeInOut',
+          onUpdate: () => ghost.setPosition(sp.x, sp.y).setScale(sp.scaleX, sp.scaleY),
+          onComplete: () => {
+            ghost.destroy();
+            if (!sp.active) return;
+            sp.setTexture(spriteTexKey(sprite, SPRITE_DIRS[next]));
+            if (k + 1 < n) step(k + 1, next);
+            else this.turn(id, sprite, sp, next);
+          },
+        });
+        this.turners.set(id, () => (tw.stop(), ghost.destroy()));
+      };
+      step(0, dir);
     });
-    this.turners.set(id, timer);
+    this.turners.set(id, () => timer.remove());
   }
 
   private begin(): void {
