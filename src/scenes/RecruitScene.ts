@@ -13,7 +13,6 @@ import { abilityDef, ancestryOf, classDef, itemDef } from '../core/rules/lookup'
 import { getStat } from '../core/rules/stats';
 import type { Character } from '../core/rules/types';
 import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, canvasTexture, cut, dunes, enter, goto, hex, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
-import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { SPRITE_DIRS, hasSprite, spriteIdOf, spriteTexKey } from './iso/SpriteUnits';
 import { Tip, miniButton, modalOpen, namePrompt, openWindow, portrait } from './ui/Widgets';
 
@@ -38,6 +37,8 @@ export class RecruitScene extends Phaser.Scene {
   /** Imiona i kolory zmienione przez gracza (wg id rekruta). */
   private custom = new Map<string, { name?: string; nameColor?: string }>();
   private view: RecruitDef = RECRUITS[0];
+  /** Najemnik, którego pokaże trwający obrót karty (null = karta nie obraca się). */
+  private flipTo: RecruitDef | null = null;
   private detail!: Phaser.GameObjects.Container;
   private count!: PixelText;
   private hint!: PixelText;
@@ -45,7 +46,7 @@ export class RecruitScene extends Phaser.Scene {
   private dust: Motes | null = null;
   private tip!: Tip;
   /** Wybrani najemnicy stojący na placu pod panelami (Oldgame/src/scenes/recruit.js:122-123). */
-  private figures = new Map<string, Phaser.GameObjects.Image>();
+  private figures = new Map<string, Phaser.GameObjects.Container>();
   /** Zegary losowych obrotów sylwetek (sprite'y z 8 kierunkami). */
   private turners = new Map<string, Phaser.Time.TimerEvent>();
 
@@ -66,6 +67,7 @@ export class RecruitScene extends Phaser.Scene {
     this.previews = new Map();
     this.custom = new Map();
     this.figures = new Map();
+    this.flipTo = null;
     this.turners = new Map();
 
     canvasTexture(this, 'recruit_bg', BASE_W, BASE_H, (g, w, h) => {
@@ -85,24 +87,12 @@ export class RecruitScene extends Phaser.Scene {
     RECRUITS.forEach((r, i) => {
       const x = GRID_X + (i % 4) * (CARD_W + GAP), y = GRID_Y + Math.floor(i / 4) * (CARD_H + GAP);
       const bg = this.add.rectangle(x, y, CARD_W, CARD_H, PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive({ useHandCursor: true });
-      const sprite = spriteIdOf(r);
-      let name: PixelText;
-      if (hasSprite(this, sprite)) {
-        // cała postać przodem (sprite 64x64 w 2x gęstości = 32 px projektowych), pod nią drobnym drukiem imię,
-        // klasa i rasa; obracają się tylko wybrani na placu pod panelami (standFigures)
-        this.add.image(x + CARD_W / 2, y + 30, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64).setScale(0.5);
-        const sm = { small: true, maxW: CARD_W - 2 };
-        name = label(this, x + CARD_W / 2, y + 30, plainName(r.name), sm).setOrigin(0.5, 0);
-        label(this, x + CARD_W / 2, y + 35, classDef(r.classId)?.name ?? r.classId, { ...sm, color: PAL.amber }).setOrigin(0.5, 0);
-        label(this, x + CARD_W / 2, y + 40, ancestryOf(r.ancestry)?.name ?? r.ancestry, { ...sm, color: PAL.dim }).setOrigin(0.5, 0);
-      } else {
-        portrait(this, x + 4, y + 1, this.preview(r), 30, 0x000000);
-        // jak w Oldgame/src/scenes/recruit.js:58-61: imię na pasku u dołu portretu, pod spodem klasa i rasa
-        this.add.rectangle(x + 2, y + 21, CARD_W - 4, 10, 0x000000, 0.72).setOrigin(0);
-        name = label(this, x + CARD_W / 2, y + 22, plainName(r.name), { maxW: CARD_W - 4 }).setOrigin(0.5, 0);
-        label(this, x + CARD_W / 2, y + 30, classDef(r.classId)?.name ?? r.classId, { color: PAL.amber, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
-        label(this, x + CARD_W / 2, y + 37, ancestryOf(r.ancestry)?.name ?? r.ancestry, { color: PAL.dim, maxW: CARD_W - 4 }).setOrigin(0.5, 0);
-      }
+      // portret (popiersie), pod nim drobnym drukiem imię, klasa i rasa; cała postać dopiero w karcie po prawej
+      portrait(this, x + 4, y + 1, this.preview(r), 30, 0x000000);
+      const sm = { small: true, maxW: CARD_W - 2 };
+      const name = label(this, x + CARD_W / 2, y + 31, plainName(r.name), sm).setOrigin(0.5, 0);
+      label(this, x + CARD_W / 2, y + 36, classDef(r.classId)?.name ?? r.classId, { ...sm, color: PAL.amber }).setOrigin(0.5, 0);
+      label(this, x + CARD_W / 2, y + 41, ancestryOf(r.ancestry)?.name ?? r.ancestry, { ...sm, color: PAL.dim }).setOrigin(0.5, 0);
       const mark = label(this, x + CARD_W - 3, y + 2, '', { size: 7, bold: true, color: PAL.toxic }).setOrigin(1, 0);
       bg.on('pointerover', () => !modalOpen(this) && this.show(r));
       bg.on('pointerdown', () => {
@@ -134,7 +124,58 @@ export class RecruitScene extends Phaser.Scene {
     if (q) for (const i of q.split(',')) if (RECRUITS[+i]) this.toggle(RECRUITS[+i]);
   }
 
+  /**
+   * Pokazuje najemnika w karcie po prawej. Zmiana najemnika = obrót karty w 3D wokół pionowej osi: treść zwęża
+   * się do krawędzi (scaleX 1 -> 0, z lekkim powiększeniem w pionie i przyciemnieniem jak bok odwracanej
+   * tabliczki), w połowie podmienia się na nowego, i rozwija z powrotem. Dźwięk 'flip'. Gdy obrót trwa,
+   * kolejne przełączenie tylko podmienia, kogo pokazać w połowie obrotu (szybkie przesuwanie myszą po kartach).
+   */
   private show(r: RecruitDef): void {
+    if (this.flipTo) {
+      this.flipTo = r;
+      return;
+    }
+    if (r === this.view || !this.detail.length) {
+      this.build(r);
+      return;
+    }
+    this.flipTo = r;
+    this.tip?.hide();
+    SoundManager.sfx('flip', { vol: 0.7 });
+    const D = this.detail, half = DET_W / 2;
+    this.tweens.add({
+      targets: D,
+      scaleX: 0,
+      scaleY: 1.04,
+      x: DET_X + half,
+      y: DET_Y - DET_H * 0.02,
+      alpha: 0.55,
+      duration: 110,
+      ease: 'Sine.easeIn',
+      onComplete: () => {
+        const next = this.flipTo ?? r;
+        this.build(next);
+        this.tweens.add({
+          targets: D,
+          scaleX: 1,
+          scaleY: 1,
+          x: DET_X,
+          y: DET_Y,
+          alpha: 1,
+          duration: 140,
+          ease: 'Sine.easeOut',
+          onComplete: () => {
+            const late = this.flipTo;
+            this.flipTo = null;
+            // w trakcie rozwijania wskazano jeszcze kogoś innego - kolejny obrót
+            if (late && late !== this.view) this.show(late);
+          },
+        });
+      },
+    });
+  }
+
+  private build(r: RecruitDef): void {
     this.view = r;
     const ch = this.preview(r);
     const cls = classDef(r.classId), anc = ancestryOf(ch.ancestry);
@@ -145,7 +186,15 @@ export class RecruitScene extends Phaser.Scene {
     const L = (x: number, y: number, s: string, o: Parameters<typeof label>[4] = {}) => add(label(this, x, y, s, o));
 
     // sylwetka
-    add(portrait(this, 8, 8, ch, 64));
+    // cała postać (sprite 64x64 w skali 1 = 64 px projektowych) w ramce portretu; bez sprite'a - portret
+    const sprite = spriteIdOf(r);
+    this.turners.get('detail')?.remove();
+    if (hasSprite(this, sprite)) {
+      // cała postać losowo rozgląda się (przez sąsiednie kierunki), zaczyna przodem
+      add(this.add.rectangle(8, 8, 64, 64, 0x1c1612).setOrigin(0).setStrokeStyle(1, PAL.edge));
+      const fig = add(this.add.image(8 + 32, 8 + 63, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64));
+      this.turn('detail', sprite, fig, SPRITE_DIRS.indexOf('south'));
+    } else add(portrait(this, 8, 8, ch, 64));
     const nm = L(78, 8, ch.name, { size: 12, color: parseColor(ch.nameColor, PAL.amber), maxW: DET_W - 76 - 84 });
     add(miniButton(this, Math.min(DET_W - 76, 84 + nm.displayWidth), 7, '✎ Zmień imię', () => void this.rename(r), { w: 70 }).box);
     L(78, 22, `${cls?.name ?? r.classId} — ${cls?.role ?? ''}`, { color: PAL.amber });
@@ -306,35 +355,23 @@ export class RecruitScene extends Phaser.Scene {
     if (sound) SoundManager.sfx(n ? 'pickup' : 'click', { vol: 0.5 });
   }
 
-  /** Sylwetki wybranych w kolejności wyboru; nowa postać "wyrasta" jak w Oldgame (skala 0.6 -> 1). */
+  /** Portrety wybranych w kolejności wyboru na placu pod panelami; nowy pojawia się z przenikaniem. */
   private standFigures(): void {
-    for (const [id, sp] of this.figures) {
+    for (const [id, pc] of this.figures) {
       if (this.picks.some((r) => r.id === id)) continue;
-      this.turners.get(id)?.remove();
-      this.turners.delete(id);
-      sp.destroy();
+      pc.destroy();
       this.figures.delete(id);
     }
-    const n = this.picks.length;
+    const n = this.picks.length, size = 26;
     this.picks.forEach((r, i) => {
-      const x = Math.round(142 + (i - (n - 1) / 2) * 34), y = BASE_H - 3 - (i % 2);
-      const sprite = spriteIdOf(r);
-      let sp = this.figures.get(r.id);
-      if (!sp) {
-        let scale = 1;
-        if (hasSprite(this, sprite)) {
-          // sprite 64x64 w 2x gęstości: skala 0.5 = 32 px projektowych, stopy przy dolnej krawędzi obrazu
-          scale = 0.5;
-          sp = this.add.image(x, y, spriteTexKey(sprite, 'south')).setOrigin(0.5, 63 / 64).setDepth(2);
-          this.turn(r.id, sprite, sp, 2);
-        } else sp = addUnit(this, x, y, `pc_${r.id}`, unitLookOf(this.preview(r))).setDepth(2);
-        sp.setScale(scale * 0.6).setData('scale', scale);
-        this.tweens.add({ targets: sp, scale, duration: 250, ease: 'Back.easeOut' });
-        this.figures.set(r.id, sp);
+      const x = Math.round(142 + (i - (n - 1) / 2) * 34 - size / 2), y = BASE_H - size - 4;
+      let pc = this.figures.get(r.id);
+      if (!pc) {
+        pc = portrait(this, x, y, this.preview(r), size).setDepth(2).setAlpha(0);
+        this.tweens.add({ targets: pc, alpha: 1, duration: 200 });
+        this.figures.set(r.id, pc);
       }
-      this.tweens.add({ targets: sp, x, y, duration: 180 });
-      // obracające się sprite'y same patrzą w różne strony; proceduralne odbite do środka placu
-      if (!this.turners.has(r.id)) sp.setFlipX(i >= n / 2 && n > 1);
+      this.tweens.add({ targets: pc, x, y, duration: 180 });
     });
   }
 
