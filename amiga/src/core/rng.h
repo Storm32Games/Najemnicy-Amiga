@@ -8,6 +8,8 @@
 
 /* FNV-1a po jednostkach kodu UTF-16 (jak JS charCodeAt). */
 uint32_t hash_seed_utf16(const uint16_t *units, size_t n);
+/* Bajt ISO-8859-2 -> kod Unicode (ASCII bez zmian). */
+uint16_t latin2_unicode(unsigned char c);
 /* Tekst ISO-8859-2 zakończony zerem (bajty przekładane na Unicode; ASCII bez zmian). */
 uint32_t hash_seed_latin2(const char *s);
 

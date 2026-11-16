@@ -530,6 +530,7 @@ typedef struct {
   int8_t attr_flaw[ATTR_COUNT];
   uint16_t traits;                  /* AT_* */
   uint8_t skills[SKILL_COUNT];
+  uint8_t n_skill_order, skill_order[SKILL_COUNT]; /* kolejność kluczy umiejętności z TS (awans co 2 poziomy) */
   int8_t ac_bonus;
   int8_t resist[DMG_COUNT], weak[DMG_COUNT];
   uint8_t n_skin, n_hair;
@@ -544,6 +545,7 @@ typedef struct {
   int8_t attrs[ATTR_COUNT];
   uint8_t boost_order[4];
   Prof prof;
+  uint8_t n_skill_order, skill_order[SKILL_COUNT]; /* kolejność kluczy prof.skills z TS */
   uint8_t n_start_gear;
   uint8_t start_gear[8];            /* ItemId */
   uint8_t n_abilities;

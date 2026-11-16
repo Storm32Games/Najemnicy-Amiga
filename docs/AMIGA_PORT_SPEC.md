@@ -429,7 +429,13 @@ tests/         vectors.c  (czyta test_vectors.json przetworzony do .h)
 2. ✅ `amiga/src/core/rng.c` + `dice.c` → zgodność z wektorami `hashSeed`, `mulberry32`, rzuty, testy k20, szanse
    (`amiga/tests/test_dice.c`, wektory w `vectors_dice.h` z `tools/amiga/gen_test_vectors.ts`). `hash_seed_latin2`
    przekłada bajty ISO-8859-2 na Unicode, więc ziarna z polskimi literami dają ten sam hash co w przeglądarce.
-3. Zasady (§4–13) → zgodność z kartami rekrutów/wrogów i 32 atakami.
+3. ✅ (część) `amiga/src/core/stats.c` + `character.c` (§4, §5, §7 nakładanie stanów): struktura `Character`, stany,
+   KP / rzuty obronne / umiejętności / Prędkość, broń i premia do ataku z PWA, tworzenie najemnika (cechy, biegłości,
+   wygląd, ekwipunek startowy, zdolności) i wroga (słaby/elitarny), awans, PD, PD za starcie, odpoczynek, łup.
+   `amiga/tests/test_character.c` porównuje 48 kart rekrutów i 51 kart wrogów z przeglądarką (4876 sprawdzeń).
+   Wierność TS obejmuje też osobliwości: kolejność kluczy umiejętności przy awansie co 2 poziomy (pole `skill_order`),
+   kolor włosów z `h >> 3` ze znakiem (ujemny indeks = brak koloru), niewrażliwość na `bleed` nie blokuje stanu `bleeding`.
+   Dalej: obrażenia i umieranie (§9), tura (§7 start/koniec), atak (§8) → 32 ataki z wektorów.
 4. `grid.c` + `mapgen.c` → zgodność 12 map.
 5. `combat.c` + `ai.c` + `mission.c` (najpierw w trybie tekstowym/konsolowym — da się grać bez grafiki).
 6. Kampania + zapis. 7. Grafika miniGL i UI. 8. Dźwięk.

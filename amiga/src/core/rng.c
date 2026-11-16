@@ -10,6 +10,8 @@ static const uint16_t LATIN2_HI[96] = {
   0x0111, 0x0144, 0x0148, 0x00f3, 0x00f4, 0x0151, 0x00f6, 0x00f7, 0x0159, 0x016f, 0x00fa, 0x0171, 0x00fc, 0x00fd, 0x0163, 0x02d9,
 };
 
+uint16_t latin2_unicode(unsigned char c) { return c >= 0xA0 ? LATIN2_HI[c - 0xA0] : c; }
+
 #define FNV_OFFSET 2166136261UL
 #define FNV_PRIME 16777619UL
 
@@ -27,8 +29,7 @@ uint32_t hash_seed_latin2(const char *s) {
   uint32_t h = FNV_OFFSET;
   const unsigned char *p = (const unsigned char *)s;
   for (; *p; p++) {
-    uint16_t u = *p >= 0xA0 ? LATIN2_HI[*p - 0xA0] : *p;
-    h ^= u;
+    h ^= latin2_unicode(*p);
     h *= FNV_PRIME;
   }
   return h;

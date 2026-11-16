@@ -183,6 +183,20 @@ function wtraits(list: readonly string[]): { flags: string; deadly: number; fata
 const dmgArr = (m: Record<string, number> | undefined): string => '{' + DMG_IDS.map((d) => String(m?.[d] ?? 0)).join(', ') + '}';
 const skillArr = (m: Record<string, number> | undefined): string => '{' + SKILL_IDS.map((s) => String(m?.[s] ?? 0)).join(', ') + '}';
 const attrArr = (m: Record<string, number> | undefined): string => '{' + ATTR_IDS.map((a) => String(m?.[a] ?? 0)).join(', ') + '}';
+/** Liczba + kolejność kluczy mapy umiejętności (JS zachowuje kolejność wstawienia; awans wybiera po stabilnym sortowaniu). */
+const skillOrder = (m: Record<string, number> | undefined): string => {
+  const k = keys(m ?? {});
+  return `${k.length}, ${arr(k.map((s) => SKILL(s)), SKILL_IDS.length)}`;
+};
+// Progresja klas nie może dodawać nowych kluczy umiejętności (C dopisuje tylko z kolejności klasy + rasy).
+for (const c of Object.values(CLASSES) as Any[]) {
+  for (const p of Object.values(c.progression) as Any[]) {
+    for (const s of keys(p.skills ?? {})) if (!(s in c.prof.skills)) fail(`Progresja klasy ${c.id} dodaje nową umiejętność ${s}`);
+  }
+}
+for (const e of Object.values(ENEMIES) as Any[]) {
+  for (const a of e.attacks) if (!/[+-]\d+$/.test(a.damage)) fail(`Atak wroga ${e.id} bez stałej premii (createEnemy jej nie zmieni): ${a.damage}`);
+}
 function prof(p: Any): string {
   const sc = (k: string): number => p?.[k] ?? 0;
   return `{${sc('perception')}, ${sc('fortitude')}, ${sc('reflex')}, ${sc('will')}, ${sc('classDC')}, ${skillArr(p?.skills)}, ` +
@@ -289,6 +303,7 @@ typedef struct {
   int8_t attr_flaw[ATTR_COUNT];
   uint16_t traits;                  /* AT_* */
   uint8_t skills[SKILL_COUNT];
+  uint8_t n_skill_order, skill_order[SKILL_COUNT]; /* kolejność kluczy umiejętności z TS (awans co 2 poziomy) */
   int8_t ac_bonus;
   int8_t resist[DMG_COUNT], weak[DMG_COUNT];
   uint8_t n_skin, n_hair;
@@ -303,6 +318,7 @@ typedef struct {
   int8_t attrs[ATTR_COUNT];
   uint8_t boost_order[4];
   Prof prof;
+  uint8_t n_skill_order, skill_order[SKILL_COUNT]; /* kolejność kluczy prof.skills z TS */
   uint8_t n_start_gear;
   uint8_t start_gear[8];            /* ItemId */
   uint8_t n_abilities;
@@ -536,7 +552,7 @@ C.push(`const AncestryDef ANCESTRY_DEFS[ANC_COUNT] = {\n${ANC_IDS.map((k) => {
   const free = boosts.free ?? 0;
   delete boosts.free;
   return `  {${cstr(k)}, ${cstr(a.name)}, ${cstr(a.pf2e)}, ${cstr(a.desc)}, ${cstr(a.perk)},\n   ${a.hp}, ${a.speed}, ${attrArr(boosts)}, ${free}, ${attrArr(a.attrFlaw)}, ` +
-    `${mask(ATRAIT_IDS, 'AT_', a.traits)},\n   ${skillArr(a.skills)}, ${a.acBonus ?? 0}, ${dmgArr(a.resist)}, ${dmgArr(a.weak)},\n` +
+    `${mask(ATRAIT_IDS, 'AT_', a.traits)},\n   ${skillArr(a.skills)}, ${skillOrder(a.skills)}, ${a.acBonus ?? 0}, ${dmgArr(a.resist)}, ${dmgArr(a.weak)},\n` +
     `   ${a.look.skin.length}, ${a.look.hair.length}, ${arr(a.look.skin.map(color), 4)}, ${arr(a.look.hair.map(color), 4)}, ${b(a.look.mutation)}, ${b(a.look.cyber)}},`;
 }).join('\n')}\n};\n`);
 
@@ -544,7 +560,7 @@ C.push(`const ClassDef CLASS_DEFS[CLASS_COUNT] = {\n${CLASS_IDS.map((k) => {
   const c = (CLASSES as Any)[k];
   const progression = Array.from({ length: MAX_LEVEL + 1 }, (_, lvl) => prof(c.progression[lvl] ?? {}));
   return `  {${cstr(k)}, ${cstr(c.name)}, ${cstr(c.pf2e)}, ${cstr(c.role)}, ${cstr(c.desc)},\n   ${ATTR(c.keyAttr)}, ${c.hpPerLevel}, ${color(c.color)}, ${attrArr(c.attrs)}, ` +
-    `${arr(c.boostOrder.map((a: string) => ATTR(a)), 4)},\n   ${prof(c.prof)},\n   ${c.startGear.length}, ${arr(c.startGear.map(ITEM), 8)},\n` +
+    `${arr(c.boostOrder.map((a: string) => ATTR(a)), 4)},\n   ${prof(c.prof)},\n   ${skillOrder(c.prof.skills)},\n   ${c.startGear.length}, ${arr(c.startGear.map(ITEM), 8)},\n` +
     `   ${c.abilities.length}, ${arr(c.abilities.map((a: string) => ABIL(a)), 6)}, ${arr(c.abilities.map((a: string) => String(c.unlocks[a] ?? 1)), 6)},\n` +
     `   {${progression.join(',\n    ')}}},`;
 }).join('\n')}\n};\n`);
