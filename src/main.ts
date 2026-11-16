@@ -13,6 +13,7 @@ import { TravelScene } from './scenes/TravelScene';
 import { UIScene } from './scenes/UIScene';
 import { CANVAS_H, CANVAS_W } from './scenes/ui/Kit';
 import { Settings } from './scenes/ui/Settings';
+import { preloadSprites } from './scenes/iso/SpriteUnits';
 import { WorldScene } from './scenes/WorldScene';
 
 // Kolejność jak w Oldgame/src/main.js: logo -> intro -> tytuł -> werbunek -> Przystań -> podróż -> misja -> podsumowanie.
@@ -44,6 +45,10 @@ if (first !== 'LogoScene') {
 class BootScene extends Phaser.Scene {
   constructor() {
     super('BootScene');
+  }
+  /** Sprite'y i portrety najemników (iso/SpriteUnits) - jedyne grafiki z plików, reszta jest malowana kodem. */
+  preload(): void {
+    preloadSprites(this);
   }
   create(): void {
     this.scene.start(first, startData);

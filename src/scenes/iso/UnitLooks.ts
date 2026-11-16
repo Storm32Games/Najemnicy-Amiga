@@ -7,6 +7,8 @@ import { ArtBook } from './IsoArt';
 import { mix, shade } from './Pixel';
 import { RECRUITS } from '../../core/data/recruits';
 import { hashStr } from './Pixel';
+import { addHiRes } from './HiRes';
+import { hasSprite, paintSpriteSheet, spriteIdOf } from './SpriteUnits';
 import {
   ANIMS, ANIM_ORDER, type AncestryLook, type BodyBuild, type HeadKind, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW,
   type UnitLook, type UnitSheet, type WeaponKind, paintUnitSheet,
@@ -148,6 +150,8 @@ export function unitLookOf(src: LookSource): UnitLook {
   if (cyber) { look.cyber = true; look.eye = 0xff3a2a; }
   const sh = eq?.shield?.id;
   if (sh) look.shield = SHIELD_COLORS[sh] ?? 0x6a5a48;
+  const sprite = spriteIdOf(src as { recruitId?: string; id?: string });
+  if (sprite) look.sprite = sprite;
   return look;
 }
 
@@ -330,12 +334,20 @@ const painted = new WeakMap<Phaser.Textures.Texture, string>();
 export function ensureUnit(scene: Phaser.Scene, name: string, look: UnitLook | CreatureLook, build?: () => UnitSheet): string {
   const tex = `unit_${name}`;
   const sig = JSON.stringify(look);
-  const paint = (): UnitSheet => (build ? build() : isCreatureLook(look) ? paintCreatureSheet(look.shape, look.skin, look.accent, look.creature) : paintUnitSheet(look));
+  const sprite = !build && !isCreatureLook(look) && look.sprite && hasSprite(scene, look.sprite) ? look.sprite : null;
+  const paint = (): UnitSheet =>
+    sprite ? paintSpriteSheet(scene, sprite)
+    : build ? build() : isCreatureLook(look) ? paintCreatureSheet(look.shape, look.skin, look.accent, look.creature) : paintUnitSheet(look);
   if (!scene.textures.exists(tex)) {
     const sheet = paint();
-    new ArtBook(scene).sheet(tex, sheet.pc, sheet.frames);
+    const d = sheet.density ?? 1;
+    if (d !== 1) {
+      // obraz gęstszy niż piksele projektowe: ramki i rozmiar projektowy / d, powiększenie najbliższym sąsiadem
+      const frames = sheet.frames.map((f) => ({ name: f.name, x: f.x / d, y: f.y / d, w: f.w / d, h: f.h / d }));
+      addHiRes(scene, tex, sheet.pc, { w: sheet.pc.w / d, h: sheet.pc.h / d, smooth: false }, frames);
+    } else new ArtBook(scene).sheet(tex, sheet.pc, sheet.frames);
     painted.set(scene.textures.get(tex), sig);
-  } else {
+  } else if (!sprite) {
     const t = scene.textures.get(tex);
     if (painted.get(t) !== sig && t instanceof Phaser.Textures.CanvasTexture) {
       const sheet = paint();

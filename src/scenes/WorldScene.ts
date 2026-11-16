@@ -34,6 +34,7 @@ import { Atmosphere, type MoodName, type WorldLight, asMood, fogMemoryTint } fro
 import { WorldFx, tracerStyleFor } from './fx/WorldFx';
 import { paintScorch } from './iso/FxArt';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
+import { spriteIdOf } from './iso/SpriteUnits';
 import { BASE_H, BASE_W, SX0, SY0, VH, VW, ZOOM, PAL, fitViewport, goto, label } from './ui/Kit';
 import { Save } from './ui/Widgets';
 import { FRAME_CORPSE, FRAME_DOWN, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
@@ -1032,7 +1033,7 @@ export class WorldScene extends Phaser.Scene {
       let faunaScale = 1;
       if (a.side === 'pc') {
         key = `pc_${a.ch.recruitId ?? a.ch.id}`;
-        look = this.job ? unitLookOf(a.ch) : (DEMO_LOOKS[a.ch.classId as ClassId] ?? LOOK_SOLDIER);
+        look = this.job || spriteIdOf(a.ch) ? unitLookOf(a.ch) : (DEMO_LOOKS[a.ch.classId as ClassId] ?? LOOK_SOLDIER);
       } else {
         const ranged = normWeapon(getWeapon(a.ch)).range > 0;
         const lk = a.ch.look as Partial<EnemyLook>;
