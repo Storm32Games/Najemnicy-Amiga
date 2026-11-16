@@ -42,8 +42,8 @@ import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, op
 // Menu, pasek rundy, panel akcji, karta postaci i dziennik mają własną skalę (−/+ w nagłówku; kółko nad nagłówkiem
 // poza dziennikiem), własną czcionkę (a/A w nagłówku: treść panelu w tej samej szerokości okna) i dają się przesuwać
 // za nagłówek; PPM na nagłówku = pozycja, skala i czcionka domyślna. Karty drużyny mają stałą, mniejszą czcionkę.
-// Karty drużyny (w walce razem z kartami wrogów) przesuwa się, przeciągając kartę / ramkę; skala: kółko nad kartami
-// albo −/+ za ostatnią kartą. Domyślnie leżą poziomo przy górnej krawędzi; upuszczone dalej od górnej / dolnej
+// Karty drużyny (w walce razem z kartami wrogów) przesuwa się, przeciągając kartę / ramkę; skala: uchwyt w prawym
+// dolnym rogu kart (jak w dzienniku). Domyślnie leżą poziomo przy górnej krawędzi; upuszczone dalej od górnej / dolnej
 // krawędzi układają się pionowo, a przyciągnięte z powrotem do krawędzi - znowu poziomo.
 // Cały stan pochodzi z HudState (src/core); polecenia wracają przez hud.command().
 
@@ -83,8 +83,6 @@ const PARTY_H = 2 + PC_PT + 1 + PC_HPB + 2;
 const PC_GAP = 3;
 /** Przesunięcie kursora (px projektowe), od którego wciśnięcie karty staje się przeciąganiem, a nie kliknięciem. */
 const PARTY_DRAG_MIN = 3;
-/** Miejsce na −/+ za ostatnią kartą. */
-const PARTY_BTN = 9;
 /** Odległość kursora od górnej / dolnej krawędzi, przy której karty drużyny przechodzą w układ poziomy. */
 const PARTY_EDGE = 14;
 /** Menu po prawej (port .m-menu): siatka 2 kolumn ("Odwrót" + "Wyjdź z gry" w ostatnim rzędzie). */
@@ -124,7 +122,7 @@ const WT_H = 13;
 type BtnVariant = 'normal' | 'primary' | 'danger';
 /** Panele ze skalą i pozycją (bez kart drużyny - te tylko się przesuwają). */
 type PanelId = 'menu' | 'top' | 'actions' | 'sheet' | 'log';
-type DragTarget = PanelId | 'party' | 'logSize' | 'logH' | 'logThumb';
+type DragTarget = PanelId | 'party' | 'partySize' | 'logSize' | 'logH' | 'logThumb';
 
 interface Button {
   bg: Phaser.GameObjects.Rectangle;
@@ -249,6 +247,8 @@ export class UIScene extends Phaser.Scene {
   private partyLayer!: Phaser.GameObjects.Container;
   /** Wciśnięta karta: kliknięcie (bez przesunięcia) wykonuje `click`, przesunięcie = przeciąganie drużyny. */
   private partyPress: { x: number; y: number; moved: boolean; click: (() => void) | null } | null = null;
+  /** Skalowanie kart za róg: lewy górny róg i obrys kart (przed skalą) z chwili chwycenia. */
+  private partyResize: { x0: number; y0: number; w: number; h: number } | null = null;
   private roundText!: PixelText;
   private topPanel!: Phaser.GameObjects.Container;
   private topGrip!: Phaser.GameObjects.Rectangle;
@@ -613,7 +613,8 @@ export class UIScene extends Phaser.Scene {
     const L = this.partyLayer;
     L.removeAll(true);
     const hud = this.hud;
-    const { cells, btn } = this.partyLayout();
+    const { cells, w: gw, h: gh } = this.partyLayout();
+    const grip = { x: gw, y: gh };
     // karty mają stałą, mniejszą czcionkę (bez a / A): fc = skala tekstu, NH = wysokość wiersza tekstu
     const fc = cardFontScale();
     const NH = Math.ceil(LH * fc);
@@ -691,20 +692,26 @@ export class UIScene extends Phaser.Scene {
 
       L.add(this.add.container(card.x, card.y, parts));
     });
-    // −/+ skali za ostatnią kartą pierwszego rzędu
-    [-1, 1].forEach((dir, k) => {
-      const b = this.text(btn.x + (partyHoriz ? 1 : k * PARTY_BTN), btn.y + (partyHoriz ? k * PARTY_BTN : 0), dir < 0 ? '−' : '+', PAL.dim).setInteractive({ useHandCursor: true });
-      b.on('pointerdown', (p: Phaser.Input.Pointer) => !p.rightButtonDown() && this.setPartyScale(dir));
-      b.on('pointerover', () => {
-        b.setColor(C.amber);
-        this.hud.setHover(`${dir < 0 ? 'Zmniejsz' : 'Powiększ'} karty (skala ${Math.round(partyScale * 100)}%) · przeciągnij kartę: przesuń · PPM na karcie: domyślnie`);
-      });
-      b.on('pointerout', () => {
-        b.setColor(PAL.dim);
-        this.hud.setHover(null);
-      });
-      L.add(b);
+    // uchwyt skali w prawym dolnym rogu (jak w dzienniku): przeciągnięcie skaluje wszystkie karty
+    const mark = this.add.graphics().fillStyle(PAL.edgeHi, 1);
+    for (let i = 0; i < 3; i++) for (let j = 0; j <= i; j++) mark.fillRect(grip.x - 3 - j * 2, grip.y - 7 + i * 2, 1, 1);
+    const handle = this.add.rectangle(grip.x, grip.y, 9, 9, C.amber, 0).setOrigin(1, 1).setInteractive({ cursor: 'nwse-resize' });
+    handle.on('pointerover', () => {
+      handle.setFillStyle(C.amber, 0.25);
+      this.hud.setHover(`Przeciągnij róg: skala kart (${Math.round(partyScale * 100)}%) · przeciągnij kartę: przesuń · PPM na karcie: domyślnie`);
     });
+    handle.on('pointerout', () => {
+      handle.setFillStyle(C.amber, 0);
+      this.hud.setHover(null);
+    });
+    handle.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p.rightButtonDown()) return;
+      const { w, h } = this.partyLayout();
+      this.partyResize = { x0: this.partyLayer.x, y0: this.partyLayer.y, w, h };
+      this.children.bringToTop(this.partyLayer);
+      this.drag = { target: 'partySize', dx: 0, dy: 0 };
+    });
+    L.add([mark, handle]);
     this.placeParty();
   }
 
@@ -721,20 +728,20 @@ export class UIScene extends Phaser.Scene {
 
   /**
    * Rozkład kart: rzędy (poziomo) albo kolumny (pionowo), zawijane, żeby panel mieścił się na ekranie
-   * (domyślnie poziomy kończy się przed menu). `btn` = miejsce −/+ za ostatnią kartą pierwszego rzędu.
+   * (domyślnie poziomy kończy się przed menu). w / h = obrys kart (uchwyt skali w prawym dolnym rogu).
    */
-  private partyLayout(): { cells: { x: number; y: number }[]; btn: { x: number; y: number }; w: number; h: number } {
+  private partyLayout(): { cells: { x: number; y: number }[]; w: number; h: number } {
     const n = Math.max(1, this.partyCards().length);
     const sx = PARTY_W + PC_GAP, sy = PARTY_H + PC_GAP;
-    const avail = partyHoriz ? (partyPos ? BASE_W - 2 * M : MID_X1 - M) - PARTY_BTN * partyScale : BASE_H - 2 * M - PARTY_BTN * partyScale;
+    const avail = partyHoriz ? (partyPos ? BASE_W - 2 * M : MID_X1 - M) : BASE_H - 2 * M;
     const per = Math.max(1, Math.floor((avail / partyScale + PC_GAP) / (partyHoriz ? sx : sy)));
     const cells = Array.from({ length: n }, (_, i) => {
       const a = i % per, b = Math.floor(i / per);
       return partyHoriz ? { x: a * sx, y: b * sy } : { x: b * sx, y: a * sy };
     });
     const first = Math.min(n, per), lines = Math.ceil(n / per);
-    if (partyHoriz) return { cells, btn: { x: first * sx - PC_GAP + 1, y: 0 }, w: first * sx - PC_GAP + PARTY_BTN, h: lines * sy - PC_GAP };
-    return { cells, btn: { x: 0, y: first * sy - PC_GAP + 1 }, w: lines * sx - PC_GAP, h: first * sy - PC_GAP + PARTY_BTN };
+    if (partyHoriz) return { cells, w: first * sx - PC_GAP, h: lines * sy - PC_GAP };
+    return { cells, w: lines * sx - PC_GAP, h: first * sy - PC_GAP };
   }
 
   /** Rozmiar panelu drużyny na ekranie (po skali). */
@@ -760,9 +767,8 @@ export class UIScene extends Phaser.Scene {
     return partyPos ? M : Math.round(this.partyLayer.y + this.partySize().h + 2);
   }
 
-  /** Karta / ramka: LPM + przeciągnięcie = przesuń panel, LPM bez ruchu = `click`, PPM = miejsce i skala domyślne, kółko = skala. */
+  /** Karta / ramka: LPM + przeciągnięcie = przesuń panel, LPM bez ruchu = `click`, PPM = miejsce i skala domyślne. */
   private partyGrab(r: Phaser.GameObjects.Rectangle, click: (() => void) | null): void {
-    r.on('wheel', (_p: Phaser.Input.Pointer, _dx: number, dy: number) => dy && this.setPartyScale(dy > 0 ? -1 : 1));
     r.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (p.rightButtonDown()) {
         this.drag = null;
@@ -779,21 +785,22 @@ export class UIScene extends Phaser.Scene {
     });
   }
 
-  private setPartyScale(dir: number): void {
+  /**
+   * Uchwyt w prawym dolnym rogu kart: lewy górny róg stoi, skala = rzut kursora na przekątną obrysu kart
+   * z chwili chwycenia, zaokrąglona do skal w całych pikselach płótna (panelScales).
+   */
+  private resizeParty(p: Phaser.Input.Pointer): void {
+    const r = this.partyResize;
+    if (!r) return;
+    const dx = p.worldX - r.x0, dy = p.worldY - r.y0;
+    const want = (dx * r.w + dy * r.h) / (r.w * r.w + r.h * r.h);
     const list = panelScales();
-    const i = nearestScale(list, partyScale);
-    const n = Phaser.Math.Clamp(i + dir, 0, list.length - 1);
-    if (n === i) {
-      SoundManager.sfx('error', { vol: 0.3 });
-      return;
-    }
-    const { w: w0, h: h0 } = this.partySize();
-    partyScale = list[n]!;
-    const { w: w1, h: h1 } = this.partySize();
-    if (partyPos) partyPos = { x: keepAnchor(this.partyLayer.x, w0, w1, BASE_W), y: keepAnchor(this.partyLayer.y, h0, h1, BASE_H) };
-    SoundManager.sfx('click');
+    const next = list[nearestScale(list, want)]!;
+    if (Math.abs(next - partyScale) < 1e-6) return;
+    partyScale = next;
+    if (partyPos) partyPos = { x: r.x0, y: r.y0 };
+    SoundManager.sfx('click', { vol: 0.5 });
     this.drawParty();
-    saveLayout();
     this.hud.setHover(`Skala kart: ${Math.round(partyScale * 100)}%`);
   }
 
@@ -1375,7 +1382,7 @@ export class UIScene extends Phaser.Scene {
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
       ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni (albo klik w broń w panelu akcji), PgUp/PgDn/Home/End = przewijanie dziennika, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
-      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar. W nagłówku każdego panelu: − / + = skala okna (czcionka zmienia się razem z nim), a / A = mniejsza / większa czcionka przy tym samym oknie, ● = przezroczystość. Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; kółko nad kartami albo − / + za nimi = skala; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
+      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar. W nagłówku każdego panelu: − / + = skala okna (czcionka zmienia się razem z nim), a / A = mniejsza / większa czcionka przy tym samym oknie, ● = przezroczystość. Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; prawy dolny róg kart = skala wszystkich kart; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
     // Czcionka ma stały rozmiar (6x8): okno układa się w pełnej skali, a gdy nie mieści się w wysokości ekranu,
@@ -1611,6 +1618,10 @@ export class UIScene extends Phaser.Scene {
     }
     if (d.target === 'party') {
       this.dragParty(p, d);
+      return;
+    }
+    if (d.target === 'partySize') {
+      this.resizeParty(p);
       return;
     }
     if (d.target === 'logSize' || d.target === 'logH') {
