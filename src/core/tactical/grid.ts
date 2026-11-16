@@ -17,6 +17,14 @@ export const samePos = (a: GridPos, b: GridPos): boolean => a.gx === b.gx && a.g
 
 export const UNREACHABLE = 1e9;
 
+/** Najmniejsze k ≥ 0 z k² ≥ v (v całkowite ≥ 0). */
+function ceilSqrt(v: number): number {
+  let k = Math.ceil(Math.sqrt(v));
+  while (k * k < v) k++;
+  while (k > 0 && (k - 1) * (k - 1) >= v) k--;
+  return k;
+}
+
 export interface SearchResult {
   /** Koszt dojścia do pola [gy * width + gx]; UNREACHABLE = brak drogi. */
   cost: Float32Array;
@@ -122,16 +130,20 @@ export class TacticalGrid {
     return this.pathFrom(this.search(a, maxCost, pass), b);
   }
 
+  /**
+   * Próbki co 1/3 pola wzdłuż odcinka a -> b. Liczby całkowite (port C bez FPU liczy identycznie):
+   * n = najmniejsze k z k² ≥ 9·(dx² + dy²) (= ceil(3·długość)), punkt próbki zaokrąglany połówką w górę.
+   */
   private clear(a: GridPos, b: GridPos): LosResult {
     const dx = b.gx - a.gx;
     const dy = b.gy - a.gy;
-    const n = Math.max(2, Math.ceil(Math.hypot(dx, dy) * 3));
+    const n = Math.max(2, ceilSqrt(9 * (dx * dx + dy * dy)));
+    const n2 = 2 * n;
     let cover = false;
     let last = -1;
     for (let s = 1; s < n; s++) {
-      const t = s / n;
-      const x = Math.round(a.gx + dx * t);
-      const y = Math.round(a.gy + dy * t);
+      const x = a.gx + Math.floor((2 * dx * s + n) / n2);
+      const y = a.gy + Math.floor((2 * dy * s + n) / n2);
       const key = y * this.width + x;
       if (key === last || (x === a.gx && y === a.gy) || (x === b.gx && y === b.gy)) continue;
       last = key;

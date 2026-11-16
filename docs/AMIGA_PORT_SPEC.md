@@ -389,7 +389,7 @@ animacji, UI.
 | `kn(n)` | tabela z §16 |
 | PW wroga ×1.25 / ×0.8 | `(5h + 2) / 4`, `(8h + 5) / 10` (Math.round dla dodatnich) |
 | Złom, ceny, nagrody, PD ×0.5 / ×0.25 | procenty na intach, zaokrąglenie jak `Math.round` (połówki w górę) |
-| linia strzału (`t = s/n`, `Math.round(ax + dx·t)`) | **pułapka**: wzór całkowity `ax + floor((2·dx·s + n) / 2n)` różni się od TS w 2176 z 52 mln próbek (wszystkie pola × wszystkie próbki na 32×32) — przy dokładnej połówce (np. 13·30/52 = 7.5) `double` w JS daje 7.4999… i zaokrągla w dół. `n = ceil(3·hypot)` liczony całkowicie (najmniejsze k z k² ≥ 9·d²) zgadza się w 100%. Do wyboru: (a) przejść w TS na wzór całkowity (drobna zmiana zasad, obie wersje identyczne) albo (b) w C liczyć tę jedną funkcję na `double` z soft-float (IEEE, bez FPU). Weryfikacja: `los` w `test_vectors.json` |
+| linia strzału | od 2026-11-16 TS liczy już na liczbach całkowitych: `n` = najmniejsze k z k² ≥ 9·(dx²+dy²), próbka `x = ax + floor((2·dx·s + n) / 2n)` (połówka w górę; w C dzielenie z zaokrągleniem w dół także dla ujemnych). Wcześniejsza wersja `Math.round(ax + dx·s/n)` myliła się przy dokładnych połówkach przez błąd `double` (2176 z 52 mln próbek). Weryfikacja: `los` w `test_vectors.json` |
 | `round(… + rng() × k × (1 + 0.4·poz))` (znaleziska, skrzynie, nagrody) | wzór w Q16; tu dopuszczalna drobna rozbieżność (nie wpływa na mapę) |
 | id zlecenia `rng().toString(36)` | na Amidze `k<dzień>_<u32 hex>` — mapy zleceń pobocznych będą inne niż w przeglądarce, ale deterministyczne |
 | `region.ts`, `frontend/*` | już w Q8/Q12 i tickach 50 Hz |
