@@ -1,7 +1,7 @@
 // Atak bronią (Strike): trafienie vs KP, krytyki, cechy deadly/fatal, atak z ukrycia, premie klasowe.
 // Migracja z Oldgame/src/rules/core.js -> strike().
 import { DMG_ADJ } from '../data/rules.ts';
-import { check, d, fmtMod, parseDice, type Rng } from './dice.ts';
+import { check, d, fmtMod, parseDice, type DieRoll, type Rng } from './dice.ts';
 import { applyDamage } from './damage.ts';
 import { attrMod, getAttackBonus, getStat, getWeapon, hasCondition, isOffGuard, normWeapon, traitDie, traitVal } from './stats.ts';
 import type { ActionResult, Character, WeaponRef } from './types.ts';
@@ -50,8 +50,15 @@ export function strike(attacker: Character, defender: Character, o: StrikeOption
   const fatal = traitDie(w, 'fatal');
   const deadly = traitDie(w, 'deadly');
   const sides = crit && fatal ? fatal : p.sides;
+  const rolled: DieRoll[] = [];
+  const post: DieRoll[] = [];
+  const die = (n: number, out: DieRoll[]): number => {
+    const v = d(n, rng);
+    out.push({ sides: n, value: v });
+    return v;
+  };
   let sum = 0;
-  for (let i = 0; i < dice; i++) sum += d(sides, rng);
+  for (let i = 0; i < dice; i++) sum += die(sides, rolled);
 
   let flat = p.mod + (o.damageBonus || 0);
   const isPc = !attacker.base;
@@ -62,15 +69,16 @@ export function strike(attacker: Character, defender: Character, o: StrikeOption
 
   let sneak = 0;
   const sn = sneakDice(attacker);
-  if (sn && (isOffGuard(defender) || o.sneak)) for (let i = 0; i < sn; i++) sneak += d(6, rng);
+  if (sn && (isOffGuard(defender) || o.sneak)) for (let i = 0; i < sn; i++) sneak += die(6, rolled);
 
   let total = sum + flat + sneak;
   if (crit) {
     total *= 2;
-    if (fatal) total += d(fatal, rng);
-    else if (deadly) total += d(deadly, rng) * (dice >= 3 ? 2 : 1);
+    if (fatal) total += die(fatal, post);
+    else if (deadly) for (let i = 0; i < (dice >= 3 ? 2 : 1); i++) total += die(deadly, post);
   }
   total = Math.max(1, total);
+  res.dmg = { dice: rolled, flat, mult: crit ? 2 : 1, post, total };
 
   const r = applyDamage(defender, total, w.type, { crit });
   res.events.push({ type: 'damage', target: defender, amount: r.dealt, degree: c.degree, dmgType: w.type });

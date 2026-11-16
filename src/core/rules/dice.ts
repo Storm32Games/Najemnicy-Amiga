@@ -38,9 +38,40 @@ export const randInt = (a: number, b: number, rng: Rng = Math.random): number =>
 /** Losowy element tablicy. */
 export const pickOne = <T>(arr: readonly T[], rng: Rng = Math.random): T => arr[Math.floor(rng() * arr.length)];
 
+/** Pojedyncza kość z rzutu (do animacji): ścianki + wynik. */
+export interface DieRoll {
+  sides: number;
+  value: number;
+}
+
+/**
+ * Rzut obrażeń do pokazania w HUD-zie: kości (sumowane i mnożone), stała premia, mnożnik stopnia
+ * (kryt x2, połowa przy udanym rzucie obronnym, x0 przy krytycznym), kości dodane po mnożeniu (deadly / fatal).
+ */
+export interface DamageRoll {
+  dice: DieRoll[];
+  flat: number;
+  mult: number;
+  post: DieRoll[];
+  total: number;
+}
+
+/** Tekst rzutu obrażeń: "(4+2+3) ×2 +5 = 23". */
+export function fmtDamage(r: DamageRoll): string {
+  const parts = r.dice.map((x) => String(x.value));
+  let base = parts.join('+') || '0';
+  if (r.flat) base += (r.flat > 0 ? '+' : '-') + Math.abs(r.flat);
+  const multi = parts.length + (r.flat ? 1 : 0) > 1;
+  let s = r.mult !== 1 ? `${multi ? '(' + base + ')' : base} ×${r.mult === 0.5 ? '½' : r.mult}` : base;
+  for (const x of r.post) s += ` +${x.value}`;
+  return `${s} = ${r.total}`;
+}
+
 export interface RollResult {
   total: number;
   rolls: number[];
+  /** Kości z rozmiarem ścianek (w kolejności rzutu). */
+  dice: DieRoll[];
   expr: string;
   mod: number;
 }
@@ -53,6 +84,7 @@ export function roll(expr: DiceExpr | number, rng: Rng = Math.random): RollResul
   let total = 0;
   let mod = 0;
   const rolls: number[] = [];
+  const dice: DieRoll[] = [];
   while ((m = re.exec(s))) {
     if (m[3] !== undefined) {
       const sign = m[1] === '-' ? -1 : 1;
@@ -61,6 +93,7 @@ export function roll(expr: DiceExpr | number, rng: Rng = Math.random): RollResul
       for (let i = 0; i < n; i++) {
         const r = d(sides, rng);
         rolls.push(r);
+        dice.push({ sides, value: r });
         total += sign * r;
       }
     } else {
@@ -69,7 +102,7 @@ export function roll(expr: DiceExpr | number, rng: Rng = Math.random): RollResul
       total += v;
     }
   }
-  return { total, rolls, expr: s, mod };
+  return { total, rolls, dice, expr: s, mod };
 }
 
 export interface ParsedDice {

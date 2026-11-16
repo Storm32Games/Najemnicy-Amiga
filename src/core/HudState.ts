@@ -24,7 +24,7 @@ export interface LogEntry {
 /** Co się zmieniło - UIScene przerysowuje tylko potrzebny panel. */
 export type HudChange =
   | 'stats' | 'turn' | 'log' | 'inventory' | 'hover' | 'banner'
-  | 'objectives' | 'actions' | 'initiative' | 'roll' | 'prompt' | 'settings' | 'help';
+  | 'objectives' | 'actions' | 'initiative' | 'roll' | 'damage' | 'prompt' | 'settings' | 'help';
 
 /** Polecenia z HUD-u do warstwy gry. */
 export type HudCommand =
@@ -75,6 +75,21 @@ export interface InitEntry {
   /** Już działał w tej rundzie. */
   done: boolean;
   down: boolean;
+}
+
+/** Rzut obrażeń do pokazania: kości k4..k12 (PF2e, bez k100) + tekst wyniku. */
+export interface DamageShow {
+  id: number;
+  label: string;
+  dice: { sides: number; value: number }[];
+  /** Kości dodane po mnożeniu (deadly / fatal) - pokazane za resztą. */
+  post: { sides: number; value: number }[];
+  /** Gotowy tekst wyniku, np. "(4+2+3) ×2 +5 = 23". */
+  text: string;
+  mine: boolean;
+  /** Rzut leczenia (inny kolor tabliczki). */
+  heal?: boolean;
+  duration: number;
 }
 
 /** Rzut k20 do pokazania (port G.showD20Roll). */
@@ -146,6 +161,7 @@ export class HudState {
   /** Kolejność inicjatywy (tylko w walce). */
   initiative: InitEntry[] = [];
   roll: D20Roll | null = null;
+  damage: DamageShow | null = null;
   prompt: Prompt | null = null;
   /** Tempo animacji x1 / x2 / x4 (x4 = bez kości). */
   speed = 1;
@@ -254,6 +270,14 @@ export class HudState {
     const duration = Math.round(1100 / this.speed);
     this.roll = { ...r, id: this.nextRollId++, duration };
     this.notify('roll');
+    return duration;
+  }
+  /** Pokazuje rzut obrażeń; zwraca czas pokazu w ms (0 = pominięty - te same zasady tempa co k20). */
+  showDamage(r: Omit<DamageShow, 'id' | 'duration'>): number {
+    if (this.speed >= 4 || (!r.mine && this.speed >= 2) || r.dice.length + r.post.length === 0) return 0;
+    const duration = Math.round(950 / this.speed);
+    this.damage = { ...r, id: this.nextRollId++, duration };
+    this.notify('damage');
     return duration;
   }
   /** Zadaje pytanie (UIScene pokazuje okno) i czeka na odpowiedź. */

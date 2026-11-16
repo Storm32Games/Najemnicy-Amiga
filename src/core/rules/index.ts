@@ -11,3 +11,4 @@ export * from './character.ts';
 export * from './abilities.ts';
 export * from './consumables.ts';
 export * from './equipment.ts';
+export * from './locks.ts';

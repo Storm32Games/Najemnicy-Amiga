@@ -9,9 +9,13 @@ import { check, dcForLevel, roll, type CheckResult, type Rng } from '../rules/di
 import { allItems, itemDef } from '../rules/lookup.ts';
 import { getStat } from '../rules/stats.ts';
 import { skillCheck } from '../rules/turn.ts';
+import {
+  DEVICES, deviceState, hackDevice, hasLockpick, IMPROVISED_PENALTY, LOCKPICK_ID, LOCKS, lockState, pickLock,
+  type DeviceKind, type LockAttempt, type LockQuality, type LockState,
+} from '../rules/locks.ts';
 import type { Character, GridPos, ItemInstance } from '../rules/types.ts';
 import { Combat, makeActor, type Actor, type CombatEnd, type EnemyGroup, type LogTone } from './combat.ts';
-import { cheb, dist, TacticalGrid, UNREACHABLE } from './grid.ts';
+import { CellKind, cheb, dist, TacticalGrid, UNREACHABLE } from './grid.ts';
 import { generateMap, inEntryZone, type Biome, type FindKind, type FindSpawn, type TacticalMap } from './mapgen.ts';
 
 export type ObjectiveType = 'eliminate' | 'retrieve' | 'rescue' | 'hunt' | 'boss';
@@ -28,7 +32,8 @@ export interface MissionContract {
   objective?: { type: ObjectiveType; itemId?: ItemId | null };
 }
 
-export type ThingKind = 'crate' | 'item' | 'captive';
+/** door = zamknięte drzwi (wytrych / wyważenie), device = urządzenie elektroniczne (hakowanie). */
+export type ThingKind = 'crate' | 'item' | 'captive' | 'door' | 'device';
 export interface MissionThing extends GridPos {
   kind: ThingKind;
   name: string;
@@ -38,6 +43,10 @@ export interface MissionThing extends GridPos {
   tries?: number;
   freed?: boolean;
   actor?: Actor;
+  /** Zamek drzwi / zabezpieczenie urządzenia (PF2e: kilka sukcesów). */
+  lock?: LockState;
+  quality?: LockQuality;
+  device?: DeviceKind;
 }
 export interface MissionFind extends FindSpawn {
   found: boolean;
@@ -68,6 +77,8 @@ export type MissionSignal =
   | { kind: 'spotted'; group: EnemyGroup; by: Actor; close: boolean }
   | { kind: 'crate'; thing: MissionThing; by: Actor; roll: CheckResult; scrap: number; items: ItemInstance[]; trapDamage: number }
   | { kind: 'interact'; thing: MissionThing; by: Actor }
+  /** Próba otwarcia drzwi wytrychem / wyważenia albo hakowania urządzenia. */
+  | { kind: 'lock'; thing: MissionThing; by: Actor; attempt: LockAttempt; hack: boolean }
   | { kind: 'objective'; lines: ObjectiveLine[] }
   | { kind: 'visibility' }
   | { kind: 'finish'; result: MissionResult };
@@ -518,14 +529,17 @@ export class Mission {
 
   // ---------- interakcje
   /**
-   * Interakcja z obiektem obok (cel, jeniec, skrzynia). Skrzynia wymaga wyboru umiejętności (`skill`).
-   * W walce kosztuje 1 akcję. Zwraca false, gdy nic się nie stało.
+   * Interakcja z obiektem obok (cel, jeniec, skrzynia, drzwi, urządzenie). Skrzynia, drzwi i urządzenie
+   * wymagają wyboru umiejętności (`skill`). W walce 1 akcja; wytrych i hakowanie 2 akcje (PF2e). Zwraca false, gdy nic się nie stało.
    */
   interact(a: Actor, th: MissionThing, skill?: SkillId): boolean {
     if (th.done || cheb(a, th) > 1 || a.state !== 'up') return false;
     // Oldgame combat.js:450: akcja schodzi tylko, gdy interakcja się udała.
-    if (th.kind === 'crate' && !skill) return false;
-    if (this.mode === 'combat' && !this.combat.spendActions(a, 1)) return false;
+    if ((th.kind === 'crate' || th.kind === 'door' || th.kind === 'device') && !skill) return false;
+    if ((th.kind === 'door' || th.kind === 'device') && th.lock?.jammed) return false;
+    // PF2e: Otwieranie zamka i hakowanie = 2 akcje (wyważenie 1), reszta interakcji 1
+    const cost = (th.kind === 'door' && skill !== 'athletics') || th.kind === 'device' ? 2 : 1;
+    if (this.mode === 'combat' && !this.combat.spendActions(a, cost)) return false;
     if (th.kind === 'item') {
       th.done = true;
       this.stage = Math.max(this.stage, 1);
@@ -546,7 +560,62 @@ export class Mission {
       this.emitObjectives();
       return true;
     }
+    if (th.kind === 'door' && skill) return this.openLock(a, th, skill);
+    if (th.kind === 'device' && skill) return this.hack(a, th, skill);
     return skill ? this.openCrate(a, th, skill) : false;
+  }
+
+  /** Zamknięte drzwi na polu (blokują przejście do otwarcia). Mapy i zlecenia dodadzą je później. */
+  addLockedDoor(gx: number, gy: number, quality: LockQuality = 'simple'): MissionThing {
+    const th: MissionThing = { kind: 'door', gx, gy, done: false, name: LOCKS[quality].name, quality, lock: lockState(quality) };
+    this.things.push(th);
+    this.grid.setKind(gx, gy, CellKind.HIGH);
+    return th;
+  }
+
+  /** Urządzenie elektroniczne do zhakowania (terminal, komputer, serwer, panel, sterownik robota). */
+  addDevice(gx: number, gy: number, device: DeviceKind = 'terminal'): MissionThing {
+    const th: MissionThing = { kind: 'device', gx, gy, done: false, name: DEVICES[device].name, device, lock: deviceState(device, this.level) };
+    this.things.push(th);
+    return th;
+  }
+
+  /** Otwieranie drzwi: wytrych (Złodziejstwo, kilka sukcesów) albo wyważenie (Atletyka). */
+  openLock(a: Actor, th: MissionThing, skill: SkillId): boolean {
+    const lock = th.lock;
+    if (th.kind !== 'door' || th.done || !lock) return false;
+    const at = pickLock(a.ch, lock, skill, this.rng, th.name);
+    this.log(at.log, at.opened ? 'good' : at.roll.degree === 0 ? 'bad' : 'dim');
+    if (at.opened) {
+      th.done = true;
+      this.grid.setKind(th.gx, th.gy, CellKind.FREE);
+      this.updateVisibility();
+    }
+    this.emit({ kind: 'lock', thing: th, by: a, attempt: at, hack: false });
+    return true;
+  }
+
+  /** Hakowanie urządzenia. Kryt. porażka: blokada i alarm - najbliższa nieświadoma grupa wrogów rusza do walki. */
+  hack(a: Actor, th: MissionThing, skill: SkillId): boolean {
+    const dev = th.lock;
+    if (th.kind !== 'device' || th.done || !dev || dev.jammed) return false;
+    const at = hackDevice(a.ch, dev, skill, this.rng, th.name);
+    this.log(at.log, at.opened ? 'good' : at.roll.degree === 0 ? 'bad' : 'dim');
+    if (at.opened) th.done = true;
+    if (at.jammed) th.done = true;
+    this.emit({ kind: 'lock', thing: th, by: a, attempt: at, hack: true });
+    if (at.alarm && this.mode === 'explore') {
+      const g = this.groups
+        .filter((x) => !x.alerted && x.actors.some((e) => e.state !== 'dead'))
+        .sort((x, y) => dist(x.center, th) - dist(y.center, th))[0];
+      if (g && dist(g.center, th) <= 16) {
+        const by = g.actors.find((e) => e.state !== 'dead')!;
+        this.log('Alarm! Wrogowie w pobliżu zostają postawieni na nogi.', 'bad');
+        this.emit({ kind: 'spotted', group: g, by, close: false });
+        this.startCombat(g);
+      }
+    }
+    return true;
   }
 
   /**
@@ -588,7 +657,16 @@ export class Mission {
     if (th.kind !== 'crate' || th.done) return false;
     const dc = this.crateDC();
     th.done = true;
-    const r = skillCheck(a.ch, skill, dc, this.rng);
+    // Złodziejstwo = wytrych: bez wytrychów kara -2 (PF2e), kryt. porażka łamie wytrych
+    const improvised = skill === 'thievery' && !hasLockpick(a.ch);
+    const r = improvised ? check(getStat(a.ch, skill) + IMPROVISED_PENALTY, dc, this.rng) : skillCheck(a.ch, skill, dc, this.rng);
+    if (improvised) this.log(`${a.ch.name} nie ma wytrychów — improwizuje (-2).`);
+    if (skill === 'thievery' && !improvised && r.degree === 0) {
+      const it = a.ch.inventory.find((i) => i.id === LOCKPICK_ID)!;
+      it.qty -= 1;
+      if (it.qty <= 0) a.ch.inventory.splice(a.ch.inventory.indexOf(it), 1);
+      this.log(`${a.ch.name}: wytrych pęka.`, 'bad');
+    }
     const DEG = ['KRYTYCZNA PORAŻKA', 'porażka', 'sukces', 'KRYTYCZNY SUKCES'];
     this.log(`${a.ch.name}: ${SKILLS[skill]?.name ?? skill} ${r.total} vs KT ${dc} — ${DEG[r.degree]}`, r.degree >= 2 ? 'good' : 'bad');
     let trapDamage = 0;

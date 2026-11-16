@@ -37,7 +37,9 @@ export function useConsumable(user: Character, ref: ItemInstance | string, targe
         r.log.push(`${t.name} nie żyje.`);
         return r;
       }
-      const n = heal(t, roll(c.amount ?? '1d4', rng).total);
+      const rr = roll(c.amount ?? '1d4', rng);
+      r.heal = { dice: rr.dice, flat: rr.mod, mult: 1, post: [], total: rr.total };
+      const n = heal(t, rr.total);
       r.events.push({ type: 'heal', target: t, amount: n });
       r.log.push(`${def.name}: ${t.name} odzyskuje ${n} PW.`);
       for (const k of c.cures ?? []) removeCondition(t, k);

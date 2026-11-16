@@ -74,6 +74,13 @@ function doHeal(res: ActionResult, t: Character, amount: number, label: string):
   res.log.push(`${label}: ${t.name} odzyskuje ${n} PW.`);
   return n;
 }
+/** Rzut leczenia: suma + zapis kości do pokazu (res.heal, tylko pierwszy rzut w akcji). */
+function healRoll(res: ActionResult, expr: string, rng: Rng, extra = 0): number {
+  const rr = roll(expr, rng);
+  const total = rr.total + extra;
+  if (!res.heal) res.heal = { dice: rr.dice, flat: rr.mod + extra, mult: 1, post: [], total };
+  return total;
+}
 function tempHp(res: ActionResult, t: Character, n: number): void {
   grantTempHp(t, n);
   res.events.push({ type: 'heal', target: t, amount: n, temp: true });
@@ -87,6 +94,7 @@ export function basicSave(
   if (!res.d20) res.d20 = c;
   const r = roll(expr, rng);
   const amt = c.degree === 3 ? 0 : c.degree === 2 ? Math.floor(r.total / 2) : c.degree === 1 ? r.total : r.total * 2;
+  if (!res.dmg) res.dmg = { dice: r.dice, flat: r.mod, mult: [0, 0.5, 1, 2][3 - c.degree], post: [], total: Math.max(0, amt) };
   let a: DamageOutcome = { dealt: 0, downed: false, dead: false };
   if (amt > 0) a = hurt(res, t, amt, type, c.degree === 0);
   else res.events.push({ type: 'miss', target: t, degree: c.degree });
@@ -107,8 +115,10 @@ function simpleAttack(
     res.events.push({ type: 'miss', target: t, degree: c.degree });
     return { hit: false, c };
   }
-  let tot = roll(o.expr, o.rng).total;
+  const rr = roll(o.expr, o.rng);
+  let tot = rr.total;
   if (c.degree === 3) tot *= 2;
+  if (!res.dmg) res.dmg = { dice: rr.dice, flat: rr.mod, mult: c.degree === 3 ? 2 : 1, post: [], total: tot };
   const a = hurt(res, t, tot, o.type, c.degree === 3);
   res.log.push(`${o.label} trafia ${c.degree === 3 ? 'krytycznie ' : ''}${acc(t)}: ${a.dealt} obrażeń ${DMG_ADJ[o.type] || ''} (${info}).`);
   return { hit: true, c };
@@ -210,7 +220,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       t.conditions.wounded = Math.min(3, condValue(t, 'wounded') + 1);
       r.log.push(`${u.name} stabilizuje ${acc(t)} (${info}).`);
       r.events.push({ type: 'condition', target: t, condition: 'stable' });
-      if (c.degree === 3) doHeal(r, t, roll('1d6', rng).total, 'Opatrunek');
+      if (c.degree === 3) doHeal(r, t, healRoll(r, '1d6', rng), 'Opatrunek');
       return r;
     }
     if (hasCondition(t, 'bleeding')) {
@@ -218,7 +228,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       r.log.push(`${u.name} tamuje krwawienie ${t.name} (${info}).`);
       return r;
     }
-    doHeal(r, t, roll(c.degree === 3 ? '2d6' : '1d6', rng).total + 1, `Pierwsza pomoc (${info})`);
+    doHeal(r, t, healRoll(r, c.degree === 3 ? '2d6' : '1d6', rng, 1), `Pierwsza pomoc (${info})`);
     return r;
   },
   stand: (ctx) => {
@@ -255,9 +265,11 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
         r.log.push(`${t.name} unika ognia.`);
         continue;
       }
-      let amt = roll(dmg, rng).total;
+      const rr = roll(dmg, rng);
+      let amt = rr.total;
       if (c.degree === 2) amt = Math.floor(amt / 2);
       if (c.degree === 0) amt *= 2;
+      if (!r.dmg) r.dmg = { dice: rr.dice, flat: rr.mod, mult: c.degree === 2 ? 0.5 : c.degree === 0 ? 2 : 1, post: [], total: amt };
       const a = hurt(r, t, amt, w.type, c.degree === 0);
       r.log.push(`${t.name}: ${a.dealt} obrażeń (Refleks k20 ${c.d20}=${c.total} vs WT ${dc}).`);
       if (c.degree <= 1) cond(r, t, 'distracted', 2, `${t.name} kuli się pod ogniem.`);
@@ -349,13 +361,13 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const bonus = Math.max(0, attrMod(u, 'wis')) + u.level;
     const info = `Medycyna k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
     if (c.degree === 3) {
-      doHeal(r, t, roll(`4d6+${bonus}`, rng).total, `Opatrunek (${info})`);
+      doHeal(r, t, healRoll(r, `4d6+${bonus}`, rng), `Opatrunek (${info})`);
       removeCondition(t, 'bleeding');
       removeCondition(t, 'poisoned');
     } else if (c.degree === 2) {
-      doHeal(r, t, roll(`2d6+${bonus}`, rng).total, `Opatrunek (${info})`);
+      doHeal(r, t, healRoll(r, `2d6+${bonus}`, rng), `Opatrunek (${info})`);
       removeCondition(t, 'bleeding');
-    } else if (c.degree === 1) doHeal(r, t, roll('1d4', rng).total, `Marny opatrunek (${info})`);
+    } else if (c.degree === 1) doHeal(r, t, healRoll(r, '1d4', rng), `Marny opatrunek (${info})`);
     else r.log.push(`${u.name} partaczy opatrunek ${t.name} (${info}).`);
     return r;
   },
@@ -378,7 +390,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (isDead(t)) return deadNote(r, t);
     spend(u, 'adrenaline');
     if (t.hp <= 0) {
-      doHeal(r, t, roll('1d8', rngOf(ctx)).total + Math.max(0, attrMod(u, 'wis')) + u.level, `Adrenalina: ${t.name} wraca do walki`);
+      doHeal(r, t, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'wis')) + u.level), `Adrenalina: ${t.name} wraca do walki`);
       removeCondition(t, 'prone');
     } else {
       quietCond(r, t, 'quickened', 1);
@@ -392,7 +404,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const rng = rngOf(ctx);
     spend(u, 'field_clinic');
     for (const t of targetsOrSelf(ctx)) {
-      if (!isDead(t)) doHeal(r, t, roll('1d8', rng).total + Math.max(0, attrMod(u, 'wis')) + u.level, 'Punkt medyczny');
+      if (!isDead(t)) doHeal(r, t, healRoll(r, '1d8', rng, Math.max(0, attrMod(u, 'wis')) + u.level), 'Punkt medyczny');
     }
     return r;
   },
@@ -590,7 +602,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const u = ctx.user;
     const r = R();
     spend(u, 'second_wind');
-    doHeal(r, u, roll('1d8', rngOf(ctx)).total + Math.max(0, attrMod(u, 'con')) + u.level + 4, 'Drugi oddech');
+    doHeal(r, u, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'con')) + u.level + 4), 'Drugi oddech');
     return r;
   },
 
