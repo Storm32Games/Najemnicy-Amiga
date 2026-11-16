@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { type PixelText, pixelText } from './ui/BitmapFont';
-import { D20_SETTLE, D20_SIZE, D20_TUMBLE, paintD20Sheet } from './ui/D20Art';
+import { D20_SETTLE, D20_SIZE, D20_TUMBLE, DIE_SETTLE, DIE_SIDES, DIE_TUMBLE, DMG_DIE_SIZE, type DieColor, type DieSides, dieTexKey, paintDieSheet } from './ui/DiceArt';
 import { SoundManager } from '../audio/SoundManager';
 import {
   type ActionButton,
@@ -235,6 +235,7 @@ export class UIScene extends Phaser.Scene {
   private objLayer!: Phaser.GameObjects.Container;
   private actionLayer!: Phaser.GameObjects.Container;
   private rollBox: Phaser.GameObjects.Container | null = null;
+  private dmgBox: Phaser.GameObjects.Container | null = null;
   private helpBox: Phaser.GameObjects.Container | null = null;
   private shownPrompt = 0;
   private promptWin: UiWindow | null = null;
@@ -296,6 +297,7 @@ export class UIScene extends Phaser.Scene {
     this.drag = null;
     this.banner = null;
     this.rollBox = null;
+    this.dmgBox = null;
     this.helpBox = null;
     this.shownPrompt = 0;
     this.promptWin = null;
@@ -478,6 +480,9 @@ export class UIScene extends Phaser.Scene {
         break;
       case 'roll':
         this.showRoll();
+        break;
+      case 'damage':
+        this.showDamage();
         break;
       case 'prompt':
         this.showPrompt();
@@ -1007,7 +1012,7 @@ export class UIScene extends Phaser.Scene {
   // ================================================================== rzut k20 (port G.showD20Roll)
 
   /**
-   * Pikselowa kość k20 (ui/D20Art): toczy się z odbiciami, osiada ścianką do gracza i pokazuje wynik,
+   * Pikselowa kość k20 (ui/DiceArt; zielona najemników, czerwona wrogów): toczy się z odbiciami, osiada ścianką do gracza i pokazuje wynik,
    * potem linia "14 + 7 = 21 vs KP 18 — Sukces" w kolorze stopnia. Naturalne 20 / 1 dostają rozbłysk.
    * Kontrakt bez zmian: hud.roll + r.duration (tempo x2 / x4 skraca lub pomija pokaz w HudState.showRoll).
    */
@@ -1015,13 +1020,8 @@ export class UIScene extends Phaser.Scene {
     const r = this.hud.roll;
     if (!r) return;
     this.rollBox?.destroy();
-    if (!this.textures.exists('d20')) {
-      const sh = paintD20Sheet();
-      const tex = this.textures.addCanvas('d20', sh.pc.toCanvas());
-      if (tex) for (const f of sh.frames) tex.add(f.name, 0, f.x, f.y, f.w, f.h);
-      this.registry.set('d20face', sh.face);
-    }
-    const face = (this.registry.get('d20face') as { x: number; y: number } | undefined) ?? { x: D20_SIZE / 2, y: D20_SIZE / 2 };
+    const color: DieColor = r.mine ? 'green' : 'red';
+    const { key: texKey, face } = this.dieTexture(20, color, D20_SIZE);
     const S = D20_SIZE;
     const cx = Math.round(BASE_W / 2), top = Math.round(BASE_H * 0.17);
     const box = this.add.container(cx, top).setDepth(900);
@@ -1035,7 +1035,7 @@ export class UIScene extends Phaser.Scene {
     const lab = this.text(0, 0, cut(r.label, 34), C.amber, 7).setOrigin(0.5, 0);
     const shadow = this.add.ellipse(0, dieY + S / 2 - 1, 30, 8, 0x000000, 0.55);
     const burst = this.add.graphics().setPosition(0, dieY).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
-    const die = this.add.image(0, dieY, 'd20', 't0');
+    const die = this.add.image(0, dieY, texKey, 't0');
     const num = this.text(0, 0, String(r.d20), nat > 0 ? 0xfff0a0 : nat < 0 ? 0xffb0a0 : 0xfff6e0, 11).setOrigin(0.5, 0.5).setVisible(false);
     // tabliczka z wynikiem
     const sign = r.mod >= 0 ? '+' : '-';
@@ -1112,6 +1112,120 @@ export class UIScene extends Phaser.Scene {
         tumble.remove();
         box.destroy();
         if (this.rollBox === box) this.rollBox = null;
+      },
+    });
+  }
+
+  /** Tekstura (arkusz klatek) kości o danej liczbie ścianek i kolorze - generowana raz, potem z cache. */
+  private dieTexture(sides: DieSides, color: DieColor, size: number): { key: string; face: { x: number; y: number } } {
+    const key = dieTexKey(sides, color, size);
+    if (!this.textures.exists(key)) {
+      const sh = paintDieSheet(sides, color, size);
+      const tex = this.textures.addCanvas(key, sh.pc.toCanvas());
+      if (tex) for (const f of sh.frames) tex.add(f.name, 0, f.x, f.y, f.w, f.h);
+      this.registry.set(key + ':face', sh.face);
+    }
+    const face = (this.registry.get(key + ':face') as { x: number; y: number } | undefined) ?? { x: size / 2, y: size / 2 };
+    return { key, face };
+  }
+
+  /**
+   * Rzut obrażeń PF2e: rząd kości k4/k6/k8/k10/k12 (bez k100) toczy się z boku, osiada i pokazuje wyniki,
+   * potem tabliczka "(4+2+3) ×2 +5 = 23". Kości dodane po krytyku (deadly / fatal) mają złotą obwódkę.
+   * Zielone = najemnicy, czerwone = przeciwnicy. Pokaz pod kością k20 (ta zdążyła już zniknąć).
+   */
+  private showDamage(): void {
+    const r = this.hud.damage;
+    if (!r) return;
+    this.dmgBox?.destroy();
+    const color: DieColor = r.mine ? 'green' : 'red';
+    const S = DMG_DIE_SIZE;
+    const MAX = 8;
+    const all = [...r.dice.map((x) => ({ ...x, post: false })), ...r.post.map((x) => ({ ...x, post: true }))];
+    const shown = all.slice(0, MAX);
+    const gap = S + 2;
+    const cx = Math.round(BASE_W / 2), top = Math.round(BASE_H * 0.17);
+    const box = this.add.container(cx, top).setDepth(901);
+    this.dmgBox = box;
+    const dieY = 12 + S / 2;
+    const lab = this.text(0, 0, cut(r.label, 34), C.amber, 7).setOrigin(0.5, 0);
+    box.add(lab);
+    const col = r.mine ? 0x8fe06a : 0xff7a5a;
+    const roll = Math.max(140, Math.round(Math.min(520, r.duration * 0.48)));
+    const settle = Math.round(roll * 0.22);
+    const dirX = Math.random() < 0.5 ? -1 : 1;
+    const x0 = -((shown.length - 1) * gap) / 2;
+    const items = shown.map((it, i) => {
+      const sides = (DIE_SIDES as readonly number[]).includes(it.sides) ? (it.sides as DieSides) : 6;
+      const { key, face } = this.dieTexture(sides, color, S);
+      const hx = Math.round(x0 + i * gap);
+      const shadow = this.add.ellipse(hx, dieY + S / 2 - 1, 20, 6, 0x000000, 0.55);
+      const ring = it.post ? this.add.circle(hx, dieY, S / 2 + 1).setStrokeStyle(1, 0xffd24a, 0.9).setVisible(false) : null;
+      const die = this.add.image(hx, dieY, key, `t${(i * 5) % DIE_TUMBLE}`);
+      const num = this.text(0, 0, String(it.value), it.value === it.sides ? 0xfff0a0 : 0xfff6e0, 8).setOrigin(0.5, 0.5).setVisible(false);
+      const kl = this.text(hx, dieY + S / 2 + 1, `k${it.sides}`, C.grey, 7).setOrigin(0.5, 0).setAlpha(0);
+      box.add([shadow, ...(ring ? [ring] : []), die, num, kl]);
+      return { hx, die, num, kl, shadow, ring, face, phase: i * 0.37 };
+    });
+    const ty = dieY + S / 2 + 10;
+    if (all.length > MAX) {
+      box.add(this.text(Math.round(x0 + shown.length * gap - gap / 2 + 4), dieY - 3, `+${all.length - MAX}`, C.grey, 7).setOrigin(0, 0.5));
+    }
+    const line = this.text(0, 3, r.text, col, 8).setOrigin(0.5, 0);
+    const pw = Math.ceil(Math.max(line.width, lab.width)) + 14;
+    const plate = this.add.container(0, ty).setAlpha(0);
+    plate.add([this.add.rectangle(0, 0, pw, 13, C.bg, 0.94).setOrigin(0.5, 0).setStrokeStyle(1, col), line]);
+    box.add(plate);
+    box.setAlpha(0);
+    this.tweens.add({ targets: box, alpha: 1, duration: 60 });
+    SoundManager.sfx('dice', { vol: 0.45 });
+
+    const st = { k: 0 };
+    const tumble = this.tweens.add({
+      targets: st, k: 1, duration: roll, ease: 'Linear',
+      onUpdate: () => {
+        const k = st.k;
+        const spin = 1 - Math.pow(1 - k, 1.7);
+        for (const it of items) {
+          it.die.setFrame(`t${Math.floor(spin * DIE_TUMBLE * 1.6 + it.phase * DIE_TUMBLE) % DIE_TUMBLE}`);
+          const hop = Math.abs(Math.sin(k * Math.PI * 2.5 + it.phase)) * (1 - k) * 12;
+          it.die.setPosition(Math.round(it.hx + dirX * (1 - k) * (1 - k) * 40), Math.round(dieY - hop));
+          it.shadow.setPosition(it.die.x, dieY + S / 2 - 1).setScale(1 - hop / 30);
+        }
+      },
+      onComplete: () => {
+        let f = 0;
+        for (const it of items) {
+          it.die.setPosition(it.hx, dieY);
+          it.shadow.setPosition(it.hx, dieY + S / 2 - 1).setScale(1);
+        }
+        const step = (): void => {
+          if (!box.active) return;
+          if (f < DIE_SETTLE) {
+            for (const it of items) it.die.setFrame(`s${f}`);
+            f++;
+            this.time.delayedCall(Math.max(16, settle / DIE_SETTLE), step);
+            return;
+          }
+          for (const it of items) {
+            it.die.setFrame('end');
+            it.num.setPosition(Math.round(it.hx - S / 2 + it.face.x), Math.round(dieY - S / 2 + it.face.y) + 1).setVisible(true).setScale(2);
+            this.time.delayedCall(80, () => it.num.active && it.num.setScale(1));
+            this.tweens.add({ targets: it.die, scale: { from: 1.12, to: 1 }, duration: 100, ease: 'Quad.easeOut' });
+            it.kl.setAlpha(1);
+            it.ring?.setVisible(true);
+          }
+          this.tweens.add({ targets: plate, alpha: 1, y: { from: ty + 3, to: ty }, duration: 90 });
+        };
+        step();
+      },
+    });
+    this.tweens.add({
+      targets: box, alpha: 0, delay: r.duration - 140, duration: 140,
+      onComplete: () => {
+        tumble.remove();
+        box.destroy();
+        if (this.dmgBox === box) this.dmgBox = null;
       },
     });
   }

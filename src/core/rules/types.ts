@@ -3,7 +3,7 @@ import type {
   AbilityId, AncestryId, Attributes, CharacterLook, ClassId, ConditionId, DamageMods, DamageType, DefenseCategory,
   DiceExpr, EnemyAI, EnemyAttack, EnemyId, EnemyLook, EnemyTrait, Faction, ItemId, SkillId, WeaponCategory, WeaponStats,
 } from '../data/types.ts';
-import type { CheckResult, Degree, Rng } from './dice.ts';
+import type { CheckResult, DamageRoll, Degree, Rng } from './dice.ts';
 
 /** Pozycja na siatce 2D (Three.js (x, z) -> (gx, gy)). */
 export interface GridPos {
@@ -148,6 +148,8 @@ export interface ActionResult {
   attacks?: number;
   /** Główny rzut k20 (do animacji kości). */
   d20?: CheckResult;
+  /** Główny rzut obrażeń (do animacji kości obrażeń). */
+  dmg?: DamageRoll;
   hit?: boolean;
   dealt?: number;
   weapon?: NormWeapon;

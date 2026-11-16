@@ -10,11 +10,11 @@ import { type ActionButton, type HudCommand, type InitEntry, HudState } from '..
 import { usesLeft } from '../core/rules/abilities';
 import { createCharacter } from '../core/rules/character';
 import { useConsumable } from '../core/rules/consumables';
-import { fmtMod, hitChances } from '../core/rules/dice';
+import { fmtDamage, fmtMod, hitChances } from '../core/rules/dice';
 import { swapWeapons } from '../core/rules/equipment';
 import { abilityDef, conditionDef, enemyDef, itemDef } from '../core/rules/lookup';
 import { getStat, getWeapon, hasCondition, normWeapon } from '../core/rules/stats';
-import type { CheckResult } from '../core/rules/dice';
+import type { CheckResult, DamageRoll } from '../core/rules/dice';
 import type { ActionResult, Character, GridPos } from '../core/rules/types';
 import { aiStep } from '../core/tactical/ai';
 import { type ActionOutcome, type Actor, type ActorState, type CombatSignal, type TurnInfo, Combat } from '../core/tactical/combat';
@@ -2113,7 +2113,7 @@ export class WorldScene extends Phaser.Scene {
         await this.walk(s.actor, s.path);
         break;
       case 'strike':
-        if (s.result.d20) await this.dice(s.result.d20, `Atak: ${s.info.weapon.name}`, s.attacker);
+        if (s.result.d20) await this.dice(s.result.d20, `Atak: ${s.info.weapon.name}`, s.attacker, s.result.dmg);
         await this.animateAttack(s.attacker, s.defender, s.info.ranged ? 'shot' : 'melee', s.info.weapon.sfx, s.result);
         break;
       case 'ability':
@@ -2123,7 +2123,7 @@ export class WorldScene extends Phaser.Scene {
         const def = itemDef(s.item.id);
         const c = def?.type === 'consumable' ? def.consumable : null;
         const foe = s.targets.find((x) => x.side !== s.actor.side);
-        if (s.result.d20) await this.dice(s.result.d20, def?.name ?? 'Przedmiot', s.actor);
+        if (s.result.d20) await this.dice(s.result.d20, def?.name ?? 'Przedmiot', s.actor, s.result.dmg);
         if (c?.target === 'area' && s.cell)
           await this.animateBlast(s.actor, s.cell, s.result, c.effect === 'smoke' ? 'smoke' : c.dmgType === 'fire' ? 'fire' : c.dmgType === 'elec' ? 'elec' : 'frag', c.radius ?? 1.5);
         else if (c?.target === 'enemy' && foe) await this.animateAttack(s.actor, foe, 'shot', 'explosion', s.result);
@@ -2193,10 +2193,14 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /** Rzut k20 w HUD-zie (port G.showD20Roll): wrogowie tylko widoczni; tempo x2 pomija rzuty wrogów, x4 wszystkie. */
-  private async dice(r: CheckResult, label: string, by: Actor): Promise<void> {
+  private async dice(r: CheckResult, label: string, by: Actor, dmg?: DamageRoll): Promise<void> {
     if (by.side !== 'pc' && !this.units.get(by)?.sprite.visible) return;
-    const ms = this.hud.showRoll({ label, d20: r.d20, mod: r.mod, total: r.total, dc: r.dc, degree: r.degree, mine: by.side === 'pc' });
+    const mine = by.side === 'pc';
+    const ms = this.hud.showRoll({ label, d20: r.d20, mod: r.mod, total: r.total, dc: r.dc, degree: r.degree, mine });
     if (ms) await this.wait(1100);
+    // kości obrażeń PF2e (k4..k12) - zielone najemników, czerwone wrogów
+    const dms = dmg ? this.hud.showDamage({ label: 'Obrażenia', dice: dmg.dice, post: dmg.post, text: fmtDamage(dmg), mine }) : 0;
+    if (dms) await this.wait(dms);
   }
 
   /** Usuwa obraz z listy pola (mgła) i niszczy go. */
@@ -2372,7 +2376,7 @@ export class WorldScene extends Phaser.Scene {
   private async animateAbility(a: Actor, ab: AbilityDef, targets: Actor[], cell: GridPos | undefined, r: ActionResult): Promise<void> {
     const target = targets.find((x) => x !== a) ?? null;
     const fx = ab.fx;
-    if (r.d20) await this.dice(r.d20, ab.name, a);
+    if (r.d20) await this.dice(r.d20, ab.name, a, r.dmg);
     const u = this.units.get(a);
     if (u && target) this.face(u, { gx: target.gx - a.gx, gy: target.gy - a.gy });
     if (fx === 'explosion' && (cell || target)) {

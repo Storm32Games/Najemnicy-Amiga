@@ -87,6 +87,7 @@ export function basicSave(
   if (!res.d20) res.d20 = c;
   const r = roll(expr, rng);
   const amt = c.degree === 3 ? 0 : c.degree === 2 ? Math.floor(r.total / 2) : c.degree === 1 ? r.total : r.total * 2;
+  if (!res.dmg) res.dmg = { dice: r.dice, flat: r.mod, mult: [0, 0.5, 1, 2][3 - c.degree], post: [], total: Math.max(0, amt) };
   let a: DamageOutcome = { dealt: 0, downed: false, dead: false };
   if (amt > 0) a = hurt(res, t, amt, type, c.degree === 0);
   else res.events.push({ type: 'miss', target: t, degree: c.degree });
@@ -107,8 +108,10 @@ function simpleAttack(
     res.events.push({ type: 'miss', target: t, degree: c.degree });
     return { hit: false, c };
   }
-  let tot = roll(o.expr, o.rng).total;
+  const rr = roll(o.expr, o.rng);
+  let tot = rr.total;
   if (c.degree === 3) tot *= 2;
+  if (!res.dmg) res.dmg = { dice: rr.dice, flat: rr.mod, mult: c.degree === 3 ? 2 : 1, post: [], total: tot };
   const a = hurt(res, t, tot, o.type, c.degree === 3);
   res.log.push(`${o.label} trafia ${c.degree === 3 ? 'krytycznie ' : ''}${acc(t)}: ${a.dealt} obrażeń ${DMG_ADJ[o.type] || ''} (${info}).`);
   return { hit: true, c };
@@ -255,9 +258,11 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
         r.log.push(`${t.name} unika ognia.`);
         continue;
       }
-      let amt = roll(dmg, rng).total;
+      const rr = roll(dmg, rng);
+      let amt = rr.total;
       if (c.degree === 2) amt = Math.floor(amt / 2);
       if (c.degree === 0) amt *= 2;
+      if (!r.dmg) r.dmg = { dice: rr.dice, flat: rr.mod, mult: c.degree === 2 ? 0.5 : c.degree === 0 ? 2 : 1, post: [], total: amt };
       const a = hurt(r, t, amt, w.type, c.degree === 0);
       r.log.push(`${t.name}: ${a.dealt} obrażeń (Refleks k20 ${c.d20}=${c.total} vs WT ${dc}).`);
       if (c.degree <= 1) cond(r, t, 'distracted', 2, `${t.name} kuli się pod ogniem.`);
