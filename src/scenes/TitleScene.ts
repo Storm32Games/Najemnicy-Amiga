@@ -8,7 +8,7 @@ import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, enter, goto, label, seeded, tiledImage } from './ui/Kit';
 import { MOODS, backdrop, paintWreck } from './fx/Backdrops';
 import { deadTree } from './fx/Painter';
-import { titleTexture } from './ui/PixelFont';
+import { wastelandTexture } from './ui/WastelandFont';
 import { Save, dialog, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
 
 // Ekran tytułowy (port Oldgame/src/scenes/title.js): pikselowe logo nad pustkowiem o zmierzchu + menu.
@@ -72,8 +72,8 @@ export class TitleScene extends Phaser.Scene {
       const src = this.textures.get(key).get(); // wymiary projektowe (obraz źródłowy jest ART razy większy)
       return tiledImage(this, key, BASE_W / 2 - src.width / 2, y - src.height / 2, src.width / 2, src.height / 2).setDepth(10);
     };
-    this.logo = centered(titleTexture(this, 'title_logo', GAME_TITLE, 5, { top: '#ffe08a', bottom: '#c0501e', spacing: 2 }), 50);
-    this.sub = centered(titleTexture(this, 'title_sub', GAME_SUBTITLE, 2, { top: '#c8e08a', bottom: '#4f8a2a', spacing: 2 }), 86);
+    this.logo = centered(wastelandTexture(this, 'title_logo', GAME_TITLE, 4, { top: '#ffe08a', bottom: '#b0461a', spacing: 2 }), 50);
+    this.sub = centered(wastelandTexture(this, 'title_sub', GAME_SUBTITLE, 2, { top: '#c8e08a', bottom: '#4f6a2a', spacing: 3, wear: 0.5, jitter: false }), 86);
 
     // menu: model z core/frontend/menu.ts (fokus + nawigacja góra/dół/ogień jak joystickiem), scena tylko rysuje
     this.menu = titleMenu(Save.exists(), Save.anySlot());
