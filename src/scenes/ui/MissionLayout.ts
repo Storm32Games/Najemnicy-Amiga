@@ -17,6 +17,8 @@ export interface MissionLayoutData {
   partyHoriz: boolean;
   partyScale: number;
   logSize: { w: number; h: number };
+  /** Stopień czcionki paneli (0 = domyślna, ujemny = mniejsza, dodatni = większa). */
+  fontStep?: Record<string, number>;
 }
 
 const isXY = (v: unknown): v is XY => !!v && typeof v === 'object' && Number.isFinite((v as XY).x) && Number.isFinite((v as XY).y);
@@ -43,6 +45,10 @@ export const MissionLayout = {
       if (s.partyPos === null || isXY(s.partyPos)) out.partyPos = s.partyPos;
       if (typeof s.partyHoriz === 'boolean') out.partyHoriz = s.partyHoriz;
       if (typeof s.partyScale === 'number' && s.partyScale > 0.1 && s.partyScale < 4) out.partyScale = s.partyScale;
+      if (s.fontStep && typeof s.fontStep === 'object') {
+        out.fontStep = {};
+        for (const [k, v] of Object.entries(s.fontStep)) if (Number.isInteger(v) && Math.abs(v) <= 8) out.fontStep[k] = v;
+      }
       if (s.logSize && Number.isFinite(s.logSize.w) && Number.isFinite(s.logSize.h)) out.logSize = { w: s.logSize.w, h: s.logSize.h };
       return out;
     } catch {

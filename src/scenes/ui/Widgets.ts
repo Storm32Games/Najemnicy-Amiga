@@ -9,7 +9,7 @@ import { abilityDef, itemDef } from '../../core/rules/lookup';
 import { abilityIcon, abilityKind, itemIcon } from '../legacy/icons';
 import { portraitCanvas } from '../legacy/portraits';
 import { addHiRes } from '../iso/HiRes';
-import { ART, BASE_H, BASE_W, CANVAS_H, CANVAS_W, PAL, RES, type UiButton, ZOOM, applyResolution, button, canApplyZoomLive, hex, label, panel, parseColor, uiAlphaToggle } from './Kit';
+import { ART, BASE_H, BASE_W, CANVAS_H, CANVAS_W, PAL, RES, type UiButton, UI_TITLE, ZOOM, applyResolution, button, canApplyZoomLive, hex, label, panel, parseColor, uiAlphaToggle } from './Kit';
 import { RES_PRESETS, type ResSetting, Settings, UI_ALPHAS, UI_SIZES, type UiAlpha, resPreset } from './Settings';
 import { MissionLayout } from './MissionLayout';
 
@@ -332,7 +332,7 @@ export function openWindow(scene: Phaser.Scene, w: number, h: number, title: str
   const depth = D_MODAL + (scene.data.get('modals') as number) * 10;
   const back = scene.add.rectangle(0, 0, BASE_W, BASE_H, 0x000000, 0.66).setOrigin(0).setInteractive().setDepth(depth);
   const box = fitWindow(panel(scene, 0, 0, w, h, PAL.edgeHi, 0.98).setDepth(depth + 1), w, h);
-  if (title) box.add(label(scene, 8, 6, title.toUpperCase(), { size: 9, bold: true, color: PAL.amber }));
+  if (title) box.add(label(scene, 8, 6, title.toUpperCase(), { size: 9, bold: true, color: UI_TITLE }));
   // przełącznik przezroczystości wszystkich okien (● / ◐ / ○) w prawym górnym rogu nagłówka
   box.add(uiAlphaToggle(scene, w - 6, 5));
   let closed = false;

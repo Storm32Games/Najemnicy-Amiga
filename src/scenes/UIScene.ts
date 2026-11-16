@@ -26,7 +26,7 @@ import type { Character, EquipSlot } from '../core/rules/types';
 import { itemDef } from '../core/rules/lookup';
 import { normWeapon } from '../core/rules/stats';
 import { TurnPhase } from '../core/TurnManager';
-import { BASE_H, BASE_W, PAL, SMALL_TEXT, ZOOM, button as kitButton, fitCamera, label, parseColor, uiAlphaToggle, uiBg } from './ui/Kit';
+import { BASE_H, BASE_W, PAL, SMALL_TEXT, UI_TITLE, ZOOM, button as kitButton, fitCamera, label, parseColor, uiAlphaToggle, uiBg } from './ui/Kit';
 import { fitText } from './ui/FontGlyphs';
 import { MissionLayout, type MissionLayoutData } from './ui/MissionLayout';
 import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, openOptions, openWindow, portraitKey } from './ui/Widgets';
@@ -40,7 +40,8 @@ import { type Window as UiWindow, abilityIconImage, itemIconImage, modalOpen, op
 //   prawy dół:    dziennik walki (kółko = przewijanie, zwijany)        <- H.log
 //   panel (I):    karta postaci: statystyki, wyposażenie, plecak       <- H.sheet
 // Menu, pasek rundy, panel akcji, karta postaci i dziennik mają własną skalę (−/+ w nagłówku; kółko nad nagłówkiem
-// poza dziennikiem) i dają się przesuwać za nagłówek; PPM na nagłówku = pozycja i skala domyślna.
+// poza dziennikiem), własną czcionkę (a/A w nagłówku: treść panelu w tej samej szerokości okna) i dają się przesuwać
+// za nagłówek; PPM na nagłówku = pozycja, skala i czcionka domyślna. Karty drużyny mają stałą, mniejszą czcionkę.
 // Karty drużyny (w walce razem z kartami wrogów) przesuwa się, przeciągając kartę / ramkę; skala: kółko nad kartami
 // albo −/+ za ostatnią kartą. Domyślnie leżą poziomo przy górnej krawędzi; upuszczone dalej od górnej / dolnej
 // krawędzi układają się pionowo, a przyciągnięte z powrotem do krawędzi - znowu poziomo.
@@ -100,7 +101,8 @@ const SHEET_X = M + PARTY_W + 4;
 const RCOL_W = BTN_W * 2 + 4;
 /** Nagłówek menu (uchwyt do przesuwania + przyciski skali). */
 const MENU_HEAD = 11;
-const OBJ_Y = MENU_HEAD + (BTN_H + BTN_GAP) * MENU_ROWS + 2;
+/** Początek celów zlecenia w treści menu (pod przyciskami, w pikselach treści przed skalą czcionki). */
+const OBJ_BODY = (BTN_H + BTN_GAP) * MENU_ROWS + 2;
 /** Środek góry: między kartami drużyny a prawą kolumną. */
 const MID_X0 = M + PARTY_W + 4;
 const MID_X1 = BASE_W - M - RCOL_W - 4;
@@ -112,8 +114,10 @@ const TOP_H = LH;
 const AB_X = M + PARTY_W + 4;
 const AB_W = BASE_W - M - LOG_W - 4 - AB_X;
 const AB_COLS = 2;
-const AB_BW = Math.floor((AB_W - 2) / AB_COLS);
 const AB_BH = 11;
+/** Przesunięcia przycisków nagłówka (●, a, A, −, +) od prawej krawędzi "+" i ich łączna szerokość. */
+const CTRL_DX = [-37, -28, -19, -9, 0] as const;
+const CTRL_W = 44;
 /** Kafel broni w panelu akcji (ikona + nazwa + obrażenia). */
 const WT_H = 13;
 
@@ -137,6 +141,17 @@ interface Button {
 const panelPos: Record<PanelId, { x: number; y: number } | null> = { menu: null, top: null, actions: null, sheet: null, log: null };
 /** Skala paneli (1 = bazowa); mniejsza skala = mniejsza czcionka, bo panel skaluje się w całości. */
 const panelScale: Record<PanelId, number> = { menu: 1, top: 1, actions: 1, sheet: 1, log: 1 };
+/**
+ * Stopień czcionki paneli (a / A w nagłówku), niezależny od skali okna: 0 = czcionka skaluje się razem z panelem,
+ * +-n = n pikseli płótna na piksel czcionki więcej / mniej. Szerokość panelu zostaje, treść zawija się / przycina.
+ */
+const fontStep: Record<PanelId, number> = { menu: 0, top: 0, actions: 0, sheet: 0, log: 0 };
+const FONT_STEP_MAX = 6;
+/** Granice skali czcionki względem panelu. */
+const FONT_MIN = 0.5;
+const FONT_MAX = 3;
+/** Panele z dodatkowym, najmniejszym stopniem skali okna. */
+const EXTRA_SMALL: readonly PanelId[] = ['menu', 'log', 'actions'];
 /** Karty drużyny: pozycja (null = lewy górny róg) i układ (poziomy po upuszczeniu przy górnej / dolnej krawędzi). */
 let partyPos: { x: number; y: number } | null = null;
 let partyHoriz = true;
@@ -145,12 +160,28 @@ let partyScale = 1;
  * Dostępne skale paneli: k / ZOOM (1 piksel projektowy = k pikseli płótna), żeby czcionka bitmapowa i ramki
  * trafiały w siatkę ekranu. Zakres ~0.5x - 1.5x; liczone na bieżąco, bo ZOOM może się zmienić między misjami.
  */
-function panelScales(): number[] {
+function panelScales(extra = false): number[] {
   const out: number[] = [];
-  for (let k = Math.max(1, Math.ceil(ZOOM / 2)); k <= Math.floor(ZOOM * 1.5); k++) out.push(k / ZOOM);
+  // extra = jeden stopień mniej (menu, dziennik, akcje), o ile pozwala rozdzielczość (co najmniej 1 piksel płótna)
+  for (let k = Math.max(1, Math.ceil(ZOOM / 2) - (extra ? 1 : 0)); k <= Math.floor(ZOOM * 1.5); k++) out.push(k / ZOOM);
   // przy ułamkowym ZOOM (HD, QHD, 640x480) skala 1 nie wypada na całkowite k - dokładamy ją, bo to domyślna skala paneli
   if (!out.some((v) => Math.abs(v - 1) < 1e-6)) out.push(1);
   return out.sort((a, b) => a - b);
+}
+/**
+ * Skala czcionki panelu (względem panelu) dla stopnia `step` przy skali panelu `s`: tekst trafia w całe piksele
+ * płótna (round(ZOOM * s) + step pikseli płótna na piksel czcionki). Bez ograniczeń - sprawdza wywołujący.
+ */
+function fontScaleRaw(step: number, s: number): number {
+  if (!step) return 1;
+  const m = ZOOM * s;
+  return Math.max(1, Math.round(m) + step) / m;
+}
+const fontScaleOf = (id: PanelId): number => Phaser.Math.Clamp(fontScaleRaw(fontStep[id], panelScale[id]), FONT_MIN, FONT_MAX);
+/** Mniejsza, stała czcionka kart drużyny (~3/4, w całych pikselach płótna). */
+function cardFontScale(): number {
+  const m = ZOOM * partyScale;
+  return Math.min(1, Math.max(1, Math.round(m * 0.75)) / m);
 }
 function nearestScale(list: number[], s: number): number {
   let best = 0;
@@ -173,6 +204,7 @@ function resetLayout(): void {
   for (const k of Object.keys(panelPos) as PanelId[]) {
     panelPos[k] = null;
     panelScale[k] = 1;
+    fontStep[k] = 0;
   }
   partyPos = null;
   partyHoriz = true;
@@ -186,13 +218,14 @@ function loadLayout(): void {
   for (const k of Object.keys(panelPos) as PanelId[]) {
     if (d.panelPos && k in d.panelPos) panelPos[k] = d.panelPos[k] ?? null;
     if (d.panelScale?.[k]) panelScale[k] = d.panelScale[k]!;
+    if (d.fontStep?.[k] !== undefined) fontStep[k] = Phaser.Math.Clamp(d.fontStep[k]!, -FONT_STEP_MAX, FONT_STEP_MAX);
   }
   if (d.partyPos !== undefined) partyPos = d.partyPos;
   if (d.partyHoriz !== undefined) partyHoriz = d.partyHoriz;
   if (d.partyScale) partyScale = d.partyScale;
   if (d.logSize) logSize = { w: Math.max(LOG_MIN_W, Math.round(d.logSize.w)), h: Math.max(LOG_HEAD + 3 * LH + 3, Math.round(d.logSize.h)) };
 }
-const layoutSnapshot = (): MissionLayoutData => ({ panelPos: { ...panelPos }, panelScale: { ...panelScale }, partyPos, partyHoriz, partyScale, logSize: { ...logSize } });
+const layoutSnapshot = (): MissionLayoutData => ({ panelPos: { ...panelPos }, panelScale: { ...panelScale }, partyPos, partyHoriz, partyScale, logSize: { ...logSize }, fontStep: { ...fontStep } });
 const saveLayout = (): void => MissionLayout.save(layoutSnapshot());
 MissionLayout.setSource(layoutSnapshot);
 MissionLayout.onReset(resetLayout);
@@ -221,7 +254,10 @@ export class UIScene extends Phaser.Scene {
   private topGrip!: Phaser.GameObjects.Rectangle;
   private topScaleBtns: PixelText[] = [];
   private menuPanel!: Phaser.GameObjects.Container;
-  private menuH = OBJ_Y;
+  private menuH = MENU_HEAD + OBJ_BODY;
+  private menuBody!: Phaser.GameObjects.Container;
+  /** Szerokość treści menu przed skalą czcionki. */
+  private menuW = RCOL_W;
   private actH = 0;
   private sheetH = 0;
   private hoverBox!: Phaser.GameObjects.Container;
@@ -248,6 +284,7 @@ export class UIScene extends Phaser.Scene {
 
   // dziennik
   private logPanel!: Phaser.GameObjects.Container;
+  private logBody!: Phaser.GameObjects.Container;
   private logBg!: Phaser.GameObjects.Rectangle;
   private logLineTexts: PixelText[] = [];
   private logMeasure!: PixelText;
@@ -275,6 +312,8 @@ export class UIScene extends Phaser.Scene {
   // karta postaci / ekwipunek
   private sheet!: Phaser.GameObjects.Container;
   private sheetFooter: PixelText | null = null;
+  /** Szerokość treści karty przed skalą czcionki. */
+  private sheetW = SHEET_W;
 
   // przeciąganie paneli za nagłówek
   private drag: { target: DragTarget; dx: number; dy: number } | null = null;
@@ -328,22 +367,15 @@ export class UIScene extends Phaser.Scene {
     const MP = (this.menuPanel = this.add.container(0, 0));
     MP.add([
       this.panelRect(0, 0, RCOL_W, MENU_HEAD - 1),
-      this.dragHandle('menu', RCOL_W - 31, MENU_HEAD - 1),
-      this.text(3, 1, 'MENU', PAL.dim),
+      this.dragHandle('menu', RCOL_W - 3 - CTRL_W - 2, MENU_HEAD - 1),
+      this.text(3, 1, 'MENU', UI_TITLE),
       ...this.scaleButtons('menu', RCOL_W - 3, 1),
     ]);
-    const bx = 0, bx2 = BTN_W + 4, row = (i: number): number => MENU_HEAD + (BTN_H + BTN_GAP) * i;
-    this.btnHelp = this.button(bx, row(0), BTN_W, '', () => this.hud.toggleHelp(), 'normal', MP);
-    this.btnOptions = this.button(bx2, row(0), BTN_W, '', () => !modalOpen(this) && void openOptions(this), 'normal', MP);
-    this.btnSpeed = this.button(bx, row(1), BTN_W, '', () => this.hud.command({ kind: 'cycleSpeed' }), 'normal', MP);
-    this.btnGroup = this.button(bx2, row(1), BTN_W, '', () => this.hud.command({ kind: 'toggleGroup' }), 'normal', MP);
-    this.btnZoomOut = this.button(bx, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1 / 1.25 }), 'normal', MP);
-    this.btnZoomIn = this.button(bx2, row(2), BTN_W, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }), 'normal', MP);
-    this.btnInv = this.button(bx, row(3), RCOL_W, '', () => this.toggleSheet(), 'normal', MP);
-    this.btnRetreat = this.button(bx, row(4), BTN_W, '', () => this.hud.command({ kind: 'retreat' }), 'danger', MP);
-    this.btnQuit = this.button(bx2, row(4), BTN_W, '', () => this.hud.command({ kind: 'quit' }), 'normal', MP);
-    this.objLayer = this.add.container(0, OBJ_Y);
-    MP.add(this.objLayer);
+    // treść menu (przyciski + cele) w osobnym kontenerze ze skalą czcionki
+    this.menuBody = this.add.container(0, MENU_HEAD);
+    this.objLayer = this.add.container(0, OBJ_BODY);
+    MP.add(this.menuBody);
+    this.buildMenu();
     this.actionLayer = this.add.container(0, 0);
 
     // ---- lewy dół: opis pod kursorem
@@ -430,7 +462,7 @@ export class UIScene extends Phaser.Scene {
     // "Domyślny układ okien" w Opcjach (stan modułu zeruje już resetLayout)
     const offLayout = MissionLayout.onReset(() => {
       this.drawParty();
-      for (const id of Object.keys(panelPos) as PanelId[]) this.placePanel(id);
+      for (const id of Object.keys(panelPos) as PanelId[]) this.relayout(id);
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, offLayout);
 
@@ -582,6 +614,11 @@ export class UIScene extends Phaser.Scene {
     L.removeAll(true);
     const hud = this.hud;
     const { cells, btn } = this.partyLayout();
+    // karty mają stałą, mniejszą czcionkę (bez a / A): fc = skala tekstu, NH = wysokość wiersza tekstu
+    const fc = cardFontScale();
+    const NH = Math.ceil(LH * fc);
+    const ty = (rowY: number, rowH: number): number => rowY + Math.max(0, Math.round((rowH - LH * fc) / 2));
+    const small = (x: number, y: number, s: string, color: number): PixelText => this.text(x, y, s, color).setScale(fc);
     this.partyCards().forEach((it, i) => {
       const { ch, foe, init } = it;
       const y = 0;
@@ -608,14 +645,14 @@ export class UIScene extends Phaser.Scene {
       parts.push(img, this.add.rectangle(px, py, PC_PT, PC_PT).setOrigin(0).setStrokeStyle(1, 0x000000));
 
       // imię na dole portretu (.m-nm)
-      parts.push(this.add.rectangle(px, py + PC_PT - LH, PC_PT, LH, 0x000000, 0.72).setOrigin(0));
+      parts.push(this.add.rectangle(px, py + PC_PT - NH - 1, PC_PT, NH + 1, 0x000000, 0.72).setOrigin(0));
       const nameCol = turn || isCurrent ? PAL.amber : foe ? C.red : parseColor(ch.nameColor, PAL.text);
-      parts.push(this.text(px + 1, py + PC_PT - LH + 1, fitText(ch.name, PC_PT - 2), nameCol));
+      parts.push(small(px + 1, ty(py + PC_PT - NH - 1, NH + 1), fitText(ch.name, Math.floor((PC_PT - 2) / fc)), nameCol));
 
       // stan (POLEGŁ / NIEPRZYT.) na środku portretu (.m-pt .st)
       if (st) {
-        parts.push(this.add.rectangle(px, py + 14, PC_PT, LH + 1, 0x000000, 0.8).setOrigin(0));
-        parts.push(this.text(px + PC_PT / 2, py + 15, fitText(st, PC_PT - 2), PAL.bad).setOrigin(0.5, 0));
+        parts.push(this.add.rectangle(px, py + 14, PC_PT, NH + 1, 0x000000, 0.8).setOrigin(0));
+        parts.push(small(px + PC_PT / 2, ty(py + 14, NH + 1), fitText(st, Math.floor((PC_PT - 2) / fc)), PAL.bad).setOrigin(0.5, 0));
       }
 
       // górny rząd na portrecie: pipsy akcji w turze + chipy stanów (.m-row)
@@ -636,9 +673,9 @@ export class UIScene extends Phaser.Scene {
       const maxChips = pips ? 1 : 3;
       chips.slice(0, maxChips).forEach((chip, k) => {
         const col = chip.bad ? PAL.bad : PAL.amber;
-        const rowY = pips ? py + 8 : py + 1 + k * (LH + 1);
-        const t = this.text(px + 2, rowY + 1, chip.label, col);
-        const r = this.add.rectangle(px + 1, rowY, t.width + 3, LH, 0x000000, 0.7).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
+        const rowY = pips ? py + 8 : py + 1 + k * (NH + 1);
+        const t = small(px + 2, ty(rowY, NH), chip.label, col);
+        const r = this.add.rectangle(px + 1, rowY, Math.ceil(PixelText.measure(chip.label) * fc) + 3, NH, 0x000000, 0.7).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive();
         r.on('pointerover', () => this.hud.setHover(`${chip.name}${chip.value > 1 ? ' ' + chip.value : ''}: ${chip.desc}`));
         r.on('pointerout', () => this.hud.setHover(null));
         parts.push(r, t);
@@ -650,7 +687,7 @@ export class UIScene extends Phaser.Scene {
       g.fillStyle(HP_FILL[hpTone(ch)], 1).fillRect(px + 1, hy + 1, Math.round((PC_PT - 2) * Math.max(0, Math.min(1, hpRatio(ch)))), PC_HPB - 2);
       g.lineStyle(1, 0x2a2018, 1).strokeRect(px + 0.5, hy + 0.5, PC_PT - 1, PC_HPB - 1);
       const hp = `${Math.max(0, ch.hp)}/${ch.maxHp}${ch.tempHp ? '+' + ch.tempHp : ''}`;
-      parts.push(this.text(px + PC_PT / 2, hy, fitText(hp, PC_PT), 0xffffff).setOrigin(0.5, 0));
+      parts.push(small(px + PC_PT / 2, ty(hy, PC_HPB), fitText(hp, Math.floor(PC_PT / fc)), 0xffffff).setOrigin(0.5, 0));
 
       L.add(this.add.container(card.x, card.y, parts));
     });
@@ -810,17 +847,20 @@ export class UIScene extends Phaser.Scene {
     const enemy = hud.phase === TurnPhase.ENEMY_TURN;
     const name = hud.active?.name.toUpperCase() ?? '—';
     const cur = hud.initiative.find((e) => e.current);
-    if (!hud.inCombat) this.roundText.setText(cut(`EKSPLORACJA · LIDER: ${name}`, 36));
-    else this.roundText.setText(cut(`RUNDA ${hud.round} · ${enemy ? `TURA: ${(cur?.ch.name ?? 'WRÓG').toUpperCase()}` : `TURA: ${name}`}`, 36));
+    const f = fontScaleOf('top');
+    const txt = !hud.inCombat
+      ? cut(`EKSPLORACJA · LIDER: ${name}`, 36)
+      : cut(`RUNDA ${hud.round} · ${enemy ? `TURA: ${(cur?.ch.name ?? 'WRÓG').toUpperCase()}` : `TURA: ${name}`}`, 36);
+    this.roundText.setText(fitText(txt, Math.floor((TOP_W - CTRL_W - 8) / f))).setScale(f);
     this.recolor(this.roundText, enemy ? C.red : C.amber);
-    // uchwyt paska rundy = sam napis; −/+ zaraz za nim
-    const tw = Math.ceil(this.roundText.width);
+    // uchwyt paska rundy = sam napis; sterowanie (● a A − +) zaraz za nim
+    const tw = Math.ceil(PixelText.measure(this.roundText.text) * f);
+    const th = this.topH();
     const gx = Math.round(TOP_W / 2 - tw / 2) - 2;
-    this.topGrip.setPosition(gx, 0).setSize(tw + 4, LH);
-    this.topGrip.input?.hitArea.setSize(tw + 4, LH);
-    this.topScaleBtns[0]?.setX(gx + tw + 4 + 9);
-    this.topScaleBtns[1]?.setX(gx + tw + 4 + 16);
-    this.topScaleBtns[2]?.setX(gx + tw + 4 + 25);
+    this.topGrip.setPosition(gx, 0).setSize(tw + 4, th);
+    this.topGrip.input?.hitArea.setSize(tw + 4, th);
+    this.layoutCtrls(this.topScaleBtns, gx + tw + 4 + CTRL_W + 2);
+    for (const b of this.topScaleBtns) b.setY(Math.round((th - LH) / 2));
 
     const locked = !hud.canAct;
     this.btnHelp.set('STEROWANIE [H]', true);
@@ -835,37 +875,63 @@ export class UIScene extends Phaser.Scene {
     this.btnQuit.set('WYJDŹ Z GRY', !locked || (hud.inCombat && !enemy && !hud.busy));
   }
 
+  /**
+   * Przyciski menu w kontenerze treści: skala = czcionka menu, szerokość logiczna = RCOL_W / skala
+   * (większa czcionka = te same rozmiary okna, krótsze napisy).
+   */
+  private buildMenu(): void {
+    const B = this.menuBody;
+    B.remove(this.objLayer);
+    B.removeAll(true);
+    const f = fontScaleOf('menu');
+    B.setScale(f);
+    const W = (this.menuW = Math.floor(RCOL_W / f));
+    const bw = Math.floor((W - 4) / 2);
+    const bx = 0, bx2 = W - bw, row = (i: number): number => (BTN_H + BTN_GAP) * i;
+    this.btnHelp = this.button(bx, row(0), bw, '', () => this.hud.toggleHelp(), 'normal', B);
+    this.btnOptions = this.button(bx2, row(0), bw, '', () => !modalOpen(this) && void openOptions(this), 'normal', B);
+    this.btnSpeed = this.button(bx, row(1), bw, '', () => this.hud.command({ kind: 'cycleSpeed' }), 'normal', B);
+    this.btnGroup = this.button(bx2, row(1), bw, '', () => this.hud.command({ kind: 'toggleGroup' }), 'normal', B);
+    this.btnZoomOut = this.button(bx, row(2), bw, '', () => this.hud.command({ kind: 'zoom', f: 1 / 1.25 }), 'normal', B);
+    this.btnZoomIn = this.button(bx2, row(2), bw, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }), 'normal', B);
+    this.btnInv = this.button(bx, row(3), W, '', () => this.toggleSheet(), 'normal', B);
+    this.btnRetreat = this.button(bx, row(4), bw, '', () => this.hud.command({ kind: 'retreat' }), 'danger', B);
+    this.btnQuit = this.button(bx2, row(4), bw, '', () => this.hud.command({ kind: 'quit' }), 'normal', B);
+    B.add(this.objLayer);
+  }
+
   // ================================================================== cele zlecenia (port H.objective)
 
   private drawObjectives(): void {
     const L = this.objLayer;
     L.removeAll(true);
     const rows = this.hud.objectives;
-    this.menuH = OBJ_Y - 2;
+    const f = fontScaleOf('menu'), W = this.menuW;
+    this.menuH = MENU_HEAD + Math.ceil((OBJ_BODY - 2) * f);
     if (!rows.length) {
       this.placePanel('menu');
       return;
     }
     const items: Phaser.GameObjects.GameObject[] = [];
-    const title = this.text(3, 1, 'ZLECENIE', PAL.amber);
-    const name = this.text(3, LH + 3, this.hud.objectiveTitle.toUpperCase() || '—', PAL.amber).setWordWrapWidth(RCOL_W - 6);
+    const title = this.text(3, 1, 'ZLECENIE', UI_TITLE);
+    const name = this.text(3, LH + 3, this.hud.objectiveTitle.toUpperCase() || '—', PAL.amber).setWordWrapWidth(W - 6);
     items.push(title, name);
     let y = LH + 3 + Math.ceil(name.height) + 2;
     for (const r of rows) {
       const box = r.go ? '►' : r.done ? '☑' : '☐';
       const col = r.go ? PAL.toxic : r.done ? PAL.good : r.dim ? PAL.dim : PAL.text;
-      const t = this.text(4, y, `${box} ${r.text}`, col, 7).setWordWrapWidth(RCOL_W - 8);
+      const t = this.text(4, y, `${box} ${r.text}`, col, 7).setWordWrapWidth(W - 8);
       if (r.done && !r.go) t.setAlpha(0.75);
       items.push(t);
       y += Math.max(LH, Math.ceil(t.height)) + 1;
       if (r.go) this.tweens.add({ targets: t, alpha: { from: 1, to: 0.45 }, duration: 500, yoyo: true, repeat: -1 });
     }
     y += 1;
-    const shadow = uiBg(this.add.rectangle(2, 2, RCOL_W, y, 0x000000, 0.5).setOrigin(0), true);
-    const bg = uiBg(this.add.rectangle(0, 0, RCOL_W, y, PAL.panel, 1).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive());
-    const line = this.add.graphics().lineStyle(1, PAL.edge, 1).lineBetween(2, LH + 1.5, RCOL_W - 2, LH + 1.5);
+    const shadow = uiBg(this.add.rectangle(2, 2, W, y, 0x000000, 0.5).setOrigin(0), true);
+    const bg = uiBg(this.add.rectangle(0, 0, W, y, PAL.panel, 1).setOrigin(0).setStrokeStyle(1, PAL.edge).setInteractive());
+    const line = this.add.graphics().lineStyle(1, PAL.edge, 1).lineBetween(2, LH + 1.5, W - 2, LH + 1.5);
     L.add([shadow, bg, line, ...items]);
-    this.menuH = OBJ_Y + y;
+    this.menuH = MENU_HEAD + Math.ceil((OBJ_BODY + y) * f);
     this.placePanel('menu');
   }
 
@@ -889,35 +955,42 @@ export class UIScene extends Phaser.Scene {
     }
     L.setVisible(true);
     const W = AB_W;
+    // treść (bronie + akcje) w kontenerze ze skalą czcionki; szerokość logiczna = AB_W / skala
+    const f = fontScaleOf('actions');
+    const BW = Math.floor(W / f);
+    const bw = Math.floor((BW - 2) / AB_COLS);
     const wRows = Math.ceil(weapons.length / AB_COLS);
     const aRows = Math.ceil(list.length / AB_COLS);
     const wy = 12;
-    const ay = wy + wRows * (WT_H + 1) + (list.length ? 3 : 0);
-    const h = ay + aRows * (AB_BH + 1) + 2;
+    const ay = wRows * (WT_H + 1) + (list.length ? 3 : 0);
+    const bodyH = ay + aRows * (AB_BH + 1) + 2;
+    const h = wy + Math.ceil(bodyH * f);
 
     const bg = this.panelRect(0, 0, W, h, C.amberDim);
-    const head = this.text(3, 1, cut((this.hud.actionsHead ?? (ch ? `BROŃ — ${ch.name}` : '')).toUpperCase(), 22), C.amber);
     const g = this.add.graphics();
     const pips = list.length > 0 && this.hud.inCombat;
-    if (list.length) g.lineStyle(1, C.amberDim, 1).lineBetween(2, ay - 1.5, W - 2, ay - 1.5);
     if (pips) {
       for (let k = 0; k < this.hud.maxAp; k++) {
         g.fillStyle(k < this.hud.ap ? C.amber : C.amberDim, 1).fillRect(W - 4 - (this.hud.maxAp - k) * 6, 3, 4, 5);
       }
     }
     const right = W - (pips ? this.hud.maxAp * 6 + 6 : 0) - 3;
-    const grip = this.dragHandle('actions', right - 29, 11);
-    L.add([bg, grip, head, g, ...this.scaleButtons('actions', right, 1)]);
+    const headTxt = (this.hud.actionsHead ?? (ch ? `BROŃ — ${ch.name}` : '')).toUpperCase();
+    const head = this.text(3, 1, fitText(headTxt, right - CTRL_W - 8), UI_TITLE);
+    const grip = this.dragHandle('actions', right - CTRL_W - 2, 11);
+    const body = this.add.container(0, wy).setScale(f);
+    L.add([bg, grip, head, g, ...this.scaleButtons('actions', right, 1), body]);
+    if (list.length) body.add(this.add.graphics().lineStyle(1, C.amberDim, 1).lineBetween(2, ay - 1.5, BW - 2, ay - 1.5));
     weapons.forEach((slot, i) => {
-      const x = 2 + (i % AB_COLS) * AB_BW;
-      const y = wy + Math.floor(i / AB_COLS) * (WT_H + 1);
-      L.add(this.weaponTile(x, y, AB_BW - 2, ch!, slot));
+      const x = 2 + (i % AB_COLS) * bw;
+      const y = Math.floor(i / AB_COLS) * (WT_H + 1);
+      body.add(this.weaponTile(x, y, bw - 2, ch!, slot));
     });
     list.forEach((b, i) => {
-      const x = 2 + (i % AB_COLS) * AB_BW;
+      const x = 2 + (i % AB_COLS) * bw;
       const y = ay + Math.floor(i / AB_COLS) * (AB_BH + 1);
       // skróty 1-9 tylko w walce (w eksploracji cyfry wybierają najemnika)
-      L.add(this.actionButton(x, y, AB_BW - 2, b, i < 9 && this.hud.inCombat ? String(i + 1) : ''));
+      body.add(this.actionButton(x, y, bw - 2, b, i < 9 && this.hud.inCombat ? String(i + 1) : ''));
     });
 
     // pozycja: domyślnie nad dolną krawędzią; przesunięty panel trzyma lewy górny róg
@@ -998,8 +1071,7 @@ export class UIScene extends Phaser.Scene {
       tx += 10;
     }
     const pips = typeof b.cost === 'number' ? Math.min(3, b.cost) : b.cost === 'r' ? 1 : 0;
-    const maxChars = Math.floor((x + w - pips * 4 - 2 - tx) / 4.3);
-    out.push(this.text(tx, y + 1, cut(b.label, Math.max(4, maxChars)), on ? (b.active ? C.amber : C.white) : C.grey, 7));
+    out.push(this.text(tx, y + 1, fitText(b.label, Math.max(12, x + w - pips * 4 - 3 - tx)), on ? (b.active ? C.amber : C.white) : C.grey, 7));
     if (pips) {
       const g = this.add.graphics();
       for (let k = 0; k < pips; k++) {
@@ -1303,7 +1375,7 @@ export class UIScene extends Phaser.Scene {
       ['EKSPLORACJA', 'LPM na pole = ruch (G = drużyna / solo); LPM na skrzynię / cel / jeńca = interakcja; LPM na wroga = zasadzka (drużyna zaczyna, wróg odsłonięty). Strefę ewakuacji wyznaczają zielone słupki.'],
       ['WALKA', '3 akcje na turę. Pola ruchu: niebieskie 1 akcja, żółte 2, pomarańczowe 3. Czerwony kontur = wróg w zasięgu, zielony = cel wsparcia. Kolejne ataki: kara PWA -5/-10.'],
       ['KLAWISZE', '1-9 przyciski akcji (w eksploracji: wybór najemnika), Spacja = koniec tury, Esc / PPM = anuluj, Tab = następny najemnik, I = ekwipunek, X = zmiana broni (albo klik w broń w panelu akcji), PgUp/PgDn/Home/End = przewijanie dziennika, F = tempo x1/x2/x4, G = ruch drużyny/solo, H = ta pomoc.'],
-      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar, − / + = skala (czcionka maleje razem z panelem). Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; kółko nad kartami albo − / + za nimi = skala; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
+      ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar. W nagłówku każdego panelu: − / + = skala okna (czcionka zmienia się razem z nim), a / A = mniejsza / większa czcionka przy tym samym oknie, ● = przezroczystość. Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; kółko nad kartami albo − / + za nimi = skala; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
     // Czcionka ma stały rozmiar (6x8): okno układa się w pełnej skali, a gdy nie mieści się w wysokości ekranu,
@@ -1344,7 +1416,7 @@ export class UIScene extends Phaser.Scene {
     this.hoverBg.setVisible(show);
     this.hoverText.setVisible(show);
     if (!s) return;
-    const sc = panelScale.actions;
+    const sc = panelScale.actions * fontScaleOf('actions');
     this.hoverBox.setScale(sc);
     const maxW = Math.floor((BASE_W - LOG_W - M * 3 - 6) / sc);
     this.hoverText.setText(s);
@@ -1365,7 +1437,7 @@ export class UIScene extends Phaser.Scene {
     r.on('pointerover', () => {
       r.setFillStyle(C.amber, 0.08);
       const how = target === 'log' ? '− +' : 'kółko / − +';
-      this.hud.setHover(`Przeciągnij: przesuń · ${how}: skala ${Math.round(panelScale[target] * 100)}% · PPM: domyślnie`);
+      this.hud.setHover(`Przeciągnij: przesuń · ${how}: okno ${Math.round(panelScale[target] * 100)}% · a / A: czcionka · PPM: domyślnie`);
     });
     r.on('pointerout', () => {
       r.setFillStyle(C.amber, 0);
@@ -1379,7 +1451,8 @@ export class UIScene extends Phaser.Scene {
         if (target === 'log') logSize = { w: LOG_W, h: LOG_H };
         panelPos[target] = null;
         panelScale[target] = 1;
-        this.placePanel(target);
+        fontStep[target] = 0;
+        this.relayout(target);
         saveLayout();
         SoundManager.sfx('click');
         return;
@@ -1392,22 +1465,41 @@ export class UIScene extends Phaser.Scene {
     return r;
   }
 
-  /** Przełącznik przezroczystości okien (●/◐/○) + przyciski − / + skali panelu; `right` = prawa krawędź "+". */
+  /**
+   * Sterowanie w nagłówku panelu: przezroczystość okien (●/◐/○), czcionka (a / A) i skala okna (− / +).
+   * `right` = prawa krawędź "+"; kolejność jak CTRL_DX.
+   */
   private scaleButtons(id: PanelId, right: number, y: number): PixelText[] {
-    const alpha = uiAlphaToggle(this, right - 18, y, PAL.dim, (tip) => this.hud.setHover(tip));
-    return [alpha, ...[-1, 1].map((dir) => {
-      const b = this.text(dir < 0 ? right - 9 : right, y, dir < 0 ? '−' : '+', PAL.dim).setOrigin(1, 0).setInteractive({ useHandCursor: true });
-      b.on('pointerdown', (p: Phaser.Input.Pointer) => !p.rightButtonDown() && this.setPanelScale(id, dir));
+    const alpha = uiAlphaToggle(this, 0, y, PAL.dim, (tip) => this.hud.setHover(tip));
+    const ctl = (glyph: string, act: () => void, tip: () => string): PixelText => {
+      const b = this.text(0, y, glyph, PAL.dim).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+      b.on('pointerdown', (p: Phaser.Input.Pointer) => !p.rightButtonDown() && act());
       b.on('pointerover', () => {
         b.setColor(C.amber);
-        this.hud.setHover(`${dir < 0 ? 'Zmniejsz' : 'Powiększ'} panel (skala ${Math.round(panelScale[id] * 100)}%) · PPM na nagłówku: domyślnie`);
+        this.hud.setHover(tip());
       });
       b.on('pointerout', () => {
         b.setColor(PAL.dim);
         this.hud.setHover(null);
       });
       return b;
-    })];
+    };
+    const fontTip = (dir: number) => (): string => `${dir < 0 ? 'Mniejsza' : 'Większa'} czcionka (${Math.round(fontScaleOf(id) * 100)}% panelu) · PPM na nagłówku: domyślnie`;
+    const sizeTip = (dir: number) => (): string => `${dir < 0 ? 'Zmniejsz' : 'Powiększ'} okno (skala ${Math.round(panelScale[id] * 100)}%) · PPM na nagłówku: domyślnie`;
+    const out = [
+      alpha,
+      ctl('a', () => this.setFontStep(id, -1), fontTip(-1)),
+      ctl('A', () => this.setFontStep(id, 1), fontTip(1)),
+      ctl('−', () => this.setPanelScale(id, -1), sizeTip(-1)),
+      ctl('+', () => this.setPanelScale(id, 1), sizeTip(1)),
+    ];
+    this.layoutCtrls(out, right);
+    return out;
+  }
+
+  /** Rozstawienie przycisków z scaleButtons od prawej krawędzi `right`. */
+  private layoutCtrls(btns: PixelText[], right: number): void {
+    btns.forEach((b, i) => b.setX(Math.round(right + CTRL_DX[i]!)));
   }
 
   private panelBox(id: PanelId): Phaser.GameObjects.Container {
@@ -1418,10 +1510,15 @@ export class UIScene extends Phaser.Scene {
   /** Rozmiar panelu przed skalowaniem. */
   private panelSize(id: PanelId): { w: number; h: number } {
     if (id === 'menu') return { w: RCOL_W, h: this.menuH };
-    if (id === 'top') return { w: TOP_W, h: TOP_H };
+    if (id === 'top') return { w: TOP_W, h: this.topH() };
     if (id === 'actions') return { w: AB_W, h: this.actH };
     if (id === 'log') return { w: logSize.w, h: this.logCollapsed ? 12 : logSize.h };
     return { w: SHEET_W, h: this.sheetH };
+  }
+
+  /** Wysokość paska rundy (napis w skali czcionki). */
+  private topH(): number {
+    return Math.max(TOP_H, Math.ceil(LH * fontScaleOf('top')));
   }
 
   /** Skala + pozycja panelu: przesunięty trzyma lewy górny róg (w granicach ekranu), inaczej miejsce domyślne. */
@@ -1440,14 +1537,14 @@ export class UIScene extends Phaser.Scene {
       box.setPosition(Phaser.Math.Clamp(Math.round(pos.x), Math.round(30 - sw), BASE_W - 30), Phaser.Math.Clamp(Math.round(pos.y), 0, Math.round(BASE_H - 12 * s)));
     } else if (id === 'menu') box.setPosition(Math.round(BASE_W - M - sw), M);
     else if (id === 'top') box.setPosition(Math.round(MID_X0 + (TOP_W - sw) / 2), this.partyBottom());
-    else if (id === 'actions') box.setPosition(AB_X, Math.round(BASE_H - M - 14 * s - sh));
+    else if (id === 'actions') box.setPosition(AB_X, Math.round(BASE_H - M - 14 * s * fontScaleOf('actions') - sh));
     else if (partyPos) box.setPosition(SHEET_X, SHEET_Y);
     else box.setPosition(M, this.partyBottom() + LH + 4);
     if (id === 'actions') this.drawHover();
   }
 
   private setPanelScale(id: PanelId, dir: number): void {
-    const list = panelScales();
+    const list = panelScales(EXTRA_SMALL.includes(id));
     const i = nearestScale(list, panelScale[id]);
     const n = Phaser.Math.Clamp(i + dir, 0, list.length - 1);
     if (n === i) {
@@ -1460,9 +1557,49 @@ export class UIScene extends Phaser.Scene {
     panelScale[id] = s1;
     if (panelPos[id]) panelPos[id] = { x: keepAnchor(box.x, w * s0, w * s1, BASE_W), y: keepAnchor(box.y, h * s0, h * s1, BASE_H) };
     SoundManager.sfx('click');
-    this.placePanel(id);
+    this.relayout(id);
     saveLayout();
-    this.hud.setHover(`Skala panelu: ${Math.round(s1 * 100)}%`);
+    this.hud.setHover(`Skala okna: ${Math.round(s1 * 100)}%`);
+  }
+
+  /** a / A: czcionka panelu o stopień mniejsza / większa (szerokość panelu bez zmian). */
+  private setFontStep(id: PanelId, dir: number): void {
+    const f0 = fontScaleOf(id);
+    let step = fontStep[id];
+    // pomijamy stopnie, które nie zmieniają czcionki (np. 1 piksel płótna to minimum)
+    for (;;) {
+      step += dir;
+      const f = fontScaleRaw(step, panelScale[id]);
+      if (Math.abs(step) > FONT_STEP_MAX || f < FONT_MIN - 1e-6 || f > FONT_MAX + 1e-6) {
+        SoundManager.sfx('error', { vol: 0.3 });
+        return;
+      }
+      if (Math.abs(f - f0) > 1e-6) break;
+    }
+    fontStep[id] = step;
+    SoundManager.sfx('click');
+    this.relayout(id);
+    saveLayout();
+    this.hud.setHover(`Czcionka: ${Math.round(fontScaleOf(id) * 100)}% panelu`);
+  }
+
+  /** Przebudowa panelu po zmianie skali / czcionki. */
+  private relayout(id: PanelId): void {
+    if (id === 'menu') {
+      this.buildMenu();
+      this.drawTurn();
+      this.drawObjectives();
+    } else if (id === 'top') {
+      this.drawTurn();
+      this.placePanel('top');
+    } else if (id === 'actions') this.drawActions();
+    else if (id === 'sheet') {
+      if (this.hud.inventoryOpen) this.drawSheet();
+      else this.placePanel('sheet');
+    } else {
+      this.logLayoutKey = '';
+      this.drawLog();
+    }
   }
 
   private onDragMove(p: Phaser.Input.Pointer): void {
@@ -1522,7 +1659,7 @@ export class UIScene extends Phaser.Scene {
     this.logPanel = this.add.container(0, 0);
     this.logBg = this.panelRect(0, 0, LOG_W, LOG_H);
 
-    const head = this.text(3, 1, 'DZIENNIK', C.amber);
+    const head = this.text(3, 1, 'DZIENNIK', UI_TITLE);
     this.logHeadLine = this.add.graphics();
     this.logGrip = this.dragHandle('log', 10, 12);
     this.logColBtn = this.text(0, 1, '[-]', PAL.dim).setOrigin(1, 0).setInteractive({ useHandCursor: true });
@@ -1536,6 +1673,8 @@ export class UIScene extends Phaser.Scene {
     this.logScaleBtns = this.scaleButtons('log', 0, 1);
 
     this.logMeasure = this.text(0, 0, '', C.grey).setVisible(false);
+    // linie dziennika w kontenerze ze skalą czcionki
+    this.logBody = this.add.container(0, LOG_HEAD);
     this.logScrollBar = this.add.graphics();
 
     // przewijanie: ▲ / ▼ (przytrzymanie = powtarzanie), klik w tor = strona, suwak do przeciągania
@@ -1607,40 +1746,40 @@ export class UIScene extends Phaser.Scene {
       this.drag = { target: 'logH', dx: 0, dy: p.worldY - y0 - logSize.h * s };
     });
 
-    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logScaleBtns, this.logScrollBar, this.logTrack, this.logUpBtn, this.logDownBtn, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResizeB, this.logResize]);
+    this.logPanel.add([this.logBg, this.logGrip, head, this.logHeadLine, this.logColBtn, ...this.logScaleBtns, this.logBody, this.logScrollBar, this.logTrack, this.logUpBtn, this.logDownBtn, this.logNewBg, this.logNewBtn, this.logResizeMark, this.logResizeB, this.logResize]);
   }
 
   /** Ile linii mieści dziennik przy bieżącym rozmiarze i czcionce. */
   private logLines(): number {
-    return Math.max(1, Math.floor((logSize.h - LOG_HEAD - 3) / LH));
+    return Math.max(1, Math.floor((logSize.h - LOG_HEAD - 3) / (LH * fontScaleOf('log'))));
   }
 
   /** Przebudowa elementów zależnych od rozmiaru panelu (tylko gdy coś się zmieniło). */
   private layoutLog(): void {
     const { w, h } = logSize;
-    const key = `${w}x${h}`;
+    const f = fontScaleOf('log');
+    const key = `${w}x${h}x${f}`;
     if (key === this.logLayoutKey) return;
     this.logLayoutKey = key;
-    const lh = LH, n = this.logLines();
+    const n = this.logLines();
 
     this.logHeadLine.clear().lineStyle(1, C.greenDim, 1).lineBetween(2, 11.5, w - 2, 11.5);
     this.logColBtn.setX(w - 3);
-    this.logScaleBtns[2]?.setX(w - 23);
-    this.logScaleBtns[1]?.setX(w - 32);
-    this.logScaleBtns[0]?.setX(w - 41);
-    this.logGrip.setSize(w - 60, 12);
-    this.logGrip.input?.hitArea.setSize(w - 60, 12);
+    this.layoutCtrls(this.logScaleBtns, w - 23);
+    const gripW = Math.max(10, w - 23 - CTRL_W - 2);
+    this.logGrip.setSize(gripW, 12);
+    this.logGrip.input?.hitArea.setSize(gripW, 12);
 
-    // linie tekstu
-    for (const t of this.logLineTexts) t.destroy();
+    // linie tekstu (w pikselach treści przed skalą czcionki: szerokość (w - 14) / f)
+    this.logBody.removeAll(true);
+    this.logBody.setScale(f);
     this.logLineTexts = [];
-    const at = this.logPanel.getIndex(this.logScrollBar);
     for (let i = 0; i < n; i++) {
-      const t = this.text(4, LOG_HEAD + i * lh, '', C.grey);
+      const t = this.text(4 / f, i * LH, '', C.grey);
       this.logLineTexts.push(t);
-      this.logPanel.addAt(t, at + i);
+      this.logBody.add(t);
     }
-    this.logMeasure.setWordWrapWidth(w - 14);
+    this.logMeasure.setWordWrapWidth(Math.floor((w - 14) / f));
     this.logWrapCache.clear();
 
     this.logUpBtn.setPosition(w - 4, LOG_HEAD - 1);
@@ -1792,31 +1931,42 @@ export class UIScene extends Phaser.Scene {
     }
     S.setVisible(true);
 
-    const items: Phaser.GameObjects.GameObject[] = [];
-    let y = 2;
-    const sec = (label: string): void => {
-      items.push(this.text(3, y, label, C.amber));
-      items.push(this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, y + LH + 0.5, SHEET_W - 2, y + LH + 0.5));
-      y += LH + 2;
-    };
-
-    // nagłówek
-    const close = this.text(SHEET_W - 3, y, '[X]', C.grey).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    // nagłówek (imię + sterowanie) w skali okna; reszta w kontenerze ze skalą czcionki, szerokość logiczna W
+    const head: Phaser.GameObjects.GameObject[] = [];
+    const close = this.text(SHEET_W - 3, 2, '[X]', C.grey).setOrigin(1, 0).setInteractive({ useHandCursor: true });
     close.on('pointerdown', () => {
       SoundManager.sfx('click');
       this.hud.toggleInventory(false);
     });
-    items.push(this.text(3, y, cut(ch.name, 22), C.amber), close, ...this.scaleButtons('sheet', SHEET_W - 26, y));
-    y += LH;
-    items.push(this.text(3, y, classLabel(ch), C.grey));
+    const ctrlR = SHEET_W - 26;
+    head.push(this.text(3, 2, fitText(ch.name, ctrlR - CTRL_W - 6), UI_TITLE), close, ...this.scaleButtons('sheet', ctrlR, 2));
+    const headH = 2 + LH;
+    const f = fontScaleOf('sheet');
+    const W = Math.floor(SHEET_W / f);
+    this.sheetW = W;
+
+    const items: Phaser.GameObjects.GameObject[] = [];
+    let y = 0;
+    const sec = (label: string): void => {
+      items.push(this.text(3, y, label, C.amber));
+      items.push(this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, y + LH + 0.5, W - 2, y + LH + 0.5));
+      y += LH + 2;
+    };
+
+    items.push(this.text(3, y, fitText(classLabel(ch), W - 6), C.grey));
     y += LH + 2;
 
-    // statystyki 3x2
-    statPairs(ch).forEach(([k, v], i) => {
-      const cx = 3 + (i % 3) * 61, cy = y + Math.floor(i / 3) * LH;
-      items.push(this.text(cx, cy, k, C.grey), this.text(cx + 30, cy, v, C.white));
+    // statystyki: 3 kolumny (przy dużej czcionce mniej, żeby wartości się mieściły)
+    const pairs = statPairs(ch);
+    const keyW = Math.max(26, ...pairs.map(([k]) => PixelText.measure(k) + 2));
+    const valW = Math.max(...pairs.map(([, v]) => PixelText.measure(v)));
+    const cols = Phaser.Math.Clamp(Math.floor((W - 6) / (keyW + valW + 1)), 1, 3);
+    const colW = Math.floor((W - 6) / cols);
+    pairs.forEach(([k, v], i) => {
+      const cx = 3 + (i % cols) * colW, cy = y + Math.floor(i / cols) * LH;
+      items.push(this.text(cx, cy, k, C.grey), this.text(cx + keyW, cy, fitText(v, colW - keyW - 1), C.white));
     });
-    y += LH * 2 + 3;
+    y += LH * Math.ceil(pairs.length / cols) + 3;
 
     sec('WYPOSAŻENIE');
     for (const row of equipmentRows(ch)) {
@@ -1841,11 +1991,12 @@ export class UIScene extends Phaser.Scene {
     const acts = this.hud.inCombat && ch === this.hud.active ? this.hud.ap : 3;
     sec(this.hud.inCombat ? `AKCJE (zostało ${acts})` : 'AKCJE');
     for (const ab of abilityRows(ch, acts)) {
-      const hit = this.add.rectangle(2, y - 1, SHEET_W - 4, LH + 1, C.amber, 0).setOrigin(0).setInteractive();
+      const hit = this.add.rectangle(2, y - 1, W - 4, LH + 1, C.amber, 0).setOrigin(0).setInteractive();
       const label = ab.name + (ab.uses !== null ? ` (${ab.uses})` : '');
       const col = ab.off ? C.grey : C.white;
       const cost = ab.cost === null ? 'reakcja' : ab.cost === 0 ? 'darmowa' : '◆'.repeat(Math.min(3, ab.cost));
-      items.push(hit, abilityIconImage(this, 4, y - 1, ab.id, 9).setAlpha(ab.off ? 0.45 : 1), this.text(16, y, cut(label, 26), col), this.text(SHEET_W - 4, y, cost, ab.off ? C.greyDim : C.amber).setOrigin(1, 0));
+      const costT = this.text(W - 4, y, cost, ab.off ? C.greyDim : C.amber).setOrigin(1, 0);
+      items.push(hit, abilityIconImage(this, 4, y - 1, ab.id, 9).setAlpha(ab.off ? 0.45 : 1), this.text(16, y, fitText(label, Math.max(12, W - 4 - PixelText.measure(cost) - 3 - 16)), col), costT);
       hit.on('pointerover', () => {
         hit.setFillStyle(C.amber, 0.15);
         this.sheetFooter?.setText(`${ab.name}${ab.cost !== null ? ` [${ab.cost} akc.]` : ''}: ${ab.desc}`);
@@ -1856,22 +2007,26 @@ export class UIScene extends Phaser.Scene {
 
     // stopka: opis przedmiotu pod kursorem
     y += 2;
-    items.push(this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, y + 0.5, SHEET_W - 2, y + 0.5));
-    this.sheetFooter = this.text(3, y + 2, 'Najedź na przedmiot. 1-9 = użyj.', C.grey).setWordWrapWidth(SHEET_W - 6);
+    items.push(this.add.graphics().lineStyle(1, C.greenDim, 1).lineBetween(2, y + 0.5, W - 2, y + 0.5));
+    this.sheetFooter = this.text(3, y + 2, 'Najedź na przedmiot. 1-9 = użyj.', C.grey).setWordWrapWidth(W - 6);
     items.push(this.sheetFooter);
     y += 2 + LH * 3;
 
     // nieprzezroczyste tło: karta zasłania karty drużyny pod spodem
-    const solid = uiBg(this.add.rectangle(0, 0, SHEET_W, y, C.bg, 1).setOrigin(0));
-    const bg = this.panelRect(0, 0, SHEET_W, y, C.amber);
-    S.add([solid, bg, this.dragHandle('sheet', SHEET_W - 46, LH * 2 + 2), ...items]);
-    this.sheetH = y;
+    const total = headH + Math.ceil(y * f);
+    const solid = uiBg(this.add.rectangle(0, 0, SHEET_W, total, C.bg, 1).setOrigin(0));
+    const bg = this.panelRect(0, 0, SHEET_W, total, C.amber);
+    const body = this.add.container(0, headH).setScale(f);
+    body.add(items);
+    S.add([solid, bg, this.dragHandle('sheet', ctrlR - CTRL_W - 2, headH), ...head, body]);
+    this.sheetH = total;
     this.placePanel('sheet');
   }
 
   private itemRow(row: InventoryRow, y: number, key: number | null): Phaser.GameObjects.GameObject[] {
     const out: Phaser.GameObjects.GameObject[] = [];
-    const hit = this.add.rectangle(2, y - 1, SHEET_W - 4, LH + 1, C.amber, 0).setOrigin(0).setInteractive({ useHandCursor: row.usable });
+    const W = this.sheetW;
+    const hit = this.add.rectangle(2, y - 1, W - 4, LH + 1, C.amber, 0).setOrigin(0).setInteractive({ useHandCursor: row.usable });
     out.push(hit);
     const color = row.inst ? (row.usable ? C.green : C.white) : C.grey;
     const label = row.name + (row.qty > 1 ? ` x${row.qty}` : '');
@@ -1880,8 +2035,9 @@ export class UIScene extends Phaser.Scene {
     // ikona przedmiotu (malowana natywnie w pikselach ekranu - Widgets.itemIconImage)
     const ix = row.slot ? 49 : 12;
     if (row.inst) out.push(itemIconImage(this, ix, y - 1, row.inst.id, 9));
-    out.push(this.text(ix + 11, y, cut(label, row.slot ? 16 : 22), color));
-    if (row.statShort) out.push(this.text(SHEET_W - 4, y, cut(row.statShort, 11), C.grey).setOrigin(1, 0));
+    const stat = row.statShort ? cut(row.statShort, 11) : '';
+    if (stat) out.push(this.text(W - 4, y, stat, C.grey).setOrigin(1, 0));
+    out.push(this.text(ix + 11, y, fitText(label, Math.max(12, W - 4 - (stat ? PixelText.measure(stat) + 4 : 0) - ix - 11)), color));
 
     hit.on('pointerover', () => {
       hit.setFillStyle(C.amber, 0.15);
