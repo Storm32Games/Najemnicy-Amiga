@@ -510,6 +510,11 @@ export class DriftLayer {
     this.a = scene.add.image(0, y, key).setOrigin(0).setDepth(depth).setAlpha(alpha);
     this.b = scene.add.image(w, y, key).setOrigin(0).setDepth(depth).setAlpha(alpha);
   }
+  /** Przesunięcie warstwy w pionie (np. całun dymu schodzący z góry). */
+  setY(y: number): void {
+    this.a.y = Math.round(y);
+    this.b.y = Math.round(y);
+  }
   update(dt: number): void {
     this.x = (((this.x + this.speed * dt) % this.w) + this.w) % this.w;
     const x = Math.round(this.x);

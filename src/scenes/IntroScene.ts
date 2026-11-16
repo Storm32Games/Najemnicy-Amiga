@@ -173,32 +173,96 @@ export class IntroScene extends Phaser.Scene {
 
   /** 1 - rakiety, błysk i grzyb atomowy nad miastem, które fala uderzeniowa zamienia w ruiny (fx/NukeArt.ts). */
   private buildBomb(): void {
-    const BOOM = secToQ8(2.6), FLIGHT = secToQ8(2.2), TRAIL = 66; // 0.016 w Q12
+    const BOOM = secToQ8(2.6), FLIGHT = secToQ8(2.2);
     const blast = new NukeBlast(this, 'intro_bomb_fx', 262, 198);
-    blast.image.setDepth(0);
+    // obraz minimalnie powiększony wokół środka - wstrząs kamery nie odsłania czarnych krawędzi
+    blast.image.setDepth(0).setOrigin(0.5).setPosition(BASE_W / 2, BASE_H / 2).setScale(1.03);
     this.bgKeys.push('intro_bomb_fx');
-    const missiles = [0, 1, 2].map((i) => ({
-      sx: 420 - i * 70, sy: -20 - i * 20, ex: 180 + i * 62, ey: 190, d: secToQ8(0.12 + i * 0.09),
-      head: this.add.rectangle(0, 0, 2, 3, 0xffeecc).setDepth(3),
-      trail: Array.from({ length: 14 }, (_, j) => this.add.rectangle(0, 0, 1, 1, j < 3 ? 0xffc060 : j < 7 ? 0xa08070 : 0x6a5a5a).setDepth(3)),
-    }));
-    const ash = new Motes(this, 90, { x: 0, y: 0, w: BASE_W, h: 200 }, 0x9a8070, 4, 10, 1, 0.5);
+
+    // przed uderzeniem: reflektory obrony przeciwlotniczej przeczesują niebo, migają światła na masztach
+    const beams = this.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
+    const SPOTS = [[96, 196, -1.9, 0.9], [214, 198, -1.45, 1.3], [352, 197, -1.2, 0.7], [430, 196, -1.7, 1.1]] as const;
+    const blinkers = [[121, 113], [236, 104], [288, 98], [417, 98], [440, 106]].map(([x, y]) => this.add.rectangle(x, y, 1, 1, 0xff3020).setDepth(1));
+
+    // rakiety: jasna głowica z płomieniem silnika, za nią smuga dymu, która rośnie i blednie
+    const trail = this.add.graphics().setDepth(2);
+    const heads = this.add.graphics().setDepth(3).setBlendMode(Phaser.BlendModes.ADD);
+    const missiles = [0, 1, 2].map((i) => ({ sx: 430 - i * 74, sy: -24 - i * 22, ex: 196 + i * 58, ey: 192, d: secToQ8(0.12 + i * 0.09) }));
+    const disc = (g: Phaser.GameObjects.Graphics, x: number, y: number, r: number): void => {
+      const R = Math.max(0, Math.round(r));
+      x = Math.round(x);
+      y = Math.round(y);
+      if (!R) return void g.fillRect(x, y, 1, 1);
+      for (let dy = -R; dy <= R; dy++) {
+        const w = Math.round(Math.sqrt(R * R - dy * dy + R * 0.6));
+        g.fillRect(x - w, y + dy, w * 2 + 1, 1);
+      }
+    };
+
+    // po wybuchu: nadciągająca kopuła dymu i popiół
+    this.tex('intro_bomb_pall', BASE_W, 110, (g, w, h) => {
+      const r = seeded(17);
+      const list: [number, number, number, number][] = Array.from({ length: 9 }, (_, i) => [((i + r() * 0.5) / 9) * w, 18 + r() * 60, 90 + r() * 110, 10 + r() * 10]);
+      clouds(g, w, h, r, list, { tones: ['#a05a40', '#5a3434', '#2e1c24', '#160c14'], light: 0, wrap: true });
+    });
+    const pall = new DriftLayer(this, 'intro_bomb_pall', BASE_W, -5, 1, -110, 0.9);
+    const ash = new Motes(this, 110, { x: 0, y: 0, w: BASE_W, h: 200 }, 0x9a8070, 4, 10, 1, 0.5);
     this.updaters.push((tq, dt) => {
+      const t = tq / SEC;
+      // reflektory i światła masztów (gasną w chwili błysku)
+      beams.clear();
+      const pre = tq < BOOM;
+      for (const [x, y, a0, sp] of SPOTS) {
+        if (!pre) break;
+        const a = a0 + Math.sin(t * sp + x) * 0.35, L = 240, wd = 0.045;
+        beams.fillStyle(0xd8e0ff, 0.07).fillTriangle(x, y, x + Math.cos(a - wd) * L, y + Math.sin(a - wd) * L, x + Math.cos(a + wd) * L, y + Math.sin(a + wd) * L);
+        beams.fillStyle(0xd8e0ff, 0.06).fillTriangle(x, y, x + Math.cos(a - wd * 0.35) * L, y + Math.sin(a - wd * 0.35) * L, x + Math.cos(a + wd * 0.35) * L, y + Math.sin(a + wd * 0.35) * L);
+      }
+      blinkers.forEach((b, i) => b.setVisible(pre && Math.floor(t * 1.4 + i * 0.37) % 2 === 0));
+
+      trail.clear();
+      heads.clear();
       for (const m of missiles) {
         const u = progressQ12(tq, m.d, FLIGHT);
-        const vis = u > 0 && u < Q12 && tq < BOOM;
-        m.head.setVisible(vis).setPosition(Math.round(lerpQ12(m.sx, m.ex, u)), Math.round(lerpQ12(m.sy, m.ey, u)));
-        m.trail.forEach((b, j) => {
-          const uu = u - (j + 1) * TRAIL;
-          b.setVisible(vis && uu > 0);
-          if (b.visible) b.setPosition(Math.round(lerpQ12(m.sx, m.ex, uu)), Math.round(lerpQ12(m.sy, m.ey, uu))).setAlpha(1 - j / 16);
-        });
+        if (u <= 0) continue;
+        const live = u < Q12 && pre;
+        const dx = m.ex - m.sx, dy = m.ey - m.sy;
+        const hx = lerpQ12(m.sx, m.ex, u), hy = lerpQ12(m.sy, m.ey, u);
+        // dym: kłęby wzdłuż toru, starsze (dalej od głowicy) większe i bledsze; po wybuchu smugi znikają w błysku
+        if (pre) {
+          const n = Math.floor((u / Q12) * 40);
+          for (let j = n; j >= 0; j--) {
+            const uu = j / 40, age = u / Q12 - uu;
+            const x = m.sx + dx * uu + Math.sin(j * 1.7 + t) * age * 6, y = m.sy + dy * uu;
+            const al = Math.max(0, 0.75 - age * 0.9);
+            if (al <= 0.02) continue;
+            const hot = age < 0.04;
+            trail.fillStyle(hot ? 0xffb060 : age < 0.1 ? 0xb09080 : 0x6a5a66, al);
+            disc(trail, x, y, 0.6 + age * 7);
+          }
+        }
+        if (!live) continue;
+        // głowica + migotliwy płomień silnika (addytywnie)
+        const len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+        const fl = 3 + Math.sin(t * 60 + m.sx) * 1.2;
+        heads.fillStyle(0xff8a30, 0.5);
+        disc(heads, hx - ux * 3, hy - uy * 3, 3);
+        heads.fillStyle(0xffd080, 0.9);
+        for (let k = 1; k <= fl; k++) heads.fillRect(Math.round(hx - ux * k), Math.round(hy - uy * k), 1, 1);
+        heads.fillStyle(0xffffff, 1).fillRect(Math.round(hx), Math.round(hy), 2, 2);
       }
+
       const k = tq - BOOM;
       blast.render(k / SEC);
       // czysta biel przez ~0.1 s (kilka klatek), dalej błysk rysuje już NukeBlast (sylwetki, gasnąca poświata)
       this.flash.setAlpha(k > 0 && k < secToQ8(0.1) ? 1 : 0);
       ash.update(k > secToQ8(3) ? dt : 0);
+      if (k > secToQ8(3)) {
+        pall.update(dt);
+        // całun dymu powoli schodzi z góry nad miasto
+        const v = Math.min(1, (k - secToQ8(3)) / secToQ8(6));
+        pall.setY(-110 + v * 110);
+      }
       if (k > 0 && !this.boomed) {
         this.boomed = true;
         SoundManager.sfx('explosion');
