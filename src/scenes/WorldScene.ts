@@ -176,6 +176,8 @@ interface Unit {
   facing: Facing;
   /** Ostatni kierunek patrzenia w siatce (do odświeżenia odbicia po obrocie widoku). */
   dir?: GridPos;
+  /** Zwrócona w lewo (SW / NW): klatki przód / tył odbite, chyba że postać ma własny obrót (left()). */
+  left?: boolean;
   name: string;
   actor: Actor;
 }
@@ -1103,6 +1105,7 @@ export class WorldScene extends Phaser.Scene {
     const key = u.sprite.anims.currentAnim?.key ?? '';
     if (u.sprite.anims.isPlaying && (key.endsWith('_die') || key.endsWith('_down'))) return;
     u.sprite.stop();
+    this.mirror(u);
     u.sprite.setFrame(`${u.facing}_${u.actor.state === 'dead' ? FRAME_CORPSE : FRAME_DOWN}`);
   }
 
@@ -1114,11 +1117,33 @@ export class WorldScene extends Phaser.Scene {
     const alongX = Math.abs(vx) >= Math.abs(vy);
     if (alongX) {
       u.facing = vx > 0 ? 'f' : 'b'; // +vx = SE (przodem), -vx = NW (tyłem, odbity)
-      u.sprite.setFlipX(vx < 0);
+      u.left = vx < 0;
     } else {
       u.facing = vy > 0 ? 'f' : 'b'; // +vy = SW (przodem, odbity), -vy = NE (tyłem)
-      u.sprite.setFlipX(vy > 0);
+      u.left = vy > 0;
     }
+    u.sprite.setFlipX(u.left);
+    // trwa animacja własnego obrotu SW / NW (bez odbicia): spoczynek dostaje obrót nowego kierunku, chód zmieni krok
+    const cur = u.sprite.anims.currentAnim?.key ?? '';
+    if (u.sprite.anims.isPlaying && /_(south|north)-west_/.test(cur)) {
+      if (cur.endsWith('_idle') && u.actor.state === 'up') this.idle(u);
+      else u.sprite.setFlipX(false);
+    }
+  }
+
+  /**
+   * Chód / spoczynek zwróconej w lewo postaci PixelLab: własny obrót SW / NW (iso/SpriteUnits, `<nazwa>_<kierunek>_walk`)
+   * zamiast lustrzanego odbicia SE / NE (broń w drugiej ręce, inne światło). null = brak - odbicie klatek przód / tył.
+   */
+  private leftAnim(u: Unit, anim: 'walk' | 'idle'): string | null {
+    if (!u.left) return null;
+    const key = `${u.name}_${u.facing === 'f' ? 'south-west' : 'north-west'}_${anim}`;
+    return this.anims.exists(key) ? key : null;
+  }
+
+  /** Klatki przód / tył (z odbiciem w lewo) - przed animacją bez własnych obrotów. */
+  private mirror(u: Unit): void {
+    u.sprite.setFlipX(!!u.left);
   }
 
   /** Spoczynek zgodny z postawą: leży (powalony na ziemię, ale przytomny), kuca (w osłonie / skrada się) albo stoi. */
@@ -1129,6 +1154,12 @@ export class WorldScene extends Phaser.Scene {
     const st = this.stance(u);
     const key = `${u.name}_${u.facing}_${st}`;
     u.sprite.chain(); // bez zaległego łańcucha (np. pętli hakowania po przerwanym przyklęku)
+    const own = st === 'idle' ? this.leftAnim(u, 'idle') : null;
+    if (own) {
+      u.sprite.setFlipX(false).play(own, true);
+      return;
+    }
+    this.mirror(u);
     u.sprite.play(this.anims.exists(key) ? key : `${u.name}_${u.facing}_idle`, true);
   }
 
@@ -1169,6 +1200,7 @@ export class WorldScene extends Phaser.Scene {
   /** Jednorazowa animacja postaci (iso/UnitArt ANIMS): cios, strzał, trafienie, użycie, upadek; zostaje na ostatniej klatce. */
   private pose(u: Unit, anim: 'attack' | 'shoot' | 'hurt' | 'cast' | 'die' | 'down'): void {
     u.sprite.chain();
+    this.mirror(u);
     u.sprite.play(`${u.name}_${u.facing}_${anim}`);
   }
 
@@ -1185,6 +1217,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     u.sprite.chain();
+    this.mirror(u);
     if (anim === 'getup') u.sprite.playReverse(key);
     else u.sprite.play(key);
     if (anim === 'hide') u.sprite.chain(base + 'crouch');
@@ -1198,7 +1231,13 @@ export class WorldScene extends Phaser.Scene {
     const from = u.pos;
     this.face(u, { gx: to.gx - from.gx, gy: to.gy - from.gy });
     const sneakKey = `${u.name}_${u.facing}_sneak`;
-    u.sprite.play(this.sneaking(u) && this.anims.exists(sneakKey) ? sneakKey : `${u.name}_${u.facing}_walk`, true);
+    const sneak = this.sneaking(u) && this.anims.exists(sneakKey);
+    const own = sneak ? null : this.leftAnim(u, 'walk');
+    if (own) u.sprite.setFlipX(false).play(own, true);
+    else {
+      this.mirror(u);
+      u.sprite.play(sneak ? sneakKey : `${u.name}_${u.facing}_walk`, true);
+    }
     u.sprite.setDepth(Math.max(objDepth(from.gx, from.gy, L_UNIT), objDepth(to.gx, to.gy, L_UNIT)));
     u.pos = { ...to };
     if (u.sprite.visible && (u === this.focus || u.actor.side !== 'pc')) SoundManager.sfx('step', { vol: 0.35 });
@@ -1395,10 +1434,15 @@ export class WorldScene extends Phaser.Scene {
       const c = tileCenter(u.pos);
       u.sprite.setPosition(c.x, c.y).setDepth(objDepth(u.pos.gx, u.pos.gy, L_UNIT));
       u.shadow.setPosition(c.x, c.y);
-      const before = u.facing;
+      const before = u.facing, wasLeft = u.left;
       this.face(u, u.dir ?? { gx: 1, gy: 0 });
-      if (u.facing === before) continue;
+      if (u.facing === before && u.left === wasLeft) continue;
       const cur = u.sprite.anims.currentAnim?.key;
+      // spoczynek (także własne obroty SW / NW): od nowa wg nowego kierunku
+      if (u.actor.state === 'up' && u.sprite.anims.isPlaying && cur && /_(idle|crouch|prone)$/.test(cur)) {
+        this.idle(u);
+        continue;
+      }
       const pre = `${u.name}_${before}_`;
       if (u.sprite.anims.isPlaying && cur?.startsWith(pre)) {
         const next = `${u.name}_${u.facing}_${cur.slice(pre.length)}`;
