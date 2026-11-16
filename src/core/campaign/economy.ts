@@ -1,7 +1,7 @@
 // Handlarz Nomadów (ceny, dzienny asortyment) i Lecznica (koszt leczenia, odpoczynek).
 // Migracja z Oldgame/src/data/shop.js i logiki Oldgame/src/scenes/hub.js.
 import { longRest, newItem } from '../rules/character.ts';
-import { makeRng } from '../rules/dice.ts';
+import { makeRng, type Rng } from '../rules/dice.ts';
 import { addToStack } from '../rules/equipment.ts';
 import { allItems, itemDef } from '../rules/lookup.ts';
 import type { Character, ItemInstance } from '../rules/types.ts';
@@ -69,8 +69,8 @@ export function healAtClinic(state: CampaignState, c: Character): boolean {
 }
 
 /** Odpoczynek: długi odpoczynek całej drużyny, następny dzień, odświeżenie tablicy zleceń. */
-export function restDay(state: CampaignState): void {
+export function restDay(state: CampaignState, rng: Rng = Math.random): void {
   for (const c of state.party) longRest(c);
   state.day++;
-  refreshBoard(state, 2);
+  refreshBoard(state, 2, rng);
 }

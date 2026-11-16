@@ -4,6 +4,7 @@ import type { AbilityId, ItemId } from '../data/types.ts';
 import { addXP, newItem } from '../rules/character.ts';
 import { addToStack } from '../rules/equipment.ts';
 import type { Character } from '../rules/types.ts';
+import type { Rng } from '../rules/dice.ts';
 import type { MissionResult } from '../tactical/mission.ts';
 import { refreshBoard } from './contracts.ts';
 import type { CampaignState, Contract, FactionId } from './state.ts';
@@ -38,7 +39,7 @@ export interface DebriefSummary {
  * Nakłada wynik misji na stan kampanii (MUTUJE `state`).
  * Sukces: pełna nagroda; odwrót: połowa Złomu z nagrody i PD; porażka: brak łupu, 25% PD, -1 reputacji u zleceniodawcy.
  */
-export function applyMissionResult(state: CampaignState, mission: MissionResult, contractArg?: Contract | null): DebriefSummary {
+export function applyMissionResult(state: CampaignState, mission: MissionResult, contractArg?: Contract | null, rng: Rng = Math.random): DebriefSummary {
   const c = contractArg ?? state.contracts.find((k) => k.id === mission.contractId) ?? null;
   const result = mission.result;
   const ok = result === 'success';
@@ -121,7 +122,7 @@ export function applyMissionResult(state: CampaignState, mission: MissionResult,
   state.day += c?.travelDays ?? 1;
   state.log.push({ day: state.day, text: `${c?.title ?? 'Zlecenie'}: ${result}` });
   if (out.win) state.flags.victory = true;
-  refreshBoard(state, ok ? 1 : 0);
+  refreshBoard(state, ok ? 1 : 0, rng);
   out.tpk = state.party.length === 0;
   return out;
 }
