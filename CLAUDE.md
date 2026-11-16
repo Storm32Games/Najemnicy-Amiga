@@ -37,7 +37,8 @@ We are migrating an existing pure-JavaScript isometric post-apocalyptic turn-bas
 3. **Procedural Visuals:** Recreate the original Three.js procedural geometry/colors as crisp 2D isometric diamonds, blocks, and sprites via Phaser Graphics.
 
 ## Migration Rules (from `Oldgame/`)
-- **Source Reference:** Read game rules, stats, combat formulas, map generators, and audio synthesis from `Oldgame/`.
+- **`Oldgame/` was removed from the repo (2026-11-16).** The last commit that contains it is `58aaef7`; read a file from history with `git show 58aaef7:Oldgame/<path>` (fetch that commit first in a shallow clone). Comments in `src/` and `tests/` that cite `Oldgame/...` paths refer to that state.
+- **Source Reference:** Read game rules, stats, combat formulas, map generators, and audio synthesis from `Oldgame/` (in history, see above).
 - **Ignore 3D Overhead:** Discard all `THREE.Scene`, `THREE.Mesh`, cameras, and 3D lighting code.
 - **Step-by-Step Execution:** Migrate one module at a time. Never rewrite the entire project in a single pass.
 
