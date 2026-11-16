@@ -1054,8 +1054,48 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** Spoczynek zgodny z postawą: leży (powalony na ziemię, ale przytomny), kuca (w osłonie / skrada się) albo stoi. */
   private idle(u: Unit): void {
-    u.sprite.play(`${u.name}_${u.facing}_idle`, true);
+    const cur = u.sprite.anims.currentAnim?.key ?? '';
+    // przejście (przypadnięcie do osłony / padnięcie) kończy się samo - chain() przełącza na postawę
+    if (u.sprite.anims.isPlaying && (cur.endsWith('_hide') || cur.endsWith('_drop'))) return;
+    const st = this.stance(u);
+    const key = `${u.name}_${u.facing}_${st}`;
+    u.sprite.play(this.anims.exists(key) ? key : `${u.name}_${u.facing}_idle`, true);
+  }
+
+  /** Postawa spoczynkowa postaci (iso/UnitArt: 'prone' / 'crouch' / 'idle'). */
+  private stance(u: Unit): 'idle' | 'crouch' | 'prone' {
+    const a = u.actor;
+    if (a.state !== 'up') return 'idle';
+    if (hasCondition(a.ch, 'prone')) return 'prone';
+    if (hasCondition(a.ch, 'in_cover') || this.sneaking(u)) return 'crouch';
+    return 'idle';
+  }
+
+  /**
+   * Skradanie: poza walką najemnik porusza się w przysiadzie, gdy w zasięgu wzroku drużyny jest nieświadomy wróg
+   * (Mission.checkSpotting - wrogowie wypatrują na ≤11 pól, wtedy liczy się Skradanie).
+   */
+  private sneaking(u: Unit): boolean {
+    const a = u.actor;
+    const m = this.mission;
+    if (a.side !== 'pc' || a.state !== 'up' || !m || m.mode !== 'explore') return false;
+    for (const g of m.groups) {
+      if (g.alerted) continue;
+      for (const e of g.actors) if (e.state !== 'dead' && m.isVisible(e) && Math.max(Math.abs(e.gx - u.pos.gx), Math.abs(e.gy - u.pos.gy)) <= 12) return true;
+    }
+    return false;
+  }
+
+  /** Po zmianie widoczności / stanów: stojące, kucające i leżące postacie przechodzą do właściwej postawy. */
+  private refreshStances(): void {
+    for (const u of this.units.values()) {
+      if (u.actor.state !== 'up') continue;
+      const cur = u.sprite.anims.currentAnim?.key ?? '';
+      const resting = cur.endsWith('_idle') || cur.endsWith('_crouch') || cur.endsWith('_prone');
+      if (resting && u.sprite.anims.isPlaying && !cur.endsWith(`_${this.stance(u)}`)) this.idle(u);
+    }
   }
 
   /** Jednorazowa animacja postaci (iso/UnitArt ANIMS): cios, strzał, trafienie, użycie, upadek; zostaje na ostatniej klatce. */
@@ -1063,11 +1103,30 @@ export class WorldScene extends Phaser.Scene {
     u.sprite.play(`${u.name}_${u.facing}_${anim}`);
   }
 
+  /**
+   * Postawa / czynność z iso/UnitArt (bestie ich nie mają - wtedy `fallback`): kucnięcie za osłoną ('hide' -> 'crouch'),
+   * padnięcie ('drop' -> 'prone'), wstawanie ('drop' od tyłu), hakowanie, wytrych, opatrywanie (pętle do rest()).
+   */
+  private act(u: Unit, anim: 'hide' | 'drop' | 'getup' | 'hack' | 'pick' | 'heal', fallback: 'cast' | 'idle' = 'cast'): void {
+    const base = `${u.name}_${u.facing}_`;
+    const key = base + (anim === 'getup' ? 'drop' : anim);
+    if (!this.anims.exists(key)) {
+      if (fallback === 'cast') this.pose(u, 'cast');
+      else this.idle(u);
+      return;
+    }
+    if (anim === 'getup') u.sprite.playReverse(key);
+    else u.sprite.play(key);
+    if (anim === 'hide') u.sprite.chain(base + 'crouch');
+    else if (anim === 'drop') u.sprite.chain(base + 'prone');
+  }
+
   /** Krok o jedno pole z animacją chodu; głębia = większa z sum pól, by nie wejść "pod" ściany. */
   private stepUnit(u: Unit, to: GridPos): Promise<void> {
     const from = u.pos;
     this.face(u, { gx: to.gx - from.gx, gy: to.gy - from.gy });
-    u.sprite.play(`${u.name}_${u.facing}_walk`, true);
+    const sneakKey = `${u.name}_${u.facing}_sneak`;
+    u.sprite.play(this.sneaking(u) && this.anims.exists(sneakKey) ? sneakKey : `${u.name}_${u.facing}_walk`, true);
     u.sprite.setDepth(Math.max(objDepth(from.gx, from.gy, L_UNIT), objDepth(to.gx, to.gy, L_UNIT)));
     u.pos = { ...to };
     if (u.sprite.visible && (u === this.focus || u.actor.side !== 'pc')) SoundManager.sfx('step', { vol: 0.35 });
@@ -1417,6 +1476,7 @@ export class WorldScene extends Phaser.Scene {
       else if (u.actor.side === 'neutral') this.setUnitVisible(u, this.mission.isVisible(u.pos) || !!u.actor.following);
     }
     this.updateFoes();
+    this.refreshStances();
   }
 
   /** Wróg jest widoczny na polu w zasięgu wzroku drużyny; ciało zostaje na odkrytym terenie. */
@@ -1474,6 +1534,11 @@ export class WorldScene extends Phaser.Scene {
     if (who?.side === 'enemy' && who.group) {
       // atak z ukrycia: test Skradania decyduje, czy to zasadzka (drużyna pierwsza, wrogowie odsłonięci)
       this.hud.pushLog(`${sel.ch.name} próbuje zaatakować z ukrycia...`, 'amber');
+      const su = this.units.get(sel);
+      if (su) {
+        this.face(su, { gx: who.gx - sel.gx, gy: who.gy - sel.gy });
+        this.act(su, 'hide', 'idle');
+      }
       const roll = this.mission.ambushAttack(sel, who.group);
       await this.dice(roll, 'Skradanie', sel);
     } else {
@@ -2111,8 +2176,9 @@ export class WorldScene extends Phaser.Scene {
       SoundManager.sfx('heal');
       const su = this.units.get(sel);
       if (su && sel.state === 'up') {
-        this.pose(su, 'cast');
-        this.time.delayedCall(520, () => this.rest(su));
+        if (c.effect === 'heal') this.act(su, 'heal');
+        else this.pose(su, 'cast');
+        this.time.delayedCall(c.effect === 'heal' ? 900 : 520, () => this.rest(su));
       }
       this.showEvents(r);
       this.hud.notify('inventory');
@@ -2172,6 +2238,7 @@ export class WorldScene extends Phaser.Scene {
         break;
       case 'turnStart':
         this.updateInitiative();
+        this.refreshStances(); // wygasła osłona / powalenie - powrót do właściwej postawy
         break;
       case 'move':
         await this.walk(s.actor, s.path);
@@ -2192,10 +2259,19 @@ export class WorldScene extends Phaser.Scene {
           await this.animateBlast(s.actor, s.cell, s.result, c.effect === 'smoke' ? 'smoke' : c.dmgType === 'fire' ? 'fire' : c.dmgType === 'elec' ? 'elec' : 'frag', c.radius ?? 1.5);
         else if (c?.target === 'enemy' && foe) await this.animateAttack(s.actor, foe, 'shot', 'explosion', s.result);
         else {
+          const u = this.units.get(s.actor);
+          const tgt = s.targets.find((x) => x !== s.actor);
+          if (u && s.actor.state === 'up') {
+            if (tgt) this.face(u, { gx: tgt.gx - s.actor.gx, gy: tgt.gy - s.actor.gy });
+            if (c?.effect === 'heal') this.act(u, 'heal');
+            else this.pose(u, 'cast');
+            await this.wait(c?.effect === 'heal' ? 420 : 190);
+          }
           if (c?.effect === 'buff' || c?.effect === 'smoke') for (const x of s.targets) this.sparks(x, 0xffd060);
           SoundManager.sfx('heal');
           this.showEvents(s.result);
           await this.wait(240);
+          if (u) this.rest(u);
         }
         this.hud.notify('inventory');
         break;
@@ -2283,6 +2359,14 @@ export class WorldScene extends Phaser.Scene {
   /** Wynik otwierania skrzyni: kość, pułapka / łup, otwarta skrzynia. */
   private async onCrate(th: MissionThing, by: Actor, r: CheckResult, trap: number): Promise<void> {
     const skill = this.lastCrateSkill;
+    const bu = this.units.get(by);
+    if (bu) {
+      this.face(bu, { gx: th.gx - by.gx, gy: th.gy - by.gy });
+      // wytrych / majsterkowanie przy mechanizmie / podważenie łomem (cios)
+      if (skill === 'athletics') this.pose(bu, 'attack');
+      else this.act(bu, skill === 'crafting' ? 'hack' : 'pick');
+      await this.wait(skill === 'athletics' ? 260 : 520);
+    }
     await this.dice(r, skill ? `Skrzynia: ${SKILLS[skill].name}` : 'Skrzynia', by);
     const i = this.idx(th.gx, th.gy);
     const view = this.crates.get(i);
@@ -2306,6 +2390,7 @@ export class WorldScene extends Phaser.Scene {
       SoundManager.sfx('coin');
       this.floatAbove(by, 'Łup!', C_LOOT);
     }
+    if (bu && r.degree !== 0) this.time.delayedCall(240, () => this.rest(bu));
     if (view && th.done) {
       if (view.sparkle) {
         this.dropCellImg(i, view.sparkle);
@@ -2326,6 +2411,14 @@ export class WorldScene extends Phaser.Scene {
     const lock = th.lock;
     const how = hack ? (at.skill === 'crafting' ? 'Hakowanie' : 'Obejście') : at.skill === 'athletics' ? 'Wyważenie' : 'Wytrych';
     const prog = lock && !at.opened && at.skill !== 'athletics' ? ` [${lock.progress}/${lock.needed}]` : '';
+    const bu = this.units.get(by);
+    if (bu) {
+      this.face(bu, { gx: th.gx - by.gx, gy: th.gy - by.gy });
+      // hakowanie terminala / wytrych w zamku / wyważenie barkiem (cios)
+      if (at.skill === 'athletics') this.pose(bu, 'attack');
+      else this.act(bu, hack ? 'hack' : 'pick');
+      await this.wait(at.skill === 'athletics' ? 260 : 560);
+    }
     await this.dice(at.roll, `${how}: ${th.name}${prog}`, by);
     if (at.opened) {
       SoundManager.sfx(hack ? 'radio' : 'door', { vol: 0.6 });
@@ -2346,6 +2439,7 @@ export class WorldScene extends Phaser.Scene {
       SoundManager.sfx('error', { vol: 0.4 });
       this.floatAbove(by, 'Bez postępu', 0xbbbbbb);
     }
+    if (bu) this.time.delayedCall(260, () => this.rest(bu));
     this.hud.notify('stats');
     await this.wait(250);
   }
@@ -2482,6 +2576,11 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     if ((fx === 'shot' || fx === 'melee') && target) {
+      // atak z ukrycia / kradzież: najpierw przyczajenie
+      if (u && (ab.id === 'sneak_attack' || ab.id === 'steal')) {
+        this.act(u, 'hide', 'idle');
+        await this.wait(220);
+      }
       await this.animateAttack(a, target, fx, fx === 'shot' ? 'shot_rifle' : 'melee', r);
       return;
     }
@@ -2494,8 +2593,14 @@ export class WorldScene extends Phaser.Scene {
     } else if (fx === 'heal') {
       SoundManager.sfx('heal');
     }
-    if (u) this.pose(u, 'cast');
-    await this.wait(190); // uniesienie przedmiotu / gest
+    const medic = ab.id === 'first_aid' || ab.id === 'field_dressing' || ab.id === 'field_clinic';
+    if (u) {
+      if (ab.id === 'take_cover') this.act(u, 'hide');
+      else if (ab.id === 'stand') this.act(u, 'getup');
+      else if (medic) this.act(u, 'heal');
+      else this.pose(u, 'cast');
+    }
+    await this.wait(medic ? 420 : 190); // opatrywanie / uniesienie przedmiotu / gest
     this.showEvents(r);
     await this.wait(330);
     if (u) this.rest(u);
@@ -2526,6 +2631,12 @@ export class WorldScene extends Phaser.Scene {
         this.floatAbove(a, `+${ev.amount}`, 0x7fe05a);
         this.sparks(a, 0x7fe05a);
       } else if (ev.type === 'condition') {
+        // powalony na ziemię (ale przytomny): padnięcie i leżenie z bronią do czasu "Wstań"
+        if (ev.condition === 'prone' && a.state === 'up') {
+          this.time.delayedCall(130, () => {
+            if (a.state === 'up' && hasCondition(a.ch, 'prone')) this.act(u, 'drop', 'idle');
+          });
+        }
         const name = ev.condition === 'stable' ? 'Stabilny' : conditionDef(ev.condition)?.name;
         if (name && ev.condition !== 'dead' && ev.condition !== 'dying') this.floatAbove(a, name, C_COND);
       }

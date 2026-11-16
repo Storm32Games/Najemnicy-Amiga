@@ -4,6 +4,9 @@
 // Animacje (jak TIMING w hero.js, w skali 24x32): idle 5 (oddech + mrugnięcie), walk 8, attack 5 (przygotowanie / zamach /
 // uderzenie / dokończenie / powrót), shoot 4 (celowanie / błysk / odrzut / dym), hurt 3, die 7 (ostatnia klatka = zwłoki),
 // cast 4 (sięgnięcie / uniesienie / blask / rozbłysk).
+// Postawy i czynności: crouch 4 (kucnięcie, oddech, wyglądanie zza osłony), sneak 8 (skradanie: chód w przysiadzie),
+// hide 2 (przypadnięcie do osłony), prone 3 (leżenie z bronią, rozglądanie się), drop 3 (padnięcie; od tyłu = wstawanie),
+// hack 4 (klęk, terminal ze świecącym ekranem), pick 4 (klęk, wytrych i napinacz w zamku), heal 4 (klęk, opatrywanie).
 import { PixelCanvas, type RGB, hash2, mix, pick, ramp, shade } from './Pixel';
 
 export const UNIT_FW = 24;
@@ -114,7 +117,11 @@ export const LOOK_RAIDER: UnitLook = {
 
 // ================================================================== animacje
 
-export type AnimName = 'idle' | 'walk' | 'attack' | 'shoot' | 'hurt' | 'die' | 'cast';
+export type AnimName =
+  | 'idle' | 'walk' | 'attack' | 'shoot' | 'hurt' | 'die' | 'cast'
+  | 'crouch' | 'sneak' | 'hide' | 'prone' | 'drop' | 'hack' | 'pick' | 'heal';
+/** Czynność rękami w klęku: hakowanie terminala, wytrych, opatrywanie rany. */
+export type WorkKind = '' | 'hack' | 'pick' | 'heal';
 /** Ułożenie bliższego ramienia (z bronią). */
 export type ArmPose = 'rest' | 'ready' | 'wind' | 'strike' | 'follow' | 'aim';
 
@@ -146,11 +153,18 @@ export interface Pose {
   /** -1 żywy, 0..6 etap śmierci (6 = zwłoki). */
   die: number;
   blink: boolean;
+  /** Przysiad: o ile pikseli obniżona postać (0 stoi, 1 półprzysiad, 2 skradanie, 3 pełny przysiad). */
+  crouch: number;
+  /** Klęk na jedno kolano (czynności). */
+  kneel: boolean;
+  work: WorkKind;
+  /** Leżenie żywej postaci: kąt obrotu w stopniach (0 = nie leży, 90 = płasko, głowa do przodu). */
+  prone: number;
 }
 
 const BASE: Pose = {
   anim: 'idle', i: 0, bob: 0, hbob: 0, stride: 0, legs: [0, 0, 0, 0], lean: 0, dx: 0, arm: 'rest',
-  attack: false, lunge: 0, hurt: false, flash: 0, cast: 0, die: -1, blink: false,
+  attack: false, lunge: 0, hurt: false, flash: 0, cast: 0, die: -1, blink: false, crouch: 0, kneel: false, work: '', prone: 0,
 };
 
 export interface AnimDef {
@@ -193,14 +207,36 @@ export const ANIMS: Readonly<Record<AnimName, AnimDef>> = {
   })),
   die: anim('die', [70, 90, 90, 70, 100, 140, 240], false, (i) => ({ die: i, hurt: true, lunge: -1 })),
   cast: anim('cast', [90, 100, 140, 170], false, (i) => ({ cast: i + 1, hbob: [0, 0, -1, 0][i], bob: [1, 0, 0, 0][i] })),
+  // ---- postawy
+  crouch: anim('crouch', [420, 360, 420, 300, 520], true, (i) => ({
+    crouch: 3, arm: 'ready', hbob: [0, 1, 0, -1][i], lean: [0, 0, 0, 1][i], blink: i === 2,
+  }), [0, 1, 0, 1, 3]),
+  sneak: anim('sneak', [115, 115, 115, 115, 115, 115, 115, 115], true, (i) => {
+    const l = WALK_LEGS[i];
+    const legs = [Math.sign(l[0]) * Math.min(1, Math.abs(l[0])), l[1], Math.sign(l[2]) * Math.min(1, Math.abs(l[2])), l[3]] as const;
+    return { crouch: 2, lean: 1, arm: 'ready', legs, stride: legs[0], hbob: [0, 0, 1, 0, 0, 0, 1, 0][i] };
+  }),
+  hide: anim('hide', [80, 130], false, (i) => ({ crouch: [1, 3][i], lean: [-1, 0][i], hbob: [0, 1][i], arm: 'ready' })),
+  prone: anim('prone', [520, 420, 640], true, (i) => ({ prone: [86, 86, 80][i], blink: i === 1 })),
+  drop: anim('drop', [90, 90, 110], false, (i) => (i === 0 ? { kneel: true, lean: 1, arm: 'ready' } : { prone: [0, 45, 78][i] })),
+  // ---- czynności (klęk)
+  hack: anim('hack', [170, 120, 170, 230], true, (i) => ({ kneel: true, work: 'hack', hbob: [0, 0, 1, 0][i], lean: 1 })),
+  pick: anim('pick', [150, 190, 130, 240], true, (i) => ({ kneel: true, work: 'pick', hbob: [1, 1, 1, 0][i], lean: 1 })),
+  heal: anim('heal', [180, 160, 190, 220], true, (i) => ({ kneel: true, work: 'heal', hbob: [1, 1, 0, 1][i], lean: 1, bob: [0, 0, 0, 0][i] })),
 };
-export const ANIM_ORDER: readonly AnimName[] = ['idle', 'walk', 'attack', 'shoot', 'hurt', 'die', 'cast'];
+/** Animacje wspólne dla wszystkich arkuszy (także bestii). */
+export const BASE_ANIMS: readonly AnimName[] = ['idle', 'walk', 'attack', 'shoot', 'hurt', 'die', 'cast'];
+/** Komplet animacji postaci humanoidalnej. */
+export const ANIM_ORDER: readonly AnimName[] = [...BASE_ANIMS, 'crouch', 'sneak', 'hide', 'prone', 'drop', 'hack', 'pick', 'heal'];
 
 /** Wszystkie klatki: { nazwa ('idle0', 'die6', ...) -> poza }. */
 export const POSES: Readonly<Record<string, Pose>> = Object.fromEntries(
   ANIM_ORDER.flatMap((a) => ANIMS[a].poses.map((p) => [`${a}${p.i}`, p] as const)),
 );
-export const UNIT_FRAMES = Object.keys(POSES);
+const framesOf = (anims: readonly AnimName[]): string[] => anims.flatMap((a) => ANIMS[a].poses.map((p) => `${a}${p.i}`));
+export const UNIT_FRAMES = framesOf(ANIM_ORDER);
+/** Klatek w wierszu arkusza (arkusz zawija się w bloki, żeby tekstura HiRes nie była zbyt szeroka). */
+const SHEET_COLS = 17;
 /** Klatka "leżący" (powalony, przed kałużą) i "zwłoki". */
 export const FRAME_DOWN = 'die4';
 export const FRAME_CORPSE = 'die6';
@@ -213,29 +249,35 @@ export interface UnitSheet {
 }
 
 /**
- * Składa arkusz 'f_idle0' ... 'b_cast3' (wiersz 0 = przodem, wiersz 1 = tyłem) z klatek 24x32 rysowanych osobno
- * (przycięte do klatki, obrys per klatka). `post` maluje po obrysie (kałuże, iskry, dym - bez czarnej obwódki).
+ * Składa arkusz 'f_idle0' ... 'b_heal3' z klatek 24x32 rysowanych osobno (przycięte do klatki, obrys per klatka).
+ * Klatki idą w blokach po SHEET_COLS: w każdym bloku wiersz przodem, potem tyłem. `post` maluje po obrysie
+ * (kałuże, iskry, dym - bez czarnej obwódki). `anims` = które animacje malować (bestie: tylko BASE_ANIMS).
  */
 export function buildUnitSheet(
   draw: (pc: PixelCanvas, front: boolean, pose: Pose) => void,
   post?: (pc: PixelCanvas, front: boolean, pose: Pose) => void,
+  anims: readonly AnimName[] = ANIM_ORDER,
 ): UnitSheet {
-  const cols = UNIT_FRAMES.length;
-  const pc = new PixelCanvas(UNIT_FW * cols, UNIT_FH * 2);
+  const names = framesOf(anims);
+  const cols = Math.min(SHEET_COLS, names.length);
+  const blocks = Math.ceil(names.length / cols);
+  const pc = new PixelCanvas(UNIT_FW * cols, UNIT_FH * 2 * blocks);
   const frames: UnitSheet['frames'] = [];
+  const at = (i: number, row: number) => ({ x: (i % cols) * UNIT_FW, y: (Math.floor(i / cols) * 2 + row) * UNIT_FH });
   (['f', 'b'] as const).forEach((facing, row) => {
-    UNIT_FRAMES.forEach((name, i) => {
+    names.forEach((name, i) => {
       const pose = POSES[name];
       const fpc = new PixelCanvas(UNIT_FW, UNIT_FH);
       draw(fpc, facing === 'f', pose);
       fpc.outline(0.32, 0x0e080c);
       post?.(fpc, facing === 'f', pose);
-      for (let y = 0; y < UNIT_FH; y++) pc.data.set(fpc.data.subarray(y * UNIT_FW * 4, (y + 1) * UNIT_FW * 4), ((row * UNIT_FH + y) * pc.w + i * UNIT_FW) * 4);
-      frames.push({ name: `${facing}_${name}`, x: i * UNIT_FW, y: row * UNIT_FH, w: UNIT_FW, h: UNIT_FH });
+      const { x, y } = at(i, row);
+      for (let yy = 0; yy < UNIT_FH; yy++) pc.data.set(fpc.data.subarray(yy * UNIT_FW * 4, (yy + 1) * UNIT_FW * 4), ((y + yy) * pc.w + x) * 4);
+      frames.push({ name: `${facing}_${name}`, x, y, w: UNIT_FW, h: UNIT_FH });
     });
     for (const [alias, src] of Object.entries(FRAME_ALIASES)) {
-      const i = UNIT_FRAMES.indexOf(src);
-      frames.push({ name: `${facing}_${alias}`, x: i * UNIT_FW, y: row * UNIT_FH, w: UNIT_FW, h: UNIT_FH });
+      const { x, y } = at(names.indexOf(src), row);
+      frames.push({ name: `${facing}_${alias}`, x, y, w: UNIT_FW, h: UNIT_FH });
     }
   });
   return { pc, frames };
@@ -890,7 +932,10 @@ function drawFigure(pc: PixelCanvas, look: UnitLook, front: boolean, pose: Pose,
   const P = palette(look);
   const b = pose.bob;
   const hgt = look.height ?? (look.ancestry === 'vault' || look.ancestry === 'ratling' ? 1 : look.ancestry === 'humanoid' ? -1 : 0);
-  const kn = kneel ? 3 : 0;
+  kneel = kneel || pose.kneel;
+  const kn = kneel ? 3 : pose.crouch;
+  const crouched = !kneel && pose.crouch > 0;
+  const fwd = pose.crouch >= 2 ? 2 : 1; // kolano wysunięte do przodu w przysiadzie
   const XL = (x: number) => x + pose.dx;
   const X = (x: number) => x + pose.dx + pose.lean;
   const big = !!look.bigArm;
@@ -956,14 +1001,20 @@ function drawFigure(pc: PixelCanvas, look: UnitLook, front: boolean, pose: Pose,
       continue;
     }
     const h = 26 - legTop - lift;
-    part(pc, XL(lx + o), legTop, lw, h, legCol, 0.45);
+    let bo = 0; // przesunięcie stopy (przysiad: goleń pod wysuniętym kolanem)
+    if (crouched) {
+      // przysiad: udo poziomo do przodu, krótka goleń w dół
+      part(pc, XL(lx + o), legTop, lw + fwd, Math.max(1, Math.min(2, h)), legCol, 0.5);
+      bo = fwd - 1;
+      if (h > 2) part(pc, XL(lx + o + bo), legTop + 2, lw, h - 2, legCol, 0.4);
+    } else part(pc, XL(lx + o), legTop, lw, h, legCol, 0.45);
     if (look.boots >= 0 && !(look.claws && look.rags)) {
-      part(pc, XL(lx + o - (front ? 0 : 1)), 26 - lift, lw + 1, 2, robot ? P.metal : P.boots, 0.5);
-      if (front) pc.set(XL(lx + o + lw), 27 - lift, robot ? P.metal[1] : P.boots[1]);
+      part(pc, XL(lx + o + bo - (front ? 0 : 1)), 26 - lift, lw + 1, 2, robot ? P.metal : P.boots, 0.5);
+      if (front) pc.set(XL(lx + o + bo + lw), 27 - lift, robot ? P.metal[1] : P.boots[1]);
     } else {
       // bose stopy z pazurami (ghul)
-      part(pc, XL(lx + o), 26 - lift, lw + 1, 2, P.skin, 0.4);
-      pc.set(XL(lx + o + lw + 1), 27 - lift, P.bone[3]);
+      part(pc, XL(lx + o + bo), 26 - lift, lw + 1, 2, P.skin, 0.4);
+      pc.set(XL(lx + o + bo + lw + 1), 27 - lift, P.bone[3]);
     }
     if (robot) pc.set(XL(lx + o), legTop + 2, P.chrome[4]);
     if (look.rags && hash2(lx, 1, 3) < 0.6) pc.set(XL(lx + o), legTop + 3, P.skin[1]); // dziura w nogawce
@@ -1056,7 +1107,10 @@ function drawFigure(pc: PixelCanvas, look: UnitLook, front: boolean, pose: Pose,
   const hand = (arm: readonly RGB[]) => (arm === P.chrome ? P.metal[2] : look.claws ? P.skin[1] : P.skin[2]);
   const bx = tx - aw;
   const bsw = Math.max(0, s);
-  if (pose.cast >= 2 && pose.cast <= 3) {
+  if (pose.work) {
+    // czynność: dalsze ramię sięga do przodu (przedramię schowane za tułowiem)
+    part(pc, X(bx), ty + 1, aw, 3, backArm, 0.62);
+  } else if (pose.cast >= 2 && pose.cast <= 3) {
     // ramię w górze z przedmiotem
     const top = pose.cast === 3 ? ty - 6 : ty - 3;
     part(pc, X(bx), top + 1, aw, ty + 1 - top, backArm, 0.62);
@@ -1123,7 +1177,8 @@ function drawFigure(pc: PixelCanvas, look: UnitLook, front: boolean, pose: Pose,
     armDraw = () => { part(pc, X(sx - 1), ty - 1, 3, 3, P.skin, 0.55); pre(); };
   }
 
-  drawWeapon(c, hx, hy);
+  if (pose.work) armDraw = () => drawWork(c, frontArm, fw, hand(frontArm), hand(backArm));
+  else drawWeapon(c, hx, hy);
   if (arm !== 'wind') armDraw();
   if (front && look.shield !== undefined) drawShield(c, X(tx - aw - 2), ty + 1 + bsw, 3, 6);
   drawPauldron(c);
@@ -1148,6 +1203,78 @@ function drawFigure(pc: PixelCanvas, look: UnitLook, front: boolean, pose: Pose,
       }
     }
   }
+}
+
+/**
+ * Ręce przy czynności (klęk, broń przewieszona): terminal z migającym ekranem, wytrych z napinaczem w zamku,
+ * opatrunek ze świecącymi krzyżykami. Klatka (pose.i) porusza palcami / wytrychem i zapala efekty.
+ */
+function drawWork(c: Ctx, armR: readonly RGB[], fw: number, handC: RGB, backHandC: RGB): void {
+  const { pc, pose, X, ty, tx, tw } = c;
+  const sx = tx + tw;
+  const i = pose.i;
+  const reach = (hx: number, hy: number) => {
+    limb(pc, X(sx), ty + 1, X(hx - 1), hy, fw, armR, 0.4);
+    pc.rect(X(hx), hy, fw, 1, handC);
+  };
+  if (pose.work === 'hack') {
+    // przenośny terminal w dalszej dłoni, bliższa stuka w klawisze
+    const dx = sx + 2, dy = ty + 3;
+    part(pc, X(dx), dy, 4, 3, ramp(0x30363a, 5, 0.38), 0.45, 21);
+    const scr = [0x5aff6a, 0x9affa8, 0x3ad04a, 0xc8ffd0][i];
+    pc.set(X(dx + 1), dy + 1, scr); pc.set(X(dx + 2), dy + 1, i & 1 ? 0x2a8a3a : scr);
+    pc.set(X(dx), dy + 2, backHandC);
+    reach(dx + 1 + (i & 1), dy - 1 + (i === 2 ? 1 : 0));
+    pc.set(X(dx + 3), dy + 2, i === 3 ? 0xff4a3a : 0x7aff8a); // dioda
+    // kabel do urządzenia przed postacią
+    pc.line(X(dx + 4), dy + 2, X(dx + 6), dy + 4, 0x1a1a1e);
+    // strzępy danych nad ekranem
+    for (let k = 0; k < 3; k++) {
+      const yy = dy - 2 - ((i + k * 2) % 4);
+      if ((i + k) % 3 !== 0) pc.set(X(dx + 1 + k), yy, k === 1 ? 0xc8ffd0 : 0x6aff7a, 120 + k * 40);
+    }
+  } else if (pose.work === 'pick') {
+    // napinacz w dalszej dłoni, wytrych w bliższej - ruch w górę / w dół w zamku
+    const ly = ty + 2;
+    const j = [0, 1, 0, -1][i];
+    pc.set(X(sx + 3), ly + 2, backHandC);
+    pc.line(X(sx + 4), ly + 2, X(sx + 5), ly + 2, c.P.steel[2]);
+    reach(sx + 3, ly + j);
+    pc.line(X(sx + 4), ly + j, X(sx + 6), ly - 1 + j, c.P.steel[4]);
+    pc.set(X(sx + 6), ly + j, c.P.steel[3]);
+    if (i === 3) { pc.set(X(sx + 7), ly - 2, 0xffffff, 220); pc.set(X(sx + 7), ly, 0xfff0a0, 160); pc.set(X(sx + 6), ly - 3, 0xfff0a0, 140); }
+  } else if (pose.work === 'heal') {
+    // obie dłonie nisko przy rannym, bandaż i apteczka
+    const hy = ty + 6;
+    part(pc, X(sx + 1), hy + 1, 3, 2, ramp(0xd8d0c0, 5, 0.42), 0.55, 23); // apteczka
+    pc.set(X(sx + 2), hy + 1, 0xc82a2a); pc.set(X(sx + 2), hy + 2, 0xa01a1a);
+    reach(sx + 3 + (i === 1 ? 1 : 0), hy - (i === 2 ? 1 : 0));
+    pc.rect(X(sx + 4), hy - 1 + (i & 1), 2, 2, 0xf0ece0); // rolka bandaża
+    pc.set(X(sx + 5), hy + (i & 1), 0xc8c0b0);
+    if (i >= 1) {
+      // zielone krzyżyki unoszące się nad opatrunkiem
+      const gy = hy - 3 - i;
+      const gx = sx + 4 + (i === 2 ? 1 : 0);
+      for (const [ox, oy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) pc.set(X(gx + ox), gy + oy, ox || oy ? 0x5ad04a : 0xd8ffc8, 200);
+    }
+  }
+}
+
+/** Leżenie żywej postaci: obrót na brzuch głową do przodu (+ kąt), broń wysunięta przed głowę. */
+function drawProne(pc: PixelCanvas, look: UnitLook, front: boolean, pose: Pose): void {
+  const tmp = new PixelCanvas(UNIT_FW, UNIT_FH);
+  drawFigure(tmp, { ...look, weapon: 'none' }, front, { ...BASE, anim: pose.anim, i: pose.i, blink: pose.blink });
+  const ang = pose.prone;
+  const [bx0, , bx1, by1] = rotatedBox(tmp, ang, 12, 27);
+  const t = Math.min(1, ang / 60);
+  const fx = 12 - Math.round((bx0 + bx1) / 2), fy = 28 - by1;
+  blitRotated(pc, tmp, ang, 12, 27, Math.round(fx * t), fy);
+  if (ang < 60 || look.weapon === 'none') return;
+  // broń trzymana przed sobą na ziemi (jak porzucona, ale w dłoniach: dłoń na łożu)
+  const P = palette(look);
+  drawDroppedWeapon(pc, look, P);
+  pc.set(16, 27, P.skin[2]);
+  pc.set(19, 26, P.skin[3]);
 }
 
 function drawShield(c: Ctx, x: number, y: number, w: number, h: number): void {
@@ -1270,10 +1397,10 @@ function deathPost(pc: PixelCanvas, look: UnitLook, pose: Pose): void {
   if (d === 6) { under(pc, Math.round(cx - r * 0.4), 28, BLOOD[3], 230); }
 }
 
-/** Arkusz klatek: 'f_idle0' ... 'b_cast3'. */
+/** Arkusz klatek: 'f_idle0' ... 'b_heal3'. */
 export function paintUnitSheet(look: UnitLook): UnitSheet {
   return buildUnitSheet(
-    (pc, front, pose) => (pose.die >= 0 ? drawDeath(pc, look, front, pose) : drawFigure(pc, look, front, pose)),
+    (pc, front, pose) => (pose.die >= 0 ? drawDeath(pc, look, front, pose) : pose.prone > 0 ? drawProne(pc, look, front, pose) : drawFigure(pc, look, front, pose)),
     (pc, _front, pose) => deathPost(pc, look, pose),
   );
 }
