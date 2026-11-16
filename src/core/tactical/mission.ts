@@ -14,7 +14,7 @@ import {
   type DeviceKind, type LockAttempt, type LockQuality, type LockState,
 } from '../rules/locks.ts';
 import type { Character, GridPos, ItemInstance } from '../rules/types.ts';
-import { Combat, makeActor, type Actor, type CombatEnd, type EnemyGroup, type LogTone } from './combat.ts';
+import { Combat, makeActor, type Actor, type ActorState, type CombatEnd, type EnemyGroup, type LogTone, type Side } from './combat.ts';
 import { CellKind, cheb, dist, TacticalGrid, UNREACHABLE } from './grid.ts';
 import { generateMap, inEntryZone, type Biome, type FindKind, type FindSpawn, type TacticalMap } from './mapgen.ts';
 
@@ -73,6 +73,46 @@ export interface MissionResult {
   loot: ItemInstance[];
   scrap: number;
   casualties: string[];
+}
+
+/** Postać w zapisie misji: najemnik jako indeks w drużynie kampanii (ten sam obiekt po wczytaniu), reszta z pełną kartą. */
+export interface ActorSnapshot extends GridPos {
+  pc?: number;
+  ch?: Character;
+  side: Side;
+  state: ActorState;
+  group: number | null;
+  engaged: boolean;
+  roam?: { home: GridPos; dest: GridPos | null } | null;
+  isTarget?: boolean;
+  following?: boolean;
+}
+export interface ThingSnapshot extends Omit<MissionThing, 'actor'> {
+  actor?: number;
+}
+/** Stan misji w trakcie eksploracji (JSON) - zapis gry na mapie misji. Mapę odtwarza generator z id zlecenia. */
+export interface MissionSnapshot {
+  version: 1;
+  contractId: string;
+  cells: number[];
+  actors: ActorSnapshot[];
+  groups: { alerted: boolean; nextNotice: number; center: EnemyGroup['center'] }[];
+  things: ThingSnapshot[];
+  finds: MissionFind[];
+  itemThing: number;
+  captive: number;
+  objDevice: number;
+  settlers: number[];
+  nests: number[];
+  wave: number;
+  nextWave: number;
+  stage: number;
+  steps: number;
+  scrap: number;
+  loot: ItemInstance[];
+  killed: number[];
+  /** Odkryte pola: '0' / '1' na pole. */
+  explored: string;
 }
 
 export type MissionSignal =
@@ -140,17 +180,54 @@ export class Mission {
   readonly vis: Uint8Array;
   result: MissionResult | null = null;
   private listeners = new Set<(s: MissionSignal) => void>();
+  /** Drużyna kampanii z wejścia (indeksy najemników w zapisie). */
+  private readonly party: readonly Character[];
 
-  constructor(contract: MissionContract, party: readonly Character[], rng: Rng = Math.random) {
+  /** `snap` = odtworzenie zapisanej misji (Mission.snapshot) zamiast nowego rozstawienia. */
+  constructor(contract: MissionContract, party: readonly Character[], rng: Rng = Math.random, snap?: MissionSnapshot) {
     this.contract = contract;
     this.objType = contract.objective?.type ?? contract.type ?? 'eliminate';
     this.rng = rng;
+    this.party = party;
     this.map = generateMap(contract, contract.enemies);
     this.grid = this.map.grid;
     const N = this.map.width * this.map.height;
     this.explored = new Uint8Array(N);
     this.vis = new Uint8Array(N);
 
+    this.finds = snap
+      ? snap.finds.map((f) => ({ ...f }))
+      : this.map.finds.map((f) => ({ ...f, found: !f.hidden, taken: false, tried: false }));
+    this.target = snap ? this.restore(snap, party) : this.populate(contract, party);
+
+    this.combat = new Combat(
+      {
+        grid: this.grid, actors: this.actors, groups: this.groups, target: this.target,
+        isBlocked: (gx, gy) => this.neutral.some((n) => n.gx === gx && n.gy === gy),
+        inSight: (a) => this.isVisible(a),
+        freeActions: () => this.mode === 'explore',
+      },
+      rng,
+    );
+    this.combat.on((s) => {
+      if (s.kind === 'state' && s.actor.side === 'enemy' && s.to === 'dead' && !this.killed.includes(s.actor.ch)) {
+        this.killed.push(s.actor.ch);
+        if (s.actor === this.target) this.log('CEL ELIMINOWANY', 'good');
+        this.emitObjectives();
+        this.checkObjective();
+      } else if (s.kind === 'join' || s.kind === 'move') this.updateVisibility();
+      else if (s.kind === 'round' && this.mode === 'combat') {
+        // runda minęła także poza polem widzenia: wrogowie spoza walki idą dalej, widoczni dołączają
+        this.advanceWorld();
+        this.combat.engageVisible();
+      }
+      else if (s.kind === 'end') this.onCombatEnd(s.outcome);
+    });
+    this.updateVisibility();
+  }
+
+  /** Nowa misja: drużyna w strefie wejścia, wrogowie, skrzynie i cele zlecenia. Zwraca cel polowania (albo null). */
+  private populate(contract: MissionContract, party: readonly Character[]): Actor | null {
     // drużyna w strefie wejścia
     const slots = [5, 6, 9, 10];
     party.filter(isAlive).slice(0, 4).forEach((ch, i) => {
@@ -171,14 +248,14 @@ export class Mission {
       this.groups.push(grp);
     });
     // cel polowania / boss
+    let target: Actor | null = null;
     if ((this.objType === 'hunt' || this.objType === 'boss') && this.enemies.length) {
-      this.target =
+      target =
         this.enemies.find((a) => a.ch.ai === 'boss' || /kostucha/i.test(a.ch.templateId ?? '')) ??
         this.enemies.slice().sort((a, b) => b.ch.level - a.ch.level)[0];
-      this.target.isTarget = true;
+      target.isTarget = true;
     }
     for (const c of this.map.crates) this.things.push({ kind: 'crate', gx: c.gx, gy: c.gy, done: false, name: 'Skrzynia' });
-    this.finds = this.map.finds.map((f) => ({ ...f, found: !f.hidden, taken: false, tried: false }));
     const oc = this.map.objCell;
     if (oc && this.objType === 'retrieve') {
       const itemId = contract.objective?.itemId ?? 'scrap_metal';
@@ -230,30 +307,91 @@ export class Mission {
       }
     }
 
-    this.combat = new Combat(
-      {
-        grid: this.grid, actors: this.actors, groups: this.groups, target: this.target,
-        isBlocked: (gx, gy) => this.neutral.some((n) => n.gx === gx && n.gy === gy),
-        inSight: (a) => this.isVisible(a),
-        freeActions: () => this.mode === 'explore',
-      },
-      rng,
-    );
-    this.combat.on((s) => {
-      if (s.kind === 'state' && s.actor.side === 'enemy' && s.to === 'dead' && !this.killed.includes(s.actor.ch)) {
-        this.killed.push(s.actor.ch);
-        if (s.actor === this.target) this.log('CEL ELIMINOWANY', 'good');
-        this.emitObjectives();
-        this.checkObjective();
-      } else if (s.kind === 'join' || s.kind === 'move') this.updateVisibility();
-      else if (s.kind === 'round' && this.mode === 'combat') {
-        // runda minęła także poza polem widzenia: wrogowie spoza walki idą dalej, widoczni dołączają
-        this.advanceWorld();
-        this.combat.engageVisible();
+    return target;
+  }
+
+  // ---------- zapis
+  /** Zapis stanu misji; tylko w eksploracji (walka ma kolejkę tur i stan HUD-u), inaczej null. */
+  snapshot(): MissionSnapshot | null {
+    if (this.mode !== 'explore') return null;
+    const ai = (a: Actor | null | undefined): number => (a ? this.actors.indexOf(a) : -1);
+    const ti = (t: MissionThing | null): number => (t ? this.things.indexOf(t) : -1);
+    const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+    return {
+      version: 1,
+      contractId: this.contract.id,
+      cells: Array.from(this.grid.cells),
+      actors: this.actors.map((a) => {
+        const pc = a.side === 'pc' ? this.party.indexOf(a.ch) : -1;
+        return {
+          ...(pc >= 0 ? { pc } : { ch: clone(a.ch) }),
+          side: a.side, gx: a.gx, gy: a.gy, state: a.state, group: a.group ? this.groups.indexOf(a.group) : null,
+          engaged: a.engaged, roam: a.roam ? clone(a.roam) : null, isTarget: a.isTarget, following: a.following,
+        };
+      }),
+      groups: this.groups.map((g) => ({ alerted: g.alerted, nextNotice: g.nextNotice, center: { ...g.center } })),
+      things: this.things.map(({ actor, ...t }) => ({ ...clone(t), actor: actor ? ai(actor) : undefined })),
+      finds: this.finds.map((f) => ({ ...f })),
+      itemThing: ti(this.itemThing),
+      captive: ti(this.captive),
+      objDevice: ti(this.objDevice),
+      settlers: this.settlers.map(ti),
+      nests: this.nests.map(ti),
+      wave: this.wave,
+      nextWave: this.nextWave,
+      stage: this.stage,
+      steps: this.steps,
+      scrap: this.scrap,
+      loot: clone(this.loot),
+      killed: this.killed.map((ch) => this.actors.findIndex((a) => a.ch === ch)).filter((i) => i >= 0),
+      explored: Array.from(this.explored, (v) => (v ? '1' : '0')).join(''),
+    };
+  }
+
+  /** Odtworzenie misji z zapisu (konstruktor). Zwraca cel polowania (albo null). */
+  private restore(s: MissionSnapshot, party: readonly Character[]): Actor | null {
+    if (s.cells.length === this.grid.cells.length) this.grid.cells.set(s.cells);
+    for (let i = 0; i < this.explored.length; i++) this.explored[i] = s.explored.charCodeAt(i) === 49 ? 1 : 0;
+    for (const [gi, g] of s.groups.entries()) this.groups.push({ idx: gi, actors: [], alerted: g.alerted, nextNotice: g.nextNotice, center: g.center });
+    let target: Actor | null = null;
+    for (const r of s.actors) {
+      const ch = r.pc !== undefined ? party[r.pc] : r.ch;
+      if (!ch) continue;
+      const grp = r.group !== null ? this.groups[r.group] ?? null : null;
+      const a = makeActor(ch, r.side, r, grp);
+      a.state = r.state;
+      a.engaged = false;
+      if (r.roam) a.roam = r.roam;
+      if (r.isTarget) {
+        a.isTarget = true;
+        target = a;
       }
-      else if (s.kind === 'end') this.onCombatEnd(s.outcome);
-    });
-    this.updateVisibility();
+      if (r.following) a.following = true;
+      grp?.actors.push(a);
+      this.actors.push(a);
+      (r.side === 'pc' ? this.pcs : r.side === 'enemy' ? this.enemies : this.neutral).push(a);
+    }
+    const actorAt = (i: number | undefined): Actor | undefined => (i !== undefined && i >= 0 ? this.actors[i] : undefined);
+    for (const { actor, ...t } of s.things) {
+      const th: MissionThing = { ...t };
+      const a = actorAt(actor);
+      if (a) th.actor = a;
+      this.things.push(th);
+    }
+    const thing = (i: number): MissionThing | null => (i >= 0 ? this.things[i] ?? null : null);
+    this.itemThing = thing(s.itemThing);
+    this.captive = thing(s.captive);
+    this.objDevice = thing(s.objDevice);
+    for (const i of s.settlers) if (thing(i)) this.settlers.push(thing(i)!);
+    for (const i of s.nests) if (thing(i)) this.nests.push(thing(i)!);
+    this.wave = s.wave;
+    this.nextWave = s.nextWave;
+    this.stage = s.stage;
+    this.steps = s.steps;
+    this.scrap = s.scrap;
+    this.loot = s.loot;
+    this.killed = s.killed.map((i) => this.actors[i]?.ch).filter((c): c is Character => !!c);
+    return target;
   }
 
   // ---------- rozmieszczanie celów

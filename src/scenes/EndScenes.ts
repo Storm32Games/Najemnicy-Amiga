@@ -12,7 +12,7 @@ import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_H, BASE_W, Motes, PAL, Typewriter, type UiButton, button, campfire, canvasTexture, enter, goto, label, panel } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
 import { wastelandTexture } from './ui/WastelandFont';
-import { Save, toast } from './ui/Widgets';
+import { Save, enterLoaded, toast } from './ui/Widgets';
 
 // Ekrany końcowe (port Oldgame/src/scenes/gameover.js i victory.js).
 
@@ -111,7 +111,7 @@ export class GameOverScene extends Phaser.Scene {
     this.buttons = this.add.container(0, 0).setAlpha(0).setDepth(9);
     if (Save.exists())
       this.buttons.add(button(this, BASE_W / 2 - 130, 246, 'Wczytaj ostatni zapis', () => {
-        if (Save.load() && campaign.state.party.length) goto(this, 'HubScene');
+        if (Save.load() && campaign.state.party.length) enterLoaded(this);
         else toast(this, 'Brak użytecznego zapisu.', 'bad');
       }, { w: 120, size: 7, primary: true }).box);
     this.buttons.add(button(this, BASE_W / 2 + 10, 246, 'Menu główne', () => {

@@ -19,7 +19,7 @@ import { getStat } from '../core/rules/stats';
 import type { Character, EquipSlot, ItemInstance } from '../core/rules/types';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
 import { BASE_W, Motes, PAL, button, campfire, cut, enter, goto, label, panel, parseColor } from './ui/Kit';
-import { Save, ScrollList, Tip, type Tone, abilityIconImage, bar, dialog, escConsumed, itemIconImage, itemTip, miniButton, modalOpen, namePrompt, openOptions, openSaveSlots, openWindow, portrait, toast } from './ui/Widgets';
+import { Save, ScrollList, enterLoaded, Tip, type Tone, abilityIconImage, bar, dialog, escConsumed, itemIconImage, itemTip, miniButton, modalOpen, namePrompt, openOptions, openSaveSlots, openWindow, portrait, toast } from './ui/Widgets';
 
 // Przystań (port Oldgame/src/scenes/hub.js): tablica zleceń, handlarz, lecznica, drużyna, karczma, zapis.
 // Diorama 3D zastąpiona malowanym tłem; okna DOM - panelami Phasera.
@@ -239,7 +239,7 @@ export class HubScene extends Phaser.Scene {
 
   /** Wczytanie slotu z miasta (miasto startuje od nowa ze stanem z zapisu). */
   private async loadSlot(): Promise<void> {
-    if ((await openSaveSlots(this, 'load')) !== null) goto(this, 'HubScene', {});
+    if ((await openSaveSlots(this, 'load')) !== null) enterLoaded(this);
   }
 
   /** Menu główne gry: zapis / wczytanie (3 sloty), wyjście z zapisem lub bez. */

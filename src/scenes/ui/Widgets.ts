@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import type { PixelText } from './BitmapFont';
 import { SoundManager } from '../../audio/SoundManager';
 import { campaign } from '../../core/campaign/session';
-import { type CampaignState, freshState } from '../../core/campaign/state';
+import { type CampaignState, type Contract, freshState } from '../../core/campaign/state';
+import type { MissionSnapshot } from '../../core/tactical/mission';
 import { NAME_COLORS, NAME_MAX, checkName } from '../../core/data/names';
 import { itemStatLine } from '../../core/HudState';
 import { abilityDef, itemDef } from '../../core/rules/lookup';
@@ -10,7 +11,7 @@ import { abilityIcon, abilityKind, itemIcon } from '../legacy/icons';
 import { portraitCanvas } from '../legacy/portraits';
 import { hasSpritePortrait, spriteIdOf, spritePortraitCanvas } from '../iso/SpriteUnits';
 import { addHiRes } from '../iso/HiRes';
-import { ART, BASE_H, BASE_W, CANVAS_H, CANVAS_W, PAL, RES, type UiButton, UI_TITLE, ZOOM, applyResolution, button, canApplyZoomLive, hex, label, panel, parseColor, uiAlphaToggle } from './Kit';
+import { ART, BASE_H, BASE_W, CANVAS_H, CANVAS_W, PAL, RES, type UiButton, UI_TITLE, ZOOM, applyResolution, button, goto, canApplyZoomLive, hex, label, panel, parseColor, uiAlphaToggle } from './Kit';
 import { RES_PRESETS, type ResSetting, Settings, UI_ALPHAS, UI_SIZES, type UiAlpha, resPreset } from './Settings';
 import { MissionLayout } from './MissionLayout';
 
@@ -37,11 +38,21 @@ export interface SaveSlotInfo {
   scrap: number;
   party: string[];
   level: number;
+  /** Tytuł zlecenia, gdy zapisano w trakcie misji. */
+  mission: string | null;
 }
 
-const readState = (key: string): Partial<CampaignState> | null => {
+/** Misja w toku w zapisie: zlecenie, stan planszy i kampania z chwili wejścia na teren (do "Wyjdź" / "Zapisz i wyjdź"). */
+export interface MissionResume {
+  contract: Contract;
+  snap: MissionSnapshot;
+  entry: string;
+}
+type SavedState = Partial<CampaignState> & { savedAt?: number; mission?: MissionResume | null };
+
+const readState = (key: string): SavedState | null => {
   try {
-    const s = JSON.parse(window.localStorage.getItem(key) ?? 'null') as (Partial<CampaignState> & { savedAt?: number }) | null;
+    const s = JSON.parse(window.localStorage.getItem(key) ?? 'null') as SavedState | null;
     return s && s.version === 1 && Array.isArray(s.party) ? s : null;
   } catch {
     return null; // uszkodzony zapis traktujemy jak brak zapisu
@@ -50,21 +61,27 @@ const readState = (key: string): Partial<CampaignState> | null => {
 
 const writeState = (key: string): boolean => {
   try {
-    window.localStorage.setItem(key, JSON.stringify({ ...campaign.state, savedAt: Date.now() }));
+    const mission = Save.missionProvider?.() ?? null;
+    window.localStorage.setItem(key, JSON.stringify({ ...campaign.state, savedAt: Date.now(), ...(mission ? { mission } : {}) }));
     return true;
   } catch {
     return false;
   }
 };
 
-const applyState = (s: Partial<CampaignState> | null): boolean => {
+const applyState = (s: SavedState | null): boolean => {
   if (!s) return false;
-  const { savedAt: _t, ...rest } = s as Partial<CampaignState> & { savedAt?: number };
+  const { savedAt: _t, mission, ...rest } = s;
   campaign.state = Object.assign(freshState(), rest);
+  Save.pending = mission && mission.contract && mission.snap ? mission : null;
   return true;
 };
 
 export const Save = {
+  /** Scena misji podaje tu stan misji do dołączenia do zapisu (null = zapis bez misji, np. w trakcie walki). */
+  missionProvider: null as (() => MissionResume | null) | null,
+  /** Misja z ostatnio wczytanego zapisu - enterLoaded() wraca na jej mapę. */
+  pending: null as MissionResume | null,
   /** Autozapis (Kontynuuj). */
   write(): boolean {
     return writeState(SAVE_KEY);
@@ -92,12 +109,20 @@ export const Save = {
   },
   /** Wczytuje slot do kampanii; po udanym wczytaniu autozapis wskazuje ten stan. */
   loadSlot(slot: number): boolean {
-    const ok = applyState(readState(slotKey(slot)));
-    if (ok) writeState(SAVE_KEY);
+    const raw = readState(slotKey(slot));
+    const ok = applyState(raw);
+    if (ok) {
+      // autozapis = kopia slotu (razem z misją w toku), a nie stan bieżącej sceny
+      try {
+        window.localStorage.setItem(SAVE_KEY, JSON.stringify(raw));
+      } catch {
+        /* brak miejsca - Kontynuuj zostaje przy starym autozapisie */
+      }
+    }
     return ok;
   },
   slotInfo(slot: number): SaveSlotInfo | null {
-    const s = readState(slotKey(slot)) as (Partial<CampaignState> & { savedAt?: number }) | null;
+    const s = readState(slotKey(slot));
     if (!s) return null;
     const party = (s.party ?? []).filter((c) => !c.conditions?.dead);
     return {
@@ -107,6 +132,7 @@ export const Save = {
       scrap: s.scrap ?? 0,
       party: party.map((c) => c.name),
       level: party.length ? Math.max(...party.map((c) => c.level ?? 1)) : 1,
+      mission: s.mission?.contract?.title ?? null,
     };
   },
   anySlot(): boolean {
@@ -114,6 +140,13 @@ export const Save = {
     return false;
   },
 };
+
+/** Po wczytaniu zapisu: misja w toku -> z powrotem na jej mapę, inaczej Przystań. */
+export function enterLoaded(scene: Phaser.Scene): void {
+  const m = Save.pending;
+  if (m) goto(scene, 'WorldScene', { contract: m.contract, resume: m });
+  else goto(scene, 'HubScene', {});
+}
 
 const fmtTime = (t: number | null): string => {
   if (t === null) return '';
@@ -139,7 +172,7 @@ export function openSaveSlots(scene: Phaser.Scene, mode: 'save' | 'load'): Promi
       row.add(label(scene, 6, 4, `SLOT ${i}`, { size: 7, bold: true, color: PAL.amber }));
       if (info) {
         row.add(label(scene, 48, 4, fmtTime(info.time), { size: 6, color: PAL.dim }));
-        row.add(label(scene, 6, 14, `Dzień ${info.day} · poz. ${info.level} · ${info.scrap} Złomu`, { size: 6 }));
+        row.add(label(scene, 6, 14, info.mission ? `Dzień ${info.day} · misja: ${info.mission.length > 24 ? `${info.mission.slice(0, 23)}…` : info.mission}` : `Dzień ${info.day} · poz. ${info.level} · ${info.scrap} Złomu`, { size: 6, color: info.mission ? PAL.amber : undefined }));
         const names = info.party.join(', ') || '(brak żywych najemników)';
         row.add(label(scene, 6, 23, names.length > 34 ? `${names.slice(0, 33)}…` : names, { size: 5.5, color: PAL.dim }));
       } else row.add(label(scene, 6, 15, '— pusty —', { size: 6.5, color: PAL.dim }));

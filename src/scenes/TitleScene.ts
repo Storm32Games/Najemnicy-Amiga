@@ -9,7 +9,7 @@ import { BASE_H, BASE_W, Motes, PAL, type UiButton, button, campfire, enter, got
 import { MOODS, backdrop, paintWreck } from './fx/Backdrops';
 import { deadTree } from './fx/Painter';
 import { wastelandTexture } from './ui/WastelandFont';
-import { Save, dialog, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
+import { Save, dialog, enterLoaded, modalOpen, openOptions, openSaveSlots, toast } from './ui/Widgets';
 
 // Ekran tytułowy (port Oldgame/src/scenes/title.js): pikselowe logo nad pustkowiem o zmierzchu + menu.
 
@@ -135,11 +135,11 @@ export class TitleScene extends Phaser.Scene {
         goto(this, 'RecruitScene');
         return;
       case 'continue':
-        if (Save.load() && campaign.state.party.length) goto(this, 'HubScene');
+        if (Save.load() && campaign.state.party.length) enterLoaded(this);
         else toast(this, 'Nie udało się wczytać zapisu.', 'bad');
         return;
       case 'load':
-        void openSaveSlots(this, 'load').then((slot) => slot !== null && goto(this, 'HubScene'));
+        void openSaveSlots(this, 'load').then((slot) => slot !== null && enterLoaded(this));
         return;
       case 'options':
         void openOptions(this);

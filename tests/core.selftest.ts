@@ -712,5 +712,28 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
   } else ok(false, 'no free cell for door test');
 }
 
+// ---------------- zapis misji (Mission.snapshot -> new Mission(..., snap))
+{
+  const st = freshState();
+  st.party = ['soldier', 'scout', 'medic'].map((c, i) => createCharacter({ name: `Z${i}`, classId: c as ClassId, ancestry: 'human' }));
+  const contract = { id: 'save-test', title: 'Uwolnij jeńca', type: 'rescue', level: 2, biome: 'ruins', enemies: ['raider_thug', 'raider_gunner'], objective: { type: 'rescue' } } as unknown as Contract;
+  const m1 = new Mission(contract, st.party, makeRng(11));
+  m1.steps = 7;
+  m1.scrap = 33;
+  m1.enemies[0].ch.hp = 1;
+  if (m1.things[0]) m1.things[0].done = true;
+  const snap = JSON.parse(JSON.stringify(m1.snapshot()));
+  ok(snap && snap.version === 1 && snap.contractId === 'save-test', 'snapshot: created in exploration');
+  const m2 = new Mission(contract, st.party, makeRng(99), snap);
+  ok(m2.pcs.length === m1.pcs.length && m2.pcs.every((a, i) => a.ch === st.party[i] && a.gx === m1.pcs[i].gx && a.gy === m1.pcs[i].gy), 'restore: party = campaign characters, same positions');
+  ok(m2.enemies.length === m1.enemies.length && m2.enemies.every((e, i) => e.gx === m1.enemies[i].gx && e.ch.hp === m1.enemies[i].ch.hp && e.group === m2.groups[m1.groups.indexOf(m1.enemies[i].group!)]), 'restore: enemies, hp, groups');
+  ok(m2.things.length === m1.things.length && m2.things.every((t, i) => t.done === m1.things[i].done && t.gx === m1.things[i].gx), 'restore: things');
+  ok(!!m2.captive && m2.captive.actor === m2.neutral[0] && m2.captive.gx === m1.captive!.gx, 'restore: captive linked to neutral actor');
+  ok(m2.steps === 7 && m2.scrap === 33 && m2.explored.every((v, i) => v >= m1.explored[i]), 'restore: counters, explored');
+  ok(Array.from(m2.grid.cells).every((v, i) => v === m1.grid.cells[i]), 'restore: grid cells');
+  m1.mode = 'combat';
+  ok(m1.snapshot() === null, 'snapshot: none during combat');
+}
+
 console.log(`\n${checks} checks, ${fails} failures`);
 process.exit(fails ? 1 : 0);

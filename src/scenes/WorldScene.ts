@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { type SfxName, SoundManager } from '../audio/SoundManager';
 import { campaign } from '../core/campaign/session';
-import { type CampaignState, type Contract, freshState } from '../core/campaign/state';
+import { type Contract, freshState } from '../core/campaign/state';
 import type { EnemyId } from '../core/data/ids';
 import type { AbilityDef, AbilityId, ClassId, EnemyLook, SkillId } from '../core/data/types';
 import { GAMEOVER_LINES } from '../core/data/story';
@@ -36,7 +36,7 @@ import { paintScorch } from './iso/FxArt';
 import { enemySheet, enemyUnitLook, ensureUnit, isCreatureLook, unitLookOf } from './iso/UnitLooks';
 import { spriteIdOf } from './iso/SpriteUnits';
 import { BASE_H, BASE_W, SX0, SY0, VH, VW, ZOOM, PAL, fitViewport, goto, label } from './ui/Kit';
-import { Save } from './ui/Widgets';
+import { type MissionResume, Save, enterLoaded, modalOpen, openSaveSlots } from './ui/Widgets';
 import { FRAME_CORPSE, FRAME_DOWN, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW, type UnitLook, paintUnitSheet } from './iso/UnitArt';
 
 // Pełna walka PF2e z src/core/tactical (Mission + Combat + AI): drużyna 3 najemników, grupy wrogów,
@@ -228,11 +228,15 @@ const ENEMIES = ['raider_thug', 'raider_gunner', 'raider_thug', 'raider_thug', '
 
 export interface WorldSceneData {
   contract?: Contract;
+  /** Wczytany zapis z misji w toku (Widgets.enterLoaded). */
+  resume?: MissionResume;
 }
 
 export class WorldScene extends Phaser.Scene {
   /** Zlecenie z tablicy (null = tryb demonstracyjny). */
   private job: Contract | null = null;
+  /** Misja wczytywana z zapisu (tylko w create()). */
+  private resume: MissionResume | null = null;
   /** Stan kampanii z chwili wejścia na teren (do "Zapisz i wyjdź" - misja i jej nagrody przepadają). */
   private entrySnapshot: string | null = null;
   private map!: TacticalMap;
@@ -332,6 +336,7 @@ export class WorldScene extends Phaser.Scene {
 
   init(data: WorldSceneData): void {
     this.job = data?.contract ?? null;
+    this.resume = data?.resume ?? null;
   }
 
   create(): void {
@@ -383,8 +388,11 @@ export class WorldScene extends Phaser.Scene {
     let party: Character[];
     let contract: MissionContract;
     this.entrySnapshot = null;
+    const resume = this.resume && this.job && this.resume.snap.contractId === this.job.id ? this.resume : null;
+    this.resume = null;
+    Save.pending = null;
     if (this.job && campaign.state.party.length) {
-      this.entrySnapshot = JSON.stringify(campaign.state);
+      this.entrySnapshot = resume ? resume.entry : JSON.stringify(campaign.state);
       party = campaign.state.party;
       contract = this.job;
       this.biome = this.job.biome;
@@ -413,7 +421,8 @@ export class WorldScene extends Phaser.Scene {
       const type: keyof typeof titles = tp in titles ? (tp as keyof typeof titles) : 'eliminate';
       contract = { id: seed, title: titles[type], type, level: 1, biome: this.biome, enemies: foes.length ? foes : ENEMIES, objective: { type, itemId: type === 'retrieve' ? 'radio_part' : null } };
     }
-    this.mission = new Mission(contract, party);
+    this.mission = new Mission(contract, party, Math.random, resume?.snap);
+    this.objDone = !!resume && this.mission.objectiveDone();
     this.map = this.mission.map;
     this.mission.on((s) => this.signals.push(s));
     this.combat.on((s) => this.signals.push(s));
@@ -445,6 +454,7 @@ export class WorldScene extends Phaser.Scene {
     this.buildWorld();
     for (const cell of this.cells) for (const img of cell.imgs) img.setVisible(false); // wszystko zaczyna w mgle
     this.createUnits();
+    if (resume) this.restoreUnitStates();
     this.createOverlays();
     this.setupCamera();
     this.updateFogOfWar();
@@ -504,7 +514,11 @@ export class WorldScene extends Phaser.Scene {
 
     // Polecenia z HUD-u (UIScene) -> logika
     const offCmd = this.hud.onCommand((c) => this.onHudCommand(c));
+    // zapis gry w trakcie misji dołącza stan planszy (Save.missionProvider)
+    const provider = (): MissionResume | null => this.missionResume();
+    Save.missionProvider = provider;
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (Save.missionProvider === provider) Save.missionProvider = null;
       offCmd();
       this.hud.answer(null);
       this.finishPlayerTurn();
@@ -516,8 +530,9 @@ export class WorldScene extends Phaser.Scene {
 
     this.scene.launch('UIScene', { hud: this.hud });
     this.refreshActions();
-    this.hud.pushLog(this.job ? `Zlecenie: ${this.job.title}. ${this.job.desc}` : 'Zlecenie: oczyść teren z szabrowników.', 'amber');
-    if (this.mission.objType === 'defend') this.hud.pushLog('Zajmijcie pozycje — za chwilę nadciągnie pierwsza fala napastników.', 'bad');
+    if (resume) this.hud.pushLog(`Wczytano zapis misji: ${this.job?.title ?? 'Zlecenie'}.`, 'amber');
+    else this.hud.pushLog(this.job ? `Zlecenie: ${this.job.title}. ${this.job.desc}` : 'Zlecenie: oczyść teren z szabrowników.', 'amber');
+    if (!resume && this.mission.objType === 'defend') this.hud.pushLog('Zajmijcie pozycje — za chwilę nadciągnie pierwsza fala napastników.', 'bad');
     this.hud.pushLog('Klikaj pola, by się poruszać; klik na skrzynię / cel = interakcja. Wrogowie czyhają w ciemności. [H] sterowanie.');
     this.updateFoes();
     this.refreshOverlay();
@@ -591,6 +606,12 @@ export class WorldScene extends Phaser.Scene {
         break;
       case 'quit':
         void this.askQuit();
+        break;
+      case 'save':
+        void this.saveLoadSlots('save');
+        break;
+      case 'load':
+        void this.saveLoadSlots('load');
         break;
       case 'zoom':
         this.zoomBy(c.f);
@@ -886,14 +907,17 @@ export class WorldScene extends Phaser.Scene {
 
     // --- skrzynie z łupem, znaleziska, cel misji
     for (const c of m.crates) {
-      const info = this.art.get('loot_crate', paintLootCrate);
+      // stan z misji (ważne po wczytaniu zapisu): przeszukana skrzynia bez błysku, otwarta (nie zacięta) - z otwartym wiekiem
+      const th = this.mission.things.find((t) => t.kind === 'crate' && t.gx === c.gx && t.gy === c.gy);
+      const open = !!th?.done && (th.tries ?? 0) < 2;
+      const info = open ? this.art.get('loot_crate_open', paintLootCrateOpen) : this.art.get('loot_crate', paintLootCrate);
       const img = this.place(c.gx, c.gy, info.key, info.ax, info.ay, objDepth(c.gx, c.gy, L_PROP));
-      const sparkle = this.addSparkle(c.gx, c.gy, -12);
+      const sparkle = th?.done ? null : this.addSparkle(c.gx, c.gy, -12);
       this.crates.set(this.idx(c.gx, c.gy), { img, sparkle });
     }
-    for (const f of this.mission.finds) if (f.found) this.addFindSparkle(f);
+    for (const f of this.mission.finds) if (f.found && !f.taken) this.addFindSparkle(f);
     // znacznik celu tylko dla "odzyskaj" (jeniec jest postacią - Oldgame/src/scenes/mission.js:210-221)
-    if (m.objCell && this.mission.itemThing) {
+    if (m.objCell && this.mission.itemThing && !this.mission.itemThing.done) {
       const { gx, gy } = m.objCell;
       const info = this.art.get('objective', paintObjective);
       const img = this.place(gx, gy, info.key, info.ax, info.ay, objDepth(gx, gy, L_PROP));
@@ -1922,10 +1946,52 @@ export class WorldScene extends Phaser.Scene {
     this.refreshOverlay();
   }
 
+  /** Stan misji do zapisu gry (Save.missionProvider); null poza zleceniem kampanii, w walce i po końcu misji. */
+  private missionResume(): MissionResume | null {
+    if (!this.job || !this.entrySnapshot || this.over) return null;
+    const snap = this.mission.snapshot();
+    return snap ? { contract: this.job, snap, entry: this.entrySnapshot } : null;
+  }
+
+  /** Czy można teraz zapisać grę (eksploracja, nic się nie dzieje); inaczej komunikat w dzienniku. */
+  private canSaveNow(): boolean {
+    if (!this.entrySnapshot) {
+      this.hud.pushLog('W trybie demonstracyjnym nie ma zapisu gry.');
+    } else if (this.mission.inCombat()) {
+      this.hud.pushLog('Nie można zapisać gry w trakcie walki.', 'bad');
+    } else if (this.over || this.hud.busy || !this.hud.canAct) {
+      this.hud.pushLog('Poczekaj, aż drużyna skończy ruch.');
+    } else return true;
+    SoundManager.sfx('error', { vol: 0.4 });
+    return false;
+  }
+
+  /** Okno slotów zapisu / wczytania nad HUD-em misji. */
+  private async saveLoadSlots(mode: 'save' | 'load'): Promise<void> {
+    if (mode === 'save' && !this.canSaveNow()) return;
+    if (mode === 'load' && (this.over || this.hud.busy || (this.hud.inCombat && !this.playerTurn))) {
+      SoundManager.sfx('error', { vol: 0.4 });
+      return;
+    }
+    const ui = this.scene.get('UIScene');
+    if (!ui || modalOpen(ui)) return;
+    const wasBusy = this.hud.busy;
+    this.hud.setBusy(true);
+    const slot = await openSaveSlots(ui, mode);
+    if (mode === 'load' && slot !== null) {
+      this.over = true;
+      this.scene.get('UIScene')?.cameras.main?.fadeOut(400, 0, 0, 0);
+      enterLoaded(this);
+      return;
+    }
+    if (mode === 'save' && slot !== null) this.hud.pushLog(`Gra zapisana w slocie ${slot}.`, 'good');
+    this.hud.setBusy(wasBusy);
+    this.refreshOverlay();
+  }
+
   /**
-   * Wyjście do ekranu tytułowego. W odróżnieniu od Odwrotu misja przepada w całości:
-   * żadnych łupów, PD ani nagrody. "Zapisz i wyjdź" zapisuje kampanię w stanie z chwili
-   * wejścia na teren (zlecenie zostaje na tablicy), "Wyjdź bez zapisu" wraca do ostatniego zapisu.
+   * Wyjście do ekranu tytułowego. "Zapisz i wyjdź" zapisuje bieżący stan misji (Kontynuuj wraca na tę mapę);
+   * "Wyjdź bez zapisu" wraca do ostatniego zapisu. W walce zapis jest niedostępny.
    */
   private async askQuit(): Promise<void> {
     if (this.over || (!this.hud.canAct && !this.hud.inCombat)) return;
@@ -1936,23 +2002,29 @@ export class WorldScene extends Phaser.Scene {
     }
     const wasBusy = this.hud.busy;
     this.hud.setBusy(true);
+    const canSave = !!this.entrySnapshot && !this.mission.inCombat();
     const options: PromptOption[] = [{ label: 'Zostań', value: null }];
-    if (this.entrySnapshot) options.push({ label: 'Zapisz i wyjdź', value: 'save' });
+    if (canSave) options.push({ label: 'Zapisz i wyjdź', value: 'save' });
     options.push({ label: this.entrySnapshot ? 'Wyjdź bez zapisu' : 'Wyjdź', value: 'quit', danger: true });
     const v = await this.hud.ask({
       title: 'Wyjść z gry?',
-      body: this.entrySnapshot
-        ? 'Wracacie do ekranu tytułowego. W odróżnieniu od Odwrotu tracicie wszystko z tej misji: łupy, doświadczenie i nagrodę.\n\n"Zapisz i wyjdź" zapisze grę w stanie sprzed wejścia na teren (zlecenie zostaje na tablicy). "Wyjdź bez zapisu" wraca do ostatniego zapisu.'
-        : 'Wracacie do ekranu tytułowego.',
+      body: !this.entrySnapshot
+        ? 'Wracacie do ekranu tytułowego.'
+        : canSave
+          ? 'Wracacie do ekranu tytułowego.\n\n"Zapisz i wyjdź" zapisze grę razem z bieżącym stanem misji - "Kontynuuj" wróci na tę mapę. "Wyjdź bez zapisu" wraca do ostatniego zapisu.'
+          : 'Trwa walka - nie można teraz zapisać gry. Wyjście wraca do ostatniego zapisu; postęp tej misji od tamtej chwili przepada.',
       options,
     });
     if (this.over) return;
     if (v === 'save' || v === 'quit') {
+      if (v === 'save' && !Save.write()) {
+        this.hud.pushLog('Zapis nie powiódł się!', 'bad');
+        this.hud.setBusy(wasBusy);
+        this.refreshOverlay();
+        return;
+      }
       this.over = true;
-      if (v === 'save' && this.entrySnapshot) {
-        campaign.state = Object.assign(freshState(), JSON.parse(this.entrySnapshot) as CampaignState);
-        Save.write();
-      } else if (this.entrySnapshot) {
+      if (v === 'quit' && this.entrySnapshot) {
         // porzucony stan z misji (rany, zużyte przedmioty) nie może zostać w pamięci
         if (!Save.load()) campaign.state = freshState();
       }
@@ -1962,6 +2034,16 @@ export class WorldScene extends Phaser.Scene {
     }
     this.hud.setBusy(wasBusy);
     this.refreshOverlay();
+  }
+
+  /** Po wczytaniu zapisu: powaleni i polegli od razu leżą (bez animacji upadku). */
+  private restoreUnitStates(): void {
+    for (const [a, u] of this.units) {
+      if (a.state === 'up') continue;
+      this.lie(u);
+      this.tintFor(u);
+      if (a.state === 'dead') u.shadow.setAlpha(0.3);
+    }
   }
 
   /** Wybór najemnika: w eksploracji zmienia lidera, w walce - kolejność tury (Combat.switchTo). */
