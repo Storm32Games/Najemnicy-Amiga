@@ -71,8 +71,16 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
-// Płótno jest już w (prawie) natywnej rozdzielczości ekranu - resztę skalowania CSS wygładzamy zamiast "pikselować".
-game.canvas.style.imageRendering = 'auto';
+// Skalowanie CSS płótna (okno przeglądarki ma inny rozmiar niż preset). Powiększenie: najbliższy sąsiad - piksel
+// projektowy to >= 2 piksele płótna, więc zostaje ostry (wygładzanie rozmywało kontury postaci). Pomniejszenie:
+// wygładzanie, bo najbliższy sąsiad gubiłby całe wiersze płótna. Najostrzej: pełny ekran z presetem = rozdzielczość monitora.
+const fitCanvasRendering = (): void => {
+  const shown = game.canvas.getBoundingClientRect().width * (window.devicePixelRatio || 1);
+  game.canvas.style.imageRendering = shown >= game.canvas.width - 0.5 ? 'pixelated' : 'auto';
+};
+game.scale.on(Phaser.Scale.Events.RESIZE, fitCanvasRendering);
+window.addEventListener('resize', () => requestAnimationFrame(fitCanvasRendering));
+game.events.once(Phaser.Core.Events.READY, fitCanvasRendering);
 // Odblokowuje WebAudio przy pierwszym kliknięciu/klawiszu; sceny wołają SoundManager.sfx()/music()/ambience().
 SoundManager.attach(game);
 // Tylko w trybie deweloperskim: uchwyt do testów automatycznych / konsoli.
