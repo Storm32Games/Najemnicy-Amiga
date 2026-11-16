@@ -18,7 +18,7 @@ import type { CheckResult, DamageRoll } from '../core/rules/dice';
 import { HACK_SKILLS, hasLockpick, IMPROVISED_PENALTY, LOCK_SKILLS, type LockAttempt } from '../core/rules/locks';
 import type { ActionResult, Character, GridPos } from '../core/rules/types';
 import { aiStep } from '../core/tactical/ai';
-import { type ActionOutcome, type Actor, type ActorState, type CombatSignal, type TurnInfo, Combat } from '../core/tactical/combat';
+import { type ActionOutcome, type Actor, type ActorState, type CombatSignal, type TurnInfo, Combat, exploreAbilityOk, exploreItemOk } from '../core/tactical/combat';
 import { CellKind, type SearchResult, UNREACHABLE, cheb, strideActions } from '../core/tactical/grid';
 import type { Biome, MapProp, PropType, TacticalMap } from '../core/tactical/mapgen';
 import { CRATE_SKILLS, type MissionContract, type MissionFind, type MissionResult, type MissionSignal, type MissionThing, Mission } from '../core/tactical/mission';
@@ -314,6 +314,14 @@ export class WorldScene extends Phaser.Scene {
     return this.mission.pcs.find((p) => p.ch === ch) ?? null;
   }
 
+  /** Kto działa z paska akcji: najemnik w turze walki albo wybrany najemnik w eksploracji. */
+  private actorNow(): Actor | null {
+    if (this.playerTurn) return this.playerTurn.actor;
+    if (this.hud.inCombat || this.over || this.mission.mode !== 'explore') return null;
+    const s = this.selected;
+    return s && s.state === 'up' ? s : null;
+  }
+
   constructor() {
     super('WorldScene');
   }
@@ -498,6 +506,7 @@ export class WorldScene extends Phaser.Scene {
     });
 
     this.scene.launch('UIScene', { hud: this.hud });
+    this.refreshActions();
     this.hud.pushLog(this.job ? `Zlecenie: ${this.job.title}. ${this.job.desc}` : 'Zlecenie: oczyść teren z szabrowników.', 'amber');
     if (this.mission.objType === 'defend') this.hud.pushLog('Zajmijcie pozycje — za chwilę nadciągnie pierwsza fala napastników.', 'bad');
     this.hud.pushLog('Klikaj pola, by się poruszać; klik na skrzynię / cel = interakcja. Wrogowie czyhają w ciemności. [H] sterowanie.');
@@ -1570,6 +1579,9 @@ export class WorldScene extends Phaser.Scene {
     const sel = this.selected;
     if (!sel || this.over || !this.hud.canAct || this.hud.inCombat) return;
     const who = this.visibleActorAt(cell);
+    const mode = this.mode;
+    if (mode?.type === 'ability') return this.abilityClick(sel, mode.id, cell, who);
+    if (mode?.type === 'item') return this.itemClick(sel, mode.uid, cell, who);
     if (who?.side === 'pc') {
       // Oldgame hud.js:247: klik na wybranego najemnika otwiera kartę postaci
       if (who === sel) this.hud.toggleInventory(true);
@@ -1617,6 +1629,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     this.hud.setBusy(false);
+    this.refreshActions();
     this.refreshOverlay();
     this.refreshPathPreview();
     if (await this.askAfterObjective()) return;
@@ -1642,7 +1655,7 @@ export class WorldScene extends Phaser.Scene {
     SoundManager.sfx('radio', { vol: 0.6 });
     const v = await this.hud.ask({
       title: 'Cel wykonany',
-      body: `Zlecenie zaliczone. Na terenie zostało jeszcze:\n- ${left.join('\n- ')}\n\nMożecie dalej przeszukiwać okolicę i wrócić do strefy ewakuacji (albo użyć Odwrotu - nagroda za zlecenie zostaje).`,
+      body: `Zlecenie zaliczone. Na terenie zostało jeszcze:\n- ${left.join('\n- ')}\n\nMożecie dalej przeszukiwać okolicę, a potem wrócić do strefy ewakuacji albo użyć przycisku Powrót - nagroda za zlecenie zostaje.`,
       options: [{ label: 'Przeszukaj teren', value: null, primary: true }, { label: 'Ewakuacja teraz', value: 'go' }],
       w: 360,
     });
@@ -1810,6 +1823,7 @@ export class WorldScene extends Phaser.Scene {
   /** Odwrót z potwierdzeniem (eksploracja i walka) - Oldgame/src/scenes/mission.js:357-361. */
   private async askRetreat(): Promise<void> {
     if (this.over || (!this.hud.canAct && !this.hud.inCombat)) return;
+    const done = this.mission.objectiveDone() && this.mission.objType !== 'rescue';
     if (this.hud.inCombat && !this.playerTurn) {
       this.hud.pushLog('Odwrót możliwy w turze najemnika.');
       SoundManager.sfx('error', { vol: 0.4 });
@@ -1818,11 +1832,11 @@ export class WorldScene extends Phaser.Scene {
     const wasBusy = this.hud.busy;
     this.hud.setBusy(true);
     const v = await this.hud.ask({
-      title: 'Odwrót?',
-      body: this.mission.objectiveDone() && this.mission.objType !== 'rescue'
-        ? 'Cel zlecenia jest wykonany — opuszczacie teren z nagrodą. Czego nie zabraliście, zostaje na miejscu.'
+      title: done ? 'Powrót?' : 'Odwrót?',
+      body: done
+        ? 'Cel zlecenia jest wykonany — wracacie z nagrodą. Czego nie zabraliście, zostaje na miejscu.'
         : 'Wycofujecie się ze zlecenia. Nagroda za cel przepada, ale zachowujecie łupy i doświadczenie za pokonanych wrogów.',
-      options: [{ label: 'Zostań', value: null }, { label: 'Odwrót', value: 'go', danger: true }],
+      options: [{ label: 'Zostań', value: null }, done ? { label: 'Powrót', value: 'go', primary: true } : { label: 'Odwrót', value: 'go', danger: true }],
     });
     if (this.over) return;
     if (v === 'go') {
@@ -1886,6 +1900,9 @@ export class WorldScene extends Phaser.Scene {
       this.hud.setActive(a.ch);
       this.focusOn(this.units.get(a)!);
       SoundManager.sfx('click');
+      this.mode = null;
+      this.modeHint = null;
+      this.refreshActions();
       this.refreshOverlay();
       this.refreshPathPreview();
       return;
@@ -1946,6 +1963,7 @@ export class WorldScene extends Phaser.Scene {
     this.hud.showBanner(allDead ? 'TEREN CZYSTY' : 'WALKA ZAKOŃCZONA', 'good');
     this.updateFogOfWar();
     this.hud.setBusy(false);
+    this.refreshActions();
     this.refreshOverlay();
     this.refreshPathPreview();
     if (await this.askAfterObjective()) return;
@@ -1994,7 +2012,8 @@ export class WorldScene extends Phaser.Scene {
   /** Jedno polecenie gracza w jego turze: logika -> animacja sygnałów -> odświeżenie HUD-u. */
   private async combatAct(fn: (a: Actor) => ActionOutcome): Promise<void> {
     const t = this.playerTurn;
-    if (!t || !this.hud.canAct) return;
+    if (!t) return this.exploreAct(fn);
+    if (!this.hud.canAct) return;
     this.hud.setBusy(true);
     this.mode = null;
     this.modeHint = null;
@@ -2025,6 +2044,25 @@ export class WorldScene extends Phaser.Scene {
     this.refreshActions();
     this.refreshOverlay();
     this.refreshPathPreview();
+  }
+
+  /** Zdolność / przedmiot w eksploracji: bez tury i kosztu akcji (limity użyć obowiązują jak w walce). */
+  private async exploreAct(fn: (a: Actor) => ActionOutcome): Promise<void> {
+    const a = this.actorNow();
+    if (!a || !this.hud.canAct) return;
+    this.hud.setBusy(true);
+    this.mode = null;
+    this.modeHint = null;
+    this.clearPathPreview();
+    this.refreshOverlay();
+    this.hud.setHover(null);
+    const out = fn(a);
+    if (!out.ok && out.reason) this.deny(out.reason);
+    await this.flush();
+    this.hud.notify('stats');
+    this.hud.notify('inventory');
+    if (this.sub === 'items' && !this.combat.consumables(a).length) this.sub = null;
+    await this.afterExplore();
   }
 
   private async combatClick(cell: GridPos): Promise<void> {
@@ -2079,26 +2117,53 @@ export class WorldScene extends Phaser.Scene {
 
   private refreshActions(): void {
     const t = this.playerTurn;
-    if (!t || this.over || t.actor.state !== 'up' || this.combat.turn !== t) {
+    const a = this.actorNow();
+    if (!a || this.over || a.state !== 'up' || (t && this.combat.turn !== t)) {
       this.hud.setActions(null, []);
       return;
     }
-    const a = t.actor, n = t.actions, mode = this.mode;
+    // eksploracja: te same zdolności i przedmioty co w walce, bez kosztu akcji (np. leczenie po walce)
+    const free = !t;
+    const n = t ? t.actions : Infinity, mode = this.mode;
+    const ONLY_COMBAT = ' — tylko w walce';
     const list: ActionButton[] = [];
     const add = (id: string, label: string, cost: number | 'r' | null, o: { enabled?: boolean; active?: boolean; tip?: string } = {}): void => {
       const enabled = (o.enabled ?? true) && (typeof cost !== 'number' || cost <= n);
-      list.push({ id, label, cost, enabled, active: o.active, tip: o.tip });
+      list.push({ id, label, cost: free ? null : cost, enabled, active: o.active, tip: o.tip });
     };
     if (this.sub === 'items') {
       for (const it of this.combat.consumables(a)) {
         const def = itemDef(it.id);
         const c = def?.type === 'consumable' ? def.consumable : null;
         if (!def || !c) continue;
-        add(`item:${it.uid}`, `${def.name}${it.qty > 1 ? ' x' + it.qty : ''}`, c.actions, { active: mode?.type === 'item' && mode.uid === it.uid, tip: `${def.name}: ${def.desc}` });
+        const ok = !free || exploreItemOk(c);
+        add(`item:${it.uid}`, `${def.name}${it.qty > 1 ? ' x' + it.qty : ''}`, c.actions, { enabled: ok, active: mode?.type === 'item' && mode.uid === it.uid, tip: `${def.name}: ${def.desc}${ok ? '' : ONLY_COMBAT}` });
       }
       add('back', 'Wróć', null, { tip: 'Powrót do akcji [Esc].' });
-      add('end', 'Koniec tury', null, { tip: 'Zakończ turę [Spacja].' });
+      if (!free) add('end', 'Koniec tury', null, { tip: 'Zakończ turę [Spacja].' });
       this.hud.setActions(`PRZEDMIOTY — ${a.ch.name}`, list);
+      return;
+    }
+    if (free) {
+      for (const id of a.ch.abilities) {
+        const ab = abilityDef(id);
+        if (!ab || id === 'strike' || id === 'stand') continue;
+        const ok = exploreAbilityOk(ab);
+        const left = ab.uses ? usesLeft(a.ch, id as AbilityId) : Infinity;
+        add(`ab:${id}`, ab.name + (ab.uses ? ` (${left})` : ''), null, {
+          enabled: ok && left > 0,
+          active: mode?.type === 'ability' && mode.id === id,
+          tip: `${ab.name}: ${ab.desc}${ok ? '' : ONLY_COMBAT}`,
+        });
+      }
+      const cons = this.combat.consumables(a);
+      if (cons.length) add('items', `Przedmioty (${cons.reduce((s, x) => s + x.qty, 0)})`, null, { tip: 'Użyj przedmiotu z plecaka (na siebie lub sojusznika).' });
+      const th = this.mission.things.find((x) => !x.done && cheb(a, x) <= 1);
+      if (th) {
+        const INTERACT: Partial<Record<MissionThing['kind'], string>> = { crate: 'Otwórz skrzynię', item: 'Zabierz cel', nest: 'Zniszcz gniazdo', door: 'Otwórz drzwi', device: 'Hakuj' };
+        add('interact', INTERACT[th.kind] ?? 'Uwolnij', null, { tip: 'Interakcja z obiektem obok.' });
+      }
+      this.hud.setActions(`${a.ch.name} — EKSPLORACJA`, list);
       return;
     }
     const w = normWeapon(getWeapon(a.ch));
@@ -2145,7 +2210,7 @@ export class WorldScene extends Phaser.Scene {
 
   /** Esc / PPM: anuluj tryb celowania, potem podmenu przedmiotów. */
   private cancelMode(): void {
-    if (!this.playerTurn) return;
+    if (!this.actorNow()) return;
     if (this.mode) this.mode = null;
     else if (this.sub) this.sub = null;
     else return;
@@ -2158,8 +2223,16 @@ export class WorldScene extends Phaser.Scene {
 
   private async onAction(id: string): Promise<void> {
     const t = this.playerTurn;
-    if (!t || !this.hud.canAct) return;
-    const a = t.actor;
+    const a = this.actorNow();
+    if (!a || !this.hud.canAct) return;
+    if (!t) {
+      // eksploracja: tylko zdolności, przedmioty, broń i interakcja
+      if (id === 'interact') {
+        const th = this.mission.things.find((x) => !x.done && cheb(a, x) <= 1);
+        return th ? this.exploreInteract(th) : undefined;
+      }
+      if (id !== 'items' && id !== 'back' && id !== 'swap' && !id.startsWith('ab:') && !id.startsWith('item:')) return;
+    }
     if (id === 'stride') return this.setMode({ type: 'stride' }, 'Marsz: kliknij podświetlone pole. [Esc = anuluj]');
     if (id === 'step') return this.setMode({ type: 'step' }, 'Krok: kliknij zielone pole obok. [Esc = anuluj]');
     if (id === 'strike') return this.setMode({ type: 'strike' }, 'Atak: kliknij wroga z czerwonym konturem. [Esc = anuluj]');
@@ -2198,8 +2271,9 @@ export class WorldScene extends Phaser.Scene {
   private async abilityPick(a: Actor, id: AbilityId): Promise<void> {
     const ab = abilityDef(id);
     const t = this.playerTurn;
-    if (!ab || !t) return;
-    if (this.combat.abilityCost(ab) > t.actions) return this.deny('Za mało akcji.');
+    if (!ab) return;
+    if (t && this.combat.abilityCost(ab) > t.actions) return this.deny('Za mało akcji.');
+    if (!t && !exploreAbilityOk(ab)) return this.deny('Tego można użyć tylko w walce.');
     if (ab.target === 'area' && !(ab.range > 0)) return this.combatAct((x) => this.combat.useAbility(x, id));
     if (ab.target === 'self' || ab.target === 'none' || !ab.target) return this.combatAct((x) => this.combat.useAbility(x, id));
     if ((ab.target === 'enemy' || ab.target === 'ally') && !this.combat.abilityTargets(a, ab).length) return this.deny('Brak celów w zasięgu.');
@@ -2229,8 +2303,9 @@ export class WorldScene extends Phaser.Scene {
     const t = this.playerTurn;
     const inst = a.ch.inventory.find((i) => i.uid === uid);
     const c = inst ? this.combat.consumableOf(inst) : null;
-    if (!t || !inst || !c) return;
-    if (c.actions > t.actions) return this.deny('Za mało akcji.');
+    if (!inst || !c) return;
+    if (t && c.actions > t.actions) return this.deny('Za mało akcji.');
+    if (!t && !exploreItemOk(c)) return this.deny('Tego można użyć tylko w walce.');
     if (c.target === 'self') return this.combatAct((x) => this.combat.useItem(x, inst));
     const name = itemDef(inst.id)?.name ?? 'Przedmiot';
     const hint =
@@ -2303,6 +2378,11 @@ export class WorldScene extends Phaser.Scene {
     const c = def.consumable;
     if (!this.hud.inCombat) {
       if (c.target === 'enemy' || c.target === 'area') return this.deny('Tego można użyć tylko w walce.');
+      if (c.target !== 'self' && this.mission.pcs.some((p) => p !== sel && p.state !== 'dead' && cheb(sel, p) <= Math.max(1, c.range || 1))) {
+        // sojusznik w zasięgu: wybór celu (siebie lub kolegę) jak w walce
+        this.hud.toggleInventory(false);
+        return this.itemPick(sel, uid);
+      }
       if (c.effect === 'heal' && sel.ch.hp >= sel.ch.maxHp) return this.deny(`${sel.ch.name} ma pełne PW.`);
       const r = useConsumable(sel.ch, inst, [sel.ch]);
       this.hud.pushLines(r.log, 'amber');
@@ -2458,6 +2538,7 @@ export class WorldScene extends Phaser.Scene {
           this.objDone = true;
           SoundManager.sfx('radio', { vol: 0.7 });
         }
+        this.hud.contractDone = this.mission.objectiveDone() && this.mission.objType !== 'rescue';
         this.hud.setObjectives(this.mission.contract.title ?? 'Zlecenie', s.lines.map((l) => ({ text: l.text, done: l.done, go: l.go, dim: l.tone === 'dim' })));
         break;
       case 'complete':
@@ -2951,11 +3032,13 @@ export class WorldScene extends Phaser.Scene {
     const who = this.visibleActorAt(target);
     const t = this.playerTurn;
     const mode = this.mode;
+    /** Kto celuje (tura walki albo tryb celowania w eksploracji). */
+    const ma = t ? t.actor : mode ? this.actorNow() : null;
 
     // celowanie obszarowe (granaty, zdolności): okrąg wybuchu, trafieni, ostrzeżenie o swoich (combat.js:383-391)
-    const area = t ? this.areaSpec(t.actor) : null;
-    if (t && area) {
-      const a = t.actor;
+    const area = ma ? this.areaSpec(ma) : null;
+    if (ma && area) {
+      const a = ma;
       const ok = this.combat.areaCellOk(a, target, area.range);
       const hit = ok ? area.targets(target) : [];
       for (const x of hit) this.hoverOutline.set(x, x.side === a.side ? OL.blastAlly : OL.blast);
@@ -2975,10 +3058,10 @@ export class WorldScene extends Phaser.Scene {
       this.drawPath([], () => COLOR_OK);
       this.setCostLabel(null, target, 0);
       this.cursor.setTint(who.side === 'enemy' ? COLOR_HOSTILE : COLOR_ALLY);
-      if (t && mode && (mode.type === 'ability' || mode.type === 'item')) {
+      if (ma && mode && (mode.type === 'ability' || mode.type === 'item')) {
         const ok = (this.outline.get(who) ?? OL.off) !== OL.off && this.outline.has(who);
         if (ok) this.hoverOutline.set(who, OL.hover);
-        const name = mode.type === 'ability' ? abilityDef(mode.id)?.name : itemDef(t.actor.ch.inventory.find((i) => i.uid === mode.uid)?.id)?.name;
+        const name = mode.type === 'ability' ? abilityDef(mode.id)?.name : itemDef(ma.ch.inventory.find((i) => i.uid === mode.uid)?.id)?.name;
         this.hud.setHover(`${name ?? ''} → ${who.ch.name} · PW ${Math.max(0, who.ch.hp)}/${who.ch.maxHp} · ${ok ? 'kliknij, by użyć' : 'nieprawidłowy cel (zasięg / linia strzału)'}`);
         return;
       }
@@ -3034,6 +3117,14 @@ export class WorldScene extends Phaser.Scene {
         const n = strideActions(c, sp);
         this.hud.setHover(`Marsz: ${path.length} ${path.length === 1 ? 'pole' : path.length < 5 ? 'pola' : 'pól'} — ${n} ${n === 1 ? 'akcja' : 'akcje'}`);
       }
+      return;
+    }
+
+    if (mode) {
+      // eksploracja w trybie celowania: bez drogi (klik w pole nie rusza drużyny)
+      this.drawPath([], () => COLOR_OK);
+      this.setCostLabel(null, target, 0);
+      this.cursor.setTint(0x8a8a9a);
       return;
     }
 
@@ -3099,19 +3190,22 @@ export class WorldScene extends Phaser.Scene {
     if (this.over || !this.hud.canAct || this.hud.prompt) return;
     const tiles: { gx: number; gy: number; n: string }[] = [];
     const t = this.playerTurn;
-    if (t) {
-      const a = t.actor, mode = this.mode;
+    const ma = t ? t.actor : this.mode ? this.actorNow() : null;
+    if (ma) {
+      const a = ma, mode = this.mode;
       const foes = this.combat.foesOf(a).filter((f) => this.units.get(f)?.sprite.visible);
       if (!mode || mode.type === 'stride') {
         for (const o of this.combat.moveOptions(a)) if (this.mission.thingAt(o.gx, o.gy)?.kind !== 'crate') tiles.push({ gx: o.gx, gy: o.gy, n: String(Math.min(3, o.actions)) });
-        if (t.actions > 0) for (const f of foes) if (this.combat.strikeInfo(a, f).ok) this.outline.set(f, OL.foe);
+        if (t && t.actions > 0) for (const f of foes) if (this.combat.strikeInfo(a, f).ok) this.outline.set(f, OL.foe);
       } else if (mode.type === 'step') {
         for (const p of this.combat.stepOptions(a)) tiles.push({ ...p, n: 's' });
       } else if (mode.type === 'strike') {
         for (const f of foes) this.outline.set(f, this.combat.strikeInfo(a, f).ok ? OL.foe : OL.off);
       } else if (mode.type === 'ability') {
         const ab = abilityDef(mode.id);
-        if (ab && (ab.target === 'enemy' || ab.target === 'ally')) for (const x of this.combat.abilityTargets(a, ab)) this.outline.set(x, ab.target === 'ally' ? OL.ally : OL.foe);
+        // eksploracja: bez celów, które już dostały tę zdolność (bez limitu użyć) po ostatniej walce
+        const spent = (x: Actor): boolean => !t && !ab?.uses && this.combat.restSpent(mode.id, x);
+        if (ab && (ab.target === 'enemy' || ab.target === 'ally')) for (const x of this.combat.abilityTargets(a, ab)) if (!spent(x)) this.outline.set(x, ab.target === 'ally' ? OL.ally : OL.foe);
       } else if (mode.type === 'item') {
         const inst = a.ch.inventory.find((i) => i.uid === mode.uid);
         const c = inst ? this.combat.consumableOf(inst) : null;

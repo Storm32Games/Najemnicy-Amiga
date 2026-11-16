@@ -235,6 +235,7 @@ export class Mission {
         grid: this.grid, actors: this.actors, groups: this.groups, target: this.target,
         isBlocked: (gx, gy) => this.neutral.some((n) => n.gx === gx && n.gy === gy),
         inSight: (a) => this.isVisible(a),
+        freeActions: () => this.mode === 'explore',
       },
       rng,
     );

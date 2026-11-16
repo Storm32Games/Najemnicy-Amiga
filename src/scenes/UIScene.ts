@@ -129,6 +129,8 @@ interface Button {
   hovered: boolean;
   color: number;
   set(label: string, enabled: boolean): void;
+  /** Zmiana stylu (np. "Odwrót" czerwony -> "Powrót" bursztynowy). */
+  style(v: BtnVariant): void;
 }
 
 /** Pozycje przesuniętych paneli (null = domyślna); na poziomie modułu, żeby przetrwały kolejne misje. */
@@ -472,6 +474,7 @@ export class UIScene extends Phaser.Scene {
         break;
       case 'objectives':
         this.drawObjectives();
+        this.drawTurn();
         break;
       case 'actions':
         this.drawActions();
@@ -518,8 +521,10 @@ export class UIScene extends Phaser.Scene {
 
   /** Przycisk menu w stylu starego .btn (Oldgame/index.html): brązowe tło, rdzawa ramka, twardy cień. */
   private button(x: number, y: number, w: number, label: string, onClick: () => void, variant: BtnVariant = 'normal', parent?: Phaser.GameObjects.Container): Button {
-    const edge = variant === 'primary' ? PAL.amber : variant === 'danger' ? PAL.blood : PAL.edge;
-    const ink = variant === 'primary' ? PAL.amber : variant === 'danger' ? PAL.bad : PAL.text;
+    const edgeOf = (v: BtnVariant): number => (v === 'primary' ? PAL.amber : v === 'danger' ? PAL.blood : PAL.edge);
+    const inkOf = (v: BtnVariant): number => (v === 'primary' ? PAL.amber : v === 'danger' ? PAL.bad : PAL.text);
+    let edge = edgeOf(variant);
+    let ink = inkOf(variant);
     const shadow = this.add.rectangle(x + 1, y + 1, w, BTN_H, 0x000000, 0.8).setOrigin(0);
     const bg = this.add.rectangle(x, y, w, BTN_H, PAL.panel2, 1).setOrigin(0).setStrokeStyle(1, edge).setInteractive({ useHandCursor: true });
     const text = this.text(x + w / 2, y + 2, label, ink).setOrigin(0.5, 0);
@@ -534,6 +539,13 @@ export class UIScene extends Phaser.Scene {
         text.setColor(hot ? 0xffffff : ink);
         bg.setAlpha(enabled ? 1 : 0.55);
         text.setAlpha(enabled ? 1 : 0.4);
+      },
+      style: (v) => {
+        if (edgeOf(v) === edge && inkOf(v) === ink) return;
+        edge = edgeOf(v);
+        ink = inkOf(v);
+        b.color = ink;
+        b.set(raw, b.enabled);
       },
     };
     let raw = label;
@@ -818,7 +830,8 @@ export class UIScene extends Phaser.Scene {
     this.btnZoomOut.set('MAPA −', true);
     this.btnZoomIn.set('MAPA +', true);
     this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ [I]' : 'EKWIPUNEK [I]', true);
-    this.btnRetreat.set('ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
+    this.btnRetreat.style(hud.contractDone ? 'primary' : 'danger');
+    this.btnRetreat.set(hud.contractDone ? 'POWRÓT' : 'ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
     this.btnQuit.set('WYJDŹ Z GRY', !locked || (hud.inCombat && !enemy && !hud.busy));
   }
 
@@ -885,13 +898,14 @@ export class UIScene extends Phaser.Scene {
     const bg = this.panelRect(0, 0, W, h, C.amberDim);
     const head = this.text(3, 1, cut((this.hud.actionsHead ?? (ch ? `BROŃ — ${ch.name}` : '')).toUpperCase(), 22), C.amber);
     const g = this.add.graphics();
-    if (list.length) {
+    const pips = list.length > 0 && this.hud.inCombat;
+    if (list.length) g.lineStyle(1, C.amberDim, 1).lineBetween(2, ay - 1.5, W - 2, ay - 1.5);
+    if (pips) {
       for (let k = 0; k < this.hud.maxAp; k++) {
         g.fillStyle(k < this.hud.ap ? C.amber : C.amberDim, 1).fillRect(W - 4 - (this.hud.maxAp - k) * 6, 3, 4, 5);
       }
-      g.lineStyle(1, C.amberDim, 1).lineBetween(2, ay - 1.5, W - 2, ay - 1.5);
     }
-    const right = W - (list.length ? this.hud.maxAp * 6 + 6 : 0) - 3;
+    const right = W - (pips ? this.hud.maxAp * 6 + 6 : 0) - 3;
     const grip = this.dragHandle('actions', right - 29, 11);
     L.add([bg, grip, head, g, ...this.scaleButtons('actions', right, 1)]);
     weapons.forEach((slot, i) => {
@@ -902,7 +916,8 @@ export class UIScene extends Phaser.Scene {
     list.forEach((b, i) => {
       const x = 2 + (i % AB_COLS) * AB_BW;
       const y = ay + Math.floor(i / AB_COLS) * (AB_BH + 1);
-      L.add(this.actionButton(x, y, AB_BW - 2, b, i < 9 ? String(i + 1) : ''));
+      // skróty 1-9 tylko w walce (w eksploracji cyfry wybierają najemnika)
+      L.add(this.actionButton(x, y, AB_BW - 2, b, i < 9 && this.hud.inCombat ? String(i + 1) : ''));
     });
 
     // pozycja: domyślnie nad dolną krawędzią; przesunięty panel trzyma lewy górny róg

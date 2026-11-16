@@ -157,6 +157,8 @@ export class HudState {
   /** Tytuł zlecenia + cele (panel celów). */
   objectiveTitle = '';
   objectives: ObjectiveRow[] = [];
+  /** Zlecenie zaliczone: przycisk "Odwrót" staje się "Powrotem" (wyjście z nagrodą). */
+  contractDone = false;
   /** Pasek akcji walki (pusty poza turą najemnika). */
   actions: ActionButton[] = [];
   actionsHead: string | null = null;
