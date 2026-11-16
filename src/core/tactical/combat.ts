@@ -23,6 +23,7 @@ export type ActorState = 'up' | 'down' | 'dead';
 export interface EnemyGroup {
   idx: number;
   actors: Actor[];
+  /** Grupa wie o drużynie (wykrycie, hałas, alarm): niewidoczni członkowie idą w jej stronę. */
   alerted: boolean;
   /** Krok eksploracji, od którego grupa może znów wypatrywać drużyny. */
   nextNotice: number;
@@ -36,6 +37,10 @@ export interface Actor extends GridPos {
   side: Side;
   state: ActorState;
   group: EnemyGroup | null;
+  /** Wróg bierze udział w trwającej walce (dołącza dopiero, gdy wejdzie w pole widzenia najemników). */
+  engaged: boolean;
+  /** Samotny wędrowiec: krąży wokół `home` (Mission.advanceWorld). */
+  roam?: { home: GridPos; dest: GridPos | null } | null;
   /** Ataki wykonane w tej turze (kara PWA). */
   mapN: number;
   init: number;
@@ -50,7 +55,7 @@ export interface Actor extends GridPos {
 
 export function makeActor(ch: Character, side: Side, pos: GridPos, group: EnemyGroup | null = null): Actor {
   return {
-    id: ch.id, ch, side, gx: pos.gx, gy: pos.gy, group, mapN: 0, init: 0, used: {}, savedTurn: null,
+    id: ch.id, ch, side, gx: pos.gx, gy: pos.gy, group, engaged: false, mapN: 0, init: 0, used: {}, savedTurn: null,
     state: side === 'enemy' ? (isAlive(ch) ? 'up' : 'dead') : isDown(ch) ? 'down' : isAlive(ch) ? 'up' : 'dead',
   };
 }
@@ -92,7 +97,7 @@ export interface StrikeInfo {
 export type CombatSignal =
   | { kind: 'log'; text: string; tone: LogTone }
   | { kind: 'combatStart'; order: Actor[]; boss: boolean; ambush: boolean }
-  | { kind: 'join'; group: EnemyGroup }
+  | { kind: 'join'; actors: Actor[] }
   | { kind: 'round'; round: number }
   | { kind: 'turnStart'; turn: TurnInfo; round: number }
   | { kind: 'turnEnd'; actor: Actor }
@@ -122,6 +127,8 @@ export interface Battlefield {
   target?: Actor | null;
   /** Dodatkowo zajęte pola (np. jeniec). */
   isBlocked?: (gx: number, gy: number) => boolean;
+  /** Czy postać jest w polu widzenia drużyny (mgła wojny misji). Domyślnie: ≤9 pól i linia wzroku od żywego najemnika. */
+  inSight?: (a: Actor) => boolean;
 }
 
 /** Na kogo działa zdolność obszarowa. Dystansowe obszary (granaty) trafiają wszystkich - także swoich. */
@@ -175,9 +182,9 @@ export class Combat {
   get current(): Actor | null {
     return this.turn?.actor ?? null;
   }
-  /** Przeciwnicy zdolni do walki (dla graczy: tylko zaalarmowani wrogowie). */
+  /** Przeciwnicy zdolni do walki (dla graczy: tylko wrogowie biorący udział w walce). */
   foesOf(a: Actor): Actor[] {
-    const list = a.side === 'pc' ? this.enemies.filter((e) => e.group?.alerted) : this.pcs;
+    const list = a.side === 'pc' ? this.enemies.filter((e) => e.engaged) : this.pcs;
     return list.filter((f) => f.state === 'up');
   }
   alliesOf(a: Actor): Actor[] {
@@ -324,7 +331,7 @@ export class Combat {
     a.gx = end.gx;
     a.gy = end.gy;
     this.emit({ kind: 'move', actor: a, path });
-    if (a.side === 'pc') this.joinNearby();
+    if (a.side === 'pc') this.engageVisible();
   }
 
   /** Marsz: do Prędkości za każdą akcję (koszt w akcjach liczony z drogi). */
@@ -601,14 +608,19 @@ export class Combat {
     return { ok: true, result };
   }
 
-  // ---------- hałas i dołączanie grup
-  /** Strzały i wybuchy alarmują grupy w promieniu. */
+  // ---------- hałas i dołączanie wrogów
+  /** Strzały i wybuchy stawiają na nogi grupy w promieniu - idą w stronę walki, dołączają, gdy staną w polu widzenia. */
   noise(a: Actor, radius: number): void {
     this.emit({ kind: 'noise', actor: a, radius });
+    let woke = false;
     for (const g of this.field.groups) {
       if (g.alerted || !g.actors.some((e) => e.state !== 'dead')) continue;
-      if (g.actors.some((e) => e.state !== 'dead' && cheb(e, a) <= radius)) this.join(g, 'Hałas przyciąga uwagę!');
+      if (!g.actors.some((e) => e.state !== 'dead' && cheb(e, a) <= radius)) continue;
+      g.alerted = true;
+      woke = true;
     }
+    if (woke) this.log('Hałas przyciąga uwagę!', 'bad');
+    this.engageVisible();
   }
 
   private rollInit(a: Actor): number {
@@ -617,51 +629,73 @@ export class Combat {
     return r.d20;
   }
 
-  /** Grupa wrogów dołącza do trwającej walki (inicjatywa na koniec kolejki). */
-  join(g: EnemyGroup, msg?: string): void {
-    if (g.alerted) return;
-    g.alerted = true;
-    if (msg) this.log(msg, 'bad');
+  /** Czy wróg jest w polu widzenia któregoś z najemników. */
+  inSight(e: Actor): boolean {
+    if (this.field.inSight) return this.field.inSight(e);
+    return this.pcs.some((p) => p.state !== 'dead' && cheb(e, p) <= 9 && this.grid.los(p, e).clear);
+  }
+
+  /** Wrogowie dołączają do trwającej walki (inicjatywa na koniec kolejki); ich grupa jest odtąd zaalarmowana. */
+  engage(list: readonly Actor[], msg?: string): void {
+    const fresh = list.filter((e) => e.side === 'enemy' && !e.engaged && e.state !== 'dead');
+    if (!fresh.length) return;
+    for (const e of fresh) {
+      e.engaged = true;
+      if (e.group) e.group.alerted = true;
+      e.roam = null;
+    }
     if (!this.active) return;
-    for (const e of g.actors) {
-      if (e.state === 'dead') continue;
+    if (msg) this.log(msg, 'bad');
+    for (const e of fresh) {
       this.rollInit(e);
       this.order.push(e);
       this.log(`${e.ch.name} dołącza do walki (inicjatywa ${e.init}).`, 'bad');
     }
-    this.emit({ kind: 'join', group: g });
+    this.emit({ kind: 'join', actors: fresh });
   }
 
-  /** Grupy w pobliżu drużyny (≤3 pola albo ≤7 z linią wzroku) włączają się do walki. */
-  joinNearby(): void {
+  /** Każdy wróg, który znalazł się w polu widzenia drużyny, włącza się do walki. */
+  engageVisible(): void {
     if (!this.active) return;
-    for (const g of this.field.groups) {
-      if (g.alerted || !g.actors.some((e) => e.state !== 'dead')) continue;
-      const near = g.actors.some(
-        (e) => e.state !== 'dead' && this.pcs.some((p) => p.state === 'up' && (cheb(e, p) <= 3 || (cheb(e, p) <= 7 && this.grid.los(e, p).clear))),
-      );
-      if (near) this.join(g, 'Kolejna grupa wrogów zwraca uwagę na walkę!');
-    }
+    const seen = this.enemies.filter((e) => !e.engaged && e.state === 'up' && this.inSight(e));
+    if (!seen.length) return;
+    this.engage(seen, seen.length === 1 ? `${seen[0].ch.name} wchodzi w pole widzenia!` : 'Kolejni wrogowie w polu widzenia!');
+  }
+
+  /** Przesuwa postać poza jej turą (wędrówka / podejście niewidocznych wrogów). */
+  relocate(a: Actor, path: GridPos[]): void {
+    if (!path.length) return;
+    const end = path[path.length - 1];
+    a.gx = end.gx;
+    a.gy = end.gy;
+    this.emit({ kind: 'move', actor: a, path });
   }
 
   // ---------- przebieg walki
   /**
-   * Rozpoczyna walkę z grupą (albo dołącza ją do trwającej). Zwraca kolejność inicjatywy.
-   * `ambush`: drużyna zaskakuje nieświadomą grupę - najemnicy działają pierwsi w 1. rundzie,
-   * a zaskoczeni wrogowie są Odsłonięci (-2 KP) do swojej pierwszej tury.
+   * Rozpoczyna walkę z podanymi wrogami (albo dołącza ich do trwającej). Zwraca kolejność inicjatywy.
+   * Reszta wrogów dołącza później, gdy wejdzie w pole widzenia (engageVisible).
+   * `ambush`: drużyna zaskakuje nieświadomych wrogów - najemnicy działają pierwsi w 1. rundzie,
+   * a zaskoczeni są Odsłonięci (-2 KP) do swojej pierwszej tury.
    */
-  start(g: EnemyGroup, opts: { ambush?: boolean } = {}): Actor[] {
+  start(foes: readonly Actor[], opts: { ambush?: boolean } = {}): Actor[] {
     if (this.active) {
-      this.join(g);
+      this.engage(foes);
       return this.order;
     }
+    const enemies = foes.filter((e) => e.side === 'enemy' && e.state !== 'dead');
+    const unaware = new Set(enemies.filter((e) => !e.group?.alerted));
+    for (const e of enemies) {
+      e.engaged = true;
+      e.roam = null;
+      if (e.group) e.group.alerted = true;
+    }
     this.active = true;
-    g.alerted = true;
     this.round = 1;
     this.idx = -1;
     this.turn = null;
     this.log('═══ WALKA! ═══', 'bad');
-    const parts = this.pcs.filter((p) => p.state !== 'dead').concat(g.actors.filter((e) => e.state !== 'dead'));
+    const parts = this.pcs.filter((p) => p.state !== 'dead').concat(enemies);
     for (const a of parts) {
       const d20 = this.rollInit(a);
       this.log(`Inicjatywa: ${a.ch.name} ${a.init} (k20 ${d20})`);
@@ -669,8 +703,7 @@ export class Combat {
     const ambush = !!opts.ambush;
     this.order = parts.sort((x, y) => (ambush && x.side !== y.side ? (x.side === 'pc' ? -1 : 1) : 0) || y.init - x.init || (x.side === 'pc' ? -1 : 1));
     if (ambush) {
-      for (const e of g.actors) {
-        if (e.state === 'dead') continue;
+      for (const e of unaware) {
         if (!e.ch.conditions.off_guard) {
           e.ch.conditions.off_guard = 1;
           e.used._ambushed = true;
@@ -678,7 +711,7 @@ export class Combat {
       }
       this.log('ZASADZKA! Drużyna atakuje pierwsza — zaskoczeni wrogowie są odsłonięci (-2 KP).', 'amber');
     }
-    this.emit({ kind: 'combatStart', order: this.order, boss: g.actors.some((e) => e.ch.ai === 'boss'), ambush });
+    this.emit({ kind: 'combatStart', order: this.order, boss: enemies.some((e) => e.ch.ai === 'boss'), ambush });
     return this.order;
   }
 
@@ -699,7 +732,7 @@ export class Combat {
         if (!this.order.length) return null;
       }
       const a = this.order[this.idx];
-      if (!a || a.state === 'dead' || (a.side === 'enemy' && !a.group?.alerted)) continue;
+      if (!a || a.state === 'dead' || (a.side === 'enemy' && !a.engaged)) continue;
       const t = this.beginTurn(a);
       if (t) return t;
     }
@@ -714,7 +747,7 @@ export class Combat {
       delete a.used._ambushed;
       delete a.ch.conditions.off_guard;
     }
-    this.joinNearby();
+    this.engageVisible();
     if (!this.active) return null;
     this.log(`— Tura: ${a.ch.name} —`, 'hd');
     const saved = a.savedTurn && a.savedTurn.round === this.round ? a.savedTurn : null;
@@ -798,11 +831,11 @@ export class Combat {
     return { ok: true, immediate: false, message: `${b.ch.name} wykona turę jako następny.` };
   }
 
-  /** Sprawdza koniec walki: porażka drużyny albo brak zaalarmowanych wrogów (śmierć celu nie przerywa walki z eskortą). */
+  /** Sprawdza koniec walki: porażka drużyny albo brak wrogów w walce (śmierć celu nie przerywa walki z eskortą). */
   checkEnd(): CombatEnd | null {
     if (!this.active) return null;
     if (this.pcs.every((p) => p.state !== 'up')) return this.finish('defeat');
-    if (!this.enemies.some((e) => e.group?.alerted && e.state !== 'dead')) {
+    if (!this.enemies.some((e) => e.engaged && e.state !== 'dead')) {
       for (const a of this.field.actors) {
         a.mapN = 0;
         if (a.side === 'pc') endEncounter(a.ch);
@@ -816,6 +849,7 @@ export class Combat {
   private finish(outcome: CombatEnd): CombatEnd {
     this.active = false;
     for (const a of this.field.actors) {
+      a.engaged = false;
       if (!a.used._ambushed) continue;
       delete a.used._ambushed;
       delete a.ch.conditions.off_guard;
