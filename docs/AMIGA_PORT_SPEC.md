@@ -380,28 +380,27 @@ między przeglądarką a Amigą nie jest wymagane — wtedy id zleceń mogą by�
 
 ## 21. Determinizm i liczby zmiennoprzecinkowe (bez FPU)
 
-Bitowa zgodność z przeglądarką jest **wymagana** dla: RNG, `hashSeed`, kości, zasad (§4–13) i układu mapy (§16 kroki 1–9) —
-to sprawdzają wektory testowe. **Nie jest wymagana** dla: dekoracji mapy (§16 krok 10), ocen AI (wystarczy ta sama logika),
-animacji, UI.
+**Stan (2026-11-17): cała logika gry jest bitowo zgodna z przeglądarką** — sprawdzają to ślady TS↔C (§24).
+Przyjęta polityka (inna niż pierwotna propozycja „wszystko na intach”):
 
-| Miejsce w TS | Zamiennik całkowity |
-|---|---|
-| `floor(rng() × n)` | `(uint32)(((uint64)u × n) >> 32)` — identyczne |
-| `rng() < p` | `u < ceil(p × 2^32)` (stała liczona przy generowaniu nagłówków) |
-| Dijkstra 1 / 1.5 | koszty w połówkach: 2 / 3; `maxCost × 2`; Marsz: `ceil(koszt2 / (2 × Prędkość))` |
-| `hypot(dx,dy) ≤ r` dla pól | `dx²+dy² ≤ floor(r²)` (np. ≤ 3.2 → ≤ 10; r+0.45, r+0.3 analogicznie); sortowanie po odległości = po `dx²+dy²`, sortowanie **stabilne** |
-| `d ≥ maxD × 0.75` itd. | `4d ≥ 3·maxD`, `2d ≥ maxD`, `10d ≥ 3·maxD`, `20d ≥ 9·maxD`, `5d ≥ 2·maxD` |
-| `kn(n)` | tabela z §16 |
-| PW wroga ×1.25 / ×0.8 | `(5h + 2) / 4`, `(8h + 5) / 10` (Math.round dla dodatnich) |
-| Złom, ceny, nagrody, PD ×0.5 / ×0.25 | procenty na intach, zaokrąglenie jak `Math.round` (połówki w górę) |
-| linia strzału | od 2026-11-16 TS liczy już na liczbach całkowitych: `n` = najmniejsze k z k² ≥ 9·(dx²+dy²), próbka `x = ax + floor((2·dx·s + n) / 2n)` (połówka w górę; w C dzielenie z zaokrągleniem w dół także dla ujemnych). Wcześniejsza wersja `Math.round(ax + dx·s/n)` myliła się przy dokładnych połówkach przez błąd `double` (2176 z 52 mln próbek). Weryfikacja: `los` w `test_vectors.json` |
-| `round(… + rng() × k × (1 + 0.4·poz))` (znaleziska, skrzynie, nagrody) | wzór w Q16; tu dopuszczalna drobna rozbieżność (nie wpływa na mapę) |
-| id zlecenia `rng().toString(36)` | na Amidze `k<dzień>_<u32 hex>` — mapy zleceń pobocznych będą inne niż w przeglądarce, ale deterministyczne |
-| `region.ts`, `frontend/*` | już w Q8/Q12 i tickach 50 Hz |
+- Tam, gdzie TS liczy na liczbach całkowitych albo wynik jest dokładny (RNG `u32`, kości, zasady, koszty Dijkstry
+  w połówkach, `region.ts`, `frontend/*`) — C też liczy na intach.
+- Tam, gdzie TS używa `double` (oceny AI, `Math.hypot`, nagrody i ceny, Złom ze skrzyń, dekoracje mapy, `toString(36)`) —
+  C używa `double` **w tej samej kolejności działań**. Na Amidze kompilacja z `-msoft-float`: libgcc liczy w IEEE 754
+  dokładnie jak JS (bez 80-bitowej precyzji koprocesora 68881). `Math.round` = `js_round` (połówki w górę),
+  `Math.hypot(dx,dy)` = `sqrt(dx²+dy²)` (dla argumentów całkowitych zgodne w praktyce; sprawdzone śladami).
+- `Array.prototype.sort` z komparatorem: `js_sort_ptr` odtwarza algorytm V8 dla tablic < 64 elementów
+  (wykrycie przebiegu + sortowanie binarne przez wstawianie) — także przy niespójnym komparatorze kolejności inicjatywy
+  (sprawdzone na 200 000 losowych przypadków przeciw prawdziwemu `Array.sort`).
+- `rng().toString(36)` (id zleceń = ziarno mapy) — `js_radix36` odtwarza `DoubleToRadixCString` z V8 (3008 wartości zgodnych),
+  więc te same zlecenia dają te same mapy co w przeglądarce.
+- W C kolejność obliczania argumentów funkcji jest nieokreślona — każde losowanie, które w TS jest argumentem,
+  idzie w C do osobnej zmiennej w kolejności z TS.
+- Linia strzału w TS przeszła na liczby całkowite (2026-11-16), bo wersja `Math.round(ax + dx·s/n)` myliła się przy
+  dokładnych połówkach.
 
-Wydajność: lista otwarta Dijkstry w TS to liniowe szukanie minimum — w C kolejka kubełkowa (koszty całkowite ≤ ~400).
-`aiMove` liczy Dijkstrę od każdego wroga i `strikeInfo` (z linią strzału) dla każdego osiągalnego pola — w C
-policzyć mapę odległości raz na turę i cache'ować linię strzału per (pole, cel).
+Wydajność: Dijkstra w C to kolejka kubełkowa FIFO (ta sama kolejność co liniowe szukanie pierwszego minimum w TS).
+`aiMove` nadal liczy Dijkstrę od każdego wroga i `strikeInfo` dla każdego pola — do sprawdzenia na sprzęcie.
 
 ## 22. Osobliwości do zachowania albo świadomej zmiany
 
@@ -412,33 +411,44 @@ policzyć mapę odległości raz na turę i cache'ować linię strzału per (pol
 - Drzwi i urządzenia poboczne: API gotowe, generator ich nie stawia.
 - Cała drużyna powalona w walce = porażka misji, a powaleni z `dead` giną naprawdę.
 
-## 23. Proponowana struktura C i kolejność prac
+## 23. Stan portu i struktura C
 
 ```
-src/data/      game_data.h (generowany), strings_pl.h
-src/core/      rng.c dice.c stats.c damage.c turn.c strike.c character.c abilities.c items.c locks.c
-src/tactical/  grid.c mapgen.c combat.c ai.c mission.c
-src/campaign/  state.c contracts.c economy.c travel.c debrief.c region.c save.c
-src/frontend/  (logo/intro/menu — AMIGA_MINIGL.md)
-src/gfx/       minigl_*.c atlas.c iso.c font.c ui.c
-src/sfx/       paula.c
-tests/         vectors.c  (czyta test_vectors.json przetworzony do .h)
+amiga/src/data/   gamedata.h/.c (generowane: tabele, teksty ISO-8859-2, region, imiona)
+amiga/src/core/   rng dice character stats rules abilities   (zasady, §4–13)
+                  tactical.h grid mapgen combat.h combat ai mission   (taktyka, §10, §14–17)
+                  campaign region names save   (kampania, §18–19)
+amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS)
 ```
 
-1. ✅ Generator nagłówków (`tools/amiga/gen_headers.ts`): enumy id, tablice `struct` (kości jako `{n,sides,mod}`, teksty PL w ISO-8859-2), progi `rng() < p`.
-2. ✅ `amiga/src/core/rng.c` + `dice.c` → zgodność z wektorami `hashSeed`, `mulberry32`, rzuty, testy k20, szanse
-   (`amiga/tests/test_dice.c`, wektory w `vectors_dice.h` z `tools/amiga/gen_test_vectors.ts`). `hash_seed_latin2`
-   przekłada bajty ISO-8859-2 na Unicode, więc ziarna z polskimi literami dają ten sam hash co w przeglądarce.
-3. ✅ (część) `amiga/src/core/stats.c` + `character.c` (§4, §5, §7 nakładanie stanów): struktura `Character`, stany,
-   KP / rzuty obronne / umiejętności / Prędkość, broń i premia do ataku z PWA, tworzenie najemnika (cechy, biegłości,
-   wygląd, ekwipunek startowy, zdolności) i wroga (słaby/elitarny), awans, PD, PD za starcie, odpoczynek, łup.
-   `amiga/tests/test_character.c` porównuje 48 kart rekrutów i 51 kart wrogów z przeglądarką (4876 sprawdzeń).
-   Wierność TS obejmuje też osobliwości: kolejność kluczy umiejętności przy awansie co 2 poziomy (pole `skill_order`),
-   kolor włosów z `h >> 3` ze znakiem (ujemny indeks = brak koloru), niewrażliwość na `bleed` nie blokuje stanu `bleeding`.
-   Dalej: obrażenia i umieranie (§9), tura (§7 start/koniec), atak (§8) → 32 ataki z wektorów.
-4. `grid.c` + `mapgen.c` → zgodność 12 map.
-5. `combat.c` + `ai.c` + `mission.c` (najpierw w trybie tekstowym/konsolowym — da się grać bez grafiki).
-6. Kampania + zapis. 7. Grafika miniGL i UI. 8. Dźwięk.
+1. ✅ Generator nagłówków (`tools/amiga/gen_headers.ts`).
+2. ✅ RNG, kości (`rng.c`, `dice.c`).
+3. ✅ Postać, stany, statystyki, tworzenie, awans (`character.c`, `stats.c`).
+4. ✅ Obrażenia, umieranie, tura, atak, 46 zdolności, przedmioty, ekwipunek, zamki (`rules.c`, `abilities.c`).
+5. ✅ Siatka, generator map (`grid.c`, `mapgen.c`).
+6. ✅ Walka turowa, AI, misja ze wszystkimi 9 typami celów (`combat.c`, `ai.c`, `mission.c`).
+7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
+   generator imion (`names.c`).
+8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
+9. ⏳ Ekrany i grafika miniGL, sterowanie, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
+10. ⏳ Dźwięk (Paula).
+11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
 
-Fizycznie: `struct Character` ≈ 200 B, misja (mapa 32×32 ×3 warstwy + ≤ ~20 postaci) < 32 KB — pamięć logiki nie jest problemem;
-budżet to tekstury (§20).
+Rozmiar (68020, `-O2 -msoft-float`): kod logiki ok. 250 KB, dane statyczne (BSS) ok. 255 KB.
+
+## 24. Testy
+
+`make -C amiga test` (natywnie): testy jednostkowe + ślady. Ślad = ten sam scenariusz w TS (`tools/amiga/trace_*.ts` →
+`amiga/data/traces/*.txt`) i w C (`amiga/tests/trace_*.c`); `make` porównuje wynik bajt po bajcie.
+
+| Ślad | Zakres | Linie |
+|---|---|---|
+| `rules` | ataki 16 rekrutów × 3 poziomy × 17 wrogów, ataki ze stanami, 46 zdolności × 8 wariantów, przedmioty, tura, umieranie, inicjatywa, zamki, ekwipunek, PD, łup | 9896 |
+| `tactical` | 48 map (4 biomy), Dijkstra, ścieżki, pole widzenia | 2256 |
+| `mission` | 54 symulacje: 9 typów celów × walka AI / pełna eksploracja × 3 ziarna | 29 043 |
+| `campaign` | `toString(36)`, 6 kampanii × 8 dni, wątek fabularny do zwycięstwa, ceny | 5075 |
+| `region` | 34 trasy, wysokość terenu, miejsca zleceń | 59 |
+| `names` | 576 imion, odmiana nazwisk, kolizja imion w karczmie | 583 |
+
+Testy jednostkowe: `test_gamedata` (86), `test_dice` (536), `test_character` (4876), `test_save` (130: zapis → odczyt →
+zapis daje te same bajty, a odczytana kopia gra dalej identycznie). Czułość śladów sprawdzana celowo wprowadzanymi błędami.

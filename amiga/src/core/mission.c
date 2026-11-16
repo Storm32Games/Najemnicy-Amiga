@@ -61,7 +61,7 @@ void mission_update_visibility(Mission *m) {
 }
 
 /* ---------------------------------------------------------------- rozmieszczanie */
-static Actor *make_actor(Mission *m, Character *ch, int side, Pos pos, EnemyGroup *grp) {
+Actor *mission_make_actor(Mission *m, Character *ch, int side, Pos pos, EnemyGroup *grp) {
   Actor *a = &m->actor_store[m->n_actors];
   memset(a, 0, sizeof *a);
   a->ch = ch;
@@ -161,7 +161,7 @@ static Actor *populate(Mission *m, Character **party, int n_party) {
   for (i = 0; i < n_party && placed < 4; i++) {
     Actor *a;
     if (!is_alive(party[i])) continue;
-    a = make_actor(m, party[i], SIDE_PC, entry_cell(&m->map.entry, SLOTS[placed]), NULL);
+    a = mission_make_actor(m, party[i], SIDE_PC, entry_cell(&m->map.entry, SLOTS[placed]), NULL);
     m->pcs[m->n_pcs++] = a;
     placed++;
   }
@@ -175,7 +175,7 @@ static Actor *populate(Mission *m, Character **party, int n_party) {
       Character *ch = new_char(m);
       Actor *a;
       char_create_enemy(ch, g->members[k], 0);
-      a = make_actor(m, ch, SIDE_ENEMY, g->cells[k], grp);
+      a = mission_make_actor(m, ch, SIDE_ENEMY, g->cells[k], grp);
       if (g->roam) {
         a->has_roam = 1;
         a->roam_home = apos(a);
@@ -212,7 +212,7 @@ static Actor *populate(Mission *m, Character **party, int n_party) {
     char_create(ch, "Jeniec", ANC_HUMAN, CLASS_SCAVENGER, 1, NONE8);
     ch->max_hp = 10;
     ch->hp = 10;
-    a = make_actor(m, ch, SIDE_NEUTRAL, oc, NULL);
+    a = mission_make_actor(m, ch, SIDE_NEUTRAL, oc, NULL);
     m->neutral[m->n_neutral++] = a;
     t = add_thing(m, TH_CAPTIVE, oc);
     t->actor = a;
@@ -239,7 +239,7 @@ static Actor *populate(Mission *m, Character **party, int n_party) {
       char_create(ch, NAMES[i % 5], ANC_HUMAN, CLASS_SCAVENGER, 1, NONE8);
       ch->max_hp = 10;
       ch->hp = 10;
-      a = make_actor(m, ch, SIDE_NEUTRAL, c, NULL);
+      a = mission_make_actor(m, ch, SIDE_NEUTRAL, c, NULL);
       m->neutral[m->n_neutral++] = a;
       t = add_thing(m, TH_CAPTIVE, c);
       t->actor = a;
@@ -297,7 +297,7 @@ static int bf_blocked(void *ctx, int gx, int gy) { return neutral_at((Mission *)
 static int bf_in_sight(void *ctx, const Actor *a) { return mission_is_visible((Mission *)ctx, apos(a)); }
 static int bf_free(void *ctx) { return ((Mission *)ctx)->mode == MODE_EXPLORE; }
 
-void mission_init(Mission *m, const MissionContract *contract, Character **party, int n_party, Rng *rng) {
+void mission_init_with(Mission *m, const MissionContract *contract, Character **party, int n_party, Rng *rng, MissionRestoreFn restore, void *ctx) {
   MapSpec spec;
   Battlefield f;
   int i;
@@ -315,12 +315,15 @@ void mission_init(Mission *m, const MissionContract *contract, Character **party
   spec.level = contract->level;
   spec.type = contract->type;
   generate_map(&spec, contract->enemies, contract->n_enemies, &m->map);
-  for (i = 0; i < m->map.n_finds; i++) {
-    m->finds[i].f = m->map.finds[i];
-    m->finds[i].found = !m->map.finds[i].hidden;
+  if (restore) m->target = restore(m, ctx);
+  else {
+    for (i = 0; i < m->map.n_finds; i++) {
+      m->finds[i].f = m->map.finds[i];
+      m->finds[i].found = !m->map.finds[i].hidden;
+    }
+    m->n_finds = m->map.n_finds;
+    m->target = populate(m, party, n_party);
   }
-  m->n_finds = m->map.n_finds;
-  m->target = populate(m, party, n_party);
   memset(&f, 0, sizeof f);
   f.grid = &m->map.grid;
   f.actors = m->actors;
@@ -335,6 +338,10 @@ void mission_init(Mission *m, const MissionContract *contract, Character **party
   combat_init(&m->combat, &f, rng);
   combat_on(&m->combat, on_combat, m);
   mission_update_visibility(m);
+}
+
+void mission_init(Mission *m, const MissionContract *contract, Character **party, int n_party, Rng *rng) {
+  mission_init_with(m, contract, party, n_party, rng, NULL, NULL);
 }
 
 /* ---------------------------------------------------------------- ruch eksploracyjny */

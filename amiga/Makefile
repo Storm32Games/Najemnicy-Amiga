@@ -1,7 +1,7 @@
 # Port Najemników na A1200 + PiStorm (C99 + miniGL).
 # Dane, wektory i ślady referencyjne (po zmianie src/core):
 #   node tools/amiga/export_data.ts && node tools/amiga/gen_headers.ts && node tools/amiga/gen_test_vectors.ts
-#   node tools/amiga/trace_rules.ts && node tools/amiga/trace_tactical.ts && node tools/amiga/trace_campaign.ts
+#   for f in tools/amiga/trace_*.ts; do node "$f"; done   (trace_fmt.ts to moduł pomocniczy)
 
 CFLAGS_COMMON = -std=c99 -Wall -Wextra -pedantic -Werror
 M68K_CC ?= m68k-amigaos-gcc
@@ -12,7 +12,7 @@ LIBS = -lm
 DATA = src/data/gamedata.c
 CORE = $(wildcard src/core/*.c)
 HDRS = src/data/gamedata.h $(wildcard src/core/*.h)
-TESTS = test_gamedata test_dice test_character
+TESTS = test_gamedata test_dice test_character test_save
 TRACES = $(patsubst data/traces/%.txt,%,$(wildcard data/traces/*.txt))
 
 .PHONY: test traces m68k clean

@@ -267,6 +267,10 @@ typedef struct Mission {
 #define SIGHT_NEUTRAL_R 5
 
 void mission_init(Mission *m, const MissionContract *contract, Character **party, int n_party, Rng *rng);
+/* Jak mission_init, ale zamiast rozstawienia woła `restore` (odczyt zapisu); zwraca cel polowania. */
+typedef Actor *(*MissionRestoreFn)(Mission *m, void *ctx);
+void mission_init_with(Mission *m, const MissionContract *contract, Character **party, int n_party, Rng *rng, MissionRestoreFn restore, void *ctx);
+Actor *mission_make_actor(Mission *m, Character *ch, int side, Pos pos, EnemyGroup *grp);
 void mission_on(Mission *m, MissionListener fn, void *ctx);
 int mission_in_combat(const Mission *m);
 MissionThing *mission_thing_at(Mission *m, int gx, int gy);
