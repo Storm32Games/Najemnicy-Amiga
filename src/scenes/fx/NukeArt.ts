@@ -405,7 +405,7 @@ export class NukeBlast {
     // czapa: torus
     const Rm = rx * 0.7, rm = ry * 0.62;
     const ember = 0.62 * Math.exp(-k / 14); // żar w spodzie czapy, gaśnie powoli
-    const nPhi = 18, nTh = 4;
+    const nPhi = 26, nTh = 5;
     for (let i = 0; i < nPhi; i++) {
       const phi = (i / nPhi) * Math.PI * 2 + 0.2;
       for (let j = 0; j < nTh; j++) {
@@ -415,7 +415,7 @@ export class NukeBlast {
         const under = Math.max(0, Math.sin(th)), inner = Math.max(0, -Math.cos(th));
         P.push({
           x: cx + ring * Math.cos(phi), y: capY + rm * Math.sin(th) * 0.7 + z * 0.16, z,
-          r: rm * (0.68 + 0.3 * hash2(i, j, 5)) * (0.55 + 0.45 * grow),
+          r: rm * (0.56 + 0.3 * hash2(i, j, 5)) * (0.55 + 0.45 * grow),
           heat: heat * 1.15 + (0.3 * under + 0.25 * inner) * (0.35 + 0.65 * heat) + ember * (under * 0.9 + inner * 0.5), seed: i * 7 + j, dust: false,
         });
       }
@@ -470,16 +470,21 @@ export class NukeBlast {
           const n = vnoise(x * 0.3 + p.seed * 3.1, y * 0.3 - k * 0.8, 21);
           if (d2 + (n - 0.5) * 0.5 > 1) continue;
           const nz = Math.sqrt(Math.max(0, 1 - d2));
-          const below = clamp01(dy * 0.85 + 0.15); // normalna w dół -> światło ognia
-          const top = clamp01(-dy * 0.7 - dx * 0.35 + nz * 0.25);
+          // cieniowanie: połowa z normalnej kłębu, połowa z bryły całego grzyba (czapa / trzon) - kłęby zlewają się
+          // w jedną masę zamiast osobnych kul
+          const gdx = (x - cx) / (rx * 1.25), gdy = p.dust ? dy : (y - capY) / (ry * 1.1);
+          const below = clamp01((dy * 0.85 + 0.15) * 0.45 + (gdy * 0.9 + 0.2) * 0.55); // w dół -> światło ognia
+          const top = clamp01((-dy * 0.7 - dx * 0.35 + nz * 0.25) * 0.45 + (-gdy * 0.8 - gdx * 0.4 + 0.15) * 0.55);
           const t = p.heat * (0.5 + 0.65 * below) + (n - 0.5) * 0.3 + (bayer(x, y) - 0.5) * 0.12;
           let c: number;
           if (!p.dust && t > 0.5) c = rampPx(FIRE, (t - 0.5) / 0.75, x, y);
           else {
             const warm = below * (0.3 + 0.9 * Math.min(1, p.heat));
             const cool = top * 0.85;
-            let v = 0.14 + Math.max(warm, cool) * 0.62 + nz * 0.14;
-            if (d2 > 0.7 && dy + dx * 0.5 > 0.1) v -= 0.16; // ciemny brzeg kłębu po stronie cienia - rozdziela kłęby
+            // drobna faktura kłębów (turbulencja przesuwa się z czasem) zamiast gładkich kul
+            const bill = fbm(x * 0.16 + p.seed * 0.7, y * 0.16 - k * 0.35, 23, 2) - 0.5;
+            let v = 0.16 + Math.max(warm, cool) * 0.62 + nz * 0.07 + bill * 0.34;
+            if (d2 > 0.78 && dy + dx * 0.5 > 0.2) v -= 0.09; // lekko ciemniejszy brzeg kłębu po stronie cienia
             c = rampPx(p.dust ? DUST : cool > warm + (bayer(x, y) - 0.5) * 0.1 ? SMOKE_COOL : SMOKE, v, x, y);
           }
           const i = y * W + x;
@@ -494,12 +499,20 @@ export class NukeBlast {
         if (mask[i] !== 1) continue;
         if (x === 0 || x === W - 1 || y === 0 || !mask[i - 1] || !mask[i + 1] || !mask[i - W] || (y < gy && !mask[i + W])) mask[i] = 2;
       }
+    // obrys selektywny (sel-out): krawędź od nieba / światła rozjaśniona, od strony cienia przyciemniona - bez
+    // jednolitej ciemnej linii wokół każdego kłębu (ta dawała "kreskówkowy" wygląd)
     for (let y = by0; y <= by1; y++)
       for (let x = bx0; x <= bx1; x++) {
         const i = y * W + x;
-        if (mask[i] === 2) buf[i] = px(SMOKE[0]);
-        mask[i] = 0;
+        if (mask[i] === 2) {
+          const up = y > 0 && !mask[i - W], down = y < gy && !mask[i + W];
+          const side = x < cx ? !mask[i - 1] : !mask[i + 1];
+          if (up) buf[i] = lerpPx(buf[i], 0xb8, 0x90, 0x96, 0.45);
+          else if (down) buf[i] = lerpPx(buf[i], 0x16, 0x0e, 0x16, 0.7);
+          else if (side) buf[i] = lerpPx(buf[i], 0x2a, 0x1c, 0x28, 0.45);
+        }
       }
+    for (let y = by0; y <= by1; y++) mask.fill(0, y * W + bx0, y * W + bx1 + 1);
   }
 
   /** Chmura Wilsona: rozszerzający się biały pierścień kondensacji wokół czapy (krótko po wybuchu). */

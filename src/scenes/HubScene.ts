@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { MOODS, backdrop } from './fx/Backdrops';
+import { glow } from './fx/Painter';
 import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { BIOME_NAMES, FACTION_NAMES, MOOD_NAMES, TYPE_NAMES, difficulty, refreshBoard, storyHint } from '../core/campaign/contracts';
@@ -16,7 +18,7 @@ import { abilityDef, ancestryOf, classDef, conditionDef, enemyDef, itemDef } fro
 import { getStat } from '../core/rules/stats';
 import type { Character, EquipSlot, ItemInstance } from '../core/rules/types';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, button, campfire, canvasTexture, cut, dunes, enter, goto, label, panel, parseColor, seeded, skyGradient, skyline } from './ui/Kit';
+import { BASE_W, Motes, PAL, button, campfire, cut, enter, goto, label, panel, parseColor } from './ui/Kit';
 import { Save, ScrollList, Tip, type Tone, abilityIconImage, bar, dialog, escConsumed, itemIconImage, itemTip, miniButton, modalOpen, namePrompt, openOptions, openSaveSlots, openWindow, portrait, toast } from './ui/Widgets';
 
 // Przystań (port Oldgame/src/scenes/hub.js): tablica zleceń, handlarz, lecznica, drużyna, karczma, zapis.
@@ -48,6 +50,8 @@ export interface HubSceneData {
 type LabelOpts = Parameters<typeof label>[4];
 
 export class HubScene extends Phaser.Scene {
+  private bgUpdate: (t: number, dt: number) => void = () => {};
+  private bgT = 0;
   private tab: Tab = 'board';
   private sel: string | null = null;
   private charIdx = 0;
@@ -88,19 +92,23 @@ export class HubScene extends Phaser.Scene {
     const alias: Record<string, Tab> = { board: 'board', shop: 'shop', heal: 'heal', clinic: 'heal', party: 'party', tavern: 'tavern' };
     this.tab = this.entry.tab ?? alias[this.entry.open ?? ''] ?? 'board';
 
-    canvasTexture(this, 'hub_bg', BASE_W, BASE_H, (g, w, h) => {
-      skyGradient(g, w, h, [[0, '#1a1030'], [0.45, '#5a3040'], [0.7, '#b0603a'], [0.85, '#e0a060']]);
-      skyline(g, w, seeded(2), { n: 36, base: 214, hMin: 30, hMax: 130, color: '#1a1210', lit: '#ffc070', wMin: 12, wMax: 28 });
-      dunes(g, w, h, 236, 1, '#4a3c30', 9, 0.02);
-      // latarnie przy placu
-      for (const x of [402, 462]) {
-        g.fillStyle = '#1c1612';
-        g.fillRect(x, 196, 2, 44);
-        g.fillStyle = '#ffd080';
-        g.fillRect(x - 2, 192, 6, 4);
-      }
+    this.bgT = 0;
+    this.bgUpdate = backdrop(this, 'hub', {
+      mood: MOODS.dusk, seed: 2, orb: [430, 190, 20], farBase: 226, midBase: 234, midH: [40, 150], groundY: 236, clouds: 9,
+      props: (g) => {
+        // latarnie przy placu z ciepłą poświatą
+        for (const x of [402, 462]) {
+          glow(g, x + 1, 194, 16, 12, '#ffc070', 0.35, { levels: 4 });
+          g.fillStyle = '#1c1612';
+          g.fillRect(x, 196, 2, 44);
+          g.fillRect(x - 3, 191, 8, 1);
+          g.fillStyle = '#ffe0a0';
+          g.fillRect(x - 2, 192, 6, 4);
+          g.fillStyle = '#c08040';
+          g.fillRect(x, 197, 1, 43);
+        }
+      },
     });
-    this.add.image(0, 0, 'hub_bg').setOrigin(0);
     this.fire = campfire(this, 432, 254, 1.4, 2);
     st.party.forEach((ch, i) => addUnit(this, 398 + i * 22, 262 - (i % 2) * 5, `pc_${ch.recruitId ?? ch.id}`, unitLookOf(ch)).setDepth(3).setFlipX(i > 1));
     this.townFolk();
@@ -154,6 +162,8 @@ export class HubScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.bgT += Math.min(delta / 1000, 0.1);
+    this.bgUpdate(this.bgT, Math.min(delta / 1000, 0.1));
     const dt = Math.min(delta / 1000, 0.1);
     this.t += dt;
     this.fire(this.t);

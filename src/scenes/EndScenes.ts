@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { MOODS, backdrop } from './fx/Backdrops';
 import type { PixelText } from './ui/BitmapFont';
 import { SoundManager } from '../audio/SoundManager';
 import { campaign, recruitCharacter } from '../core/campaign/session';
@@ -8,7 +9,7 @@ import { RECRUITS } from '../core/data/recruits';
 import type { Character } from '../core/rules/types';
 import { CREDITS, EPILOGUE, GAMEOVER_LINES } from '../core/data/story';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, Typewriter, type UiButton, button, campfire, canvasTexture, dunes, enter, goto, label, panel, seeded, skyGradient, skyline } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, Typewriter, type UiButton, button, campfire, canvasTexture, enter, goto, label, panel } from './ui/Kit';
 import { titleTexture } from './ui/PixelFont';
 import { Save, toast } from './ui/Widgets';
 
@@ -24,6 +25,8 @@ export interface GameOverData {
 }
 
 export class GameOverScene extends Phaser.Scene {
+  private bgUpdate: (t: number, dt: number) => void = () => {};
+  private bgT = 0;
   private names: string[] = [];
   private tw: Typewriter | null = null;
   private t = 0;
@@ -55,18 +58,24 @@ export class GameOverScene extends Phaser.Scene {
     enter(this, 1200);
     const st = campaign.state;
     this.t = 0;
-    canvasTexture(this, 'over_bg', BASE_W, BASE_H, (g, w, h) => {
-      skyGradient(g, w, h, [[0, '#050308'], [0.6, '#1c0c10'], [1, '#3a1410']]);
-      skyline(g, w, seeded(13), { n: 30, base: 190, hMin: 12, hMax: 70, color: '#0c0608', lit: null });
-      dunes(g, w, h, 190, 3, '#140a0a', 4, 0.02);
-      // krzyże z rur na pierwszym planie
-      g.fillStyle = '#0a0506';
-      for (const [x, s] of [[110, 1], [170, 0.8], [300, 0.9], [360, 1.1], [236, 0.7]] as const) {
-        g.fillRect(x, 190 - 26 * s, 3, 30 * s);
-        g.fillRect(x - 6 * s, 190 - 18 * s, 14 * s, 3);
-      }
+    this.bgT = 0;
+    this.bgUpdate = backdrop(this, 'over', {
+      mood: MOODS.blood, seed: 13, orb: [240, 120, 26], farBase: 186, midBase: 192, midH: [14, 70], groundY: 190, pan: 8, vignette: 0.7,
+      props: (g) => {
+        // krzyże z rur nad mogiłami, z czerwoną obwódką od łuny
+        for (const [x, s] of [[110, 1], [170, 0.8], [300, 0.9], [360, 1.1], [236, 0.7]] as const) {
+          const top = Math.round(192 - 26 * s), arm = Math.round(192 - 18 * s), aw = Math.round(14 * s);
+          g.fillStyle = '#0a0405';
+          g.fillRect(x, top, 3, Math.round(30 * s));
+          g.fillRect(x - Math.round(6 * s), arm, aw, 3);
+          g.fillStyle = '#7a2418';
+          g.fillRect(x, top, 1, Math.round(30 * s));
+          g.fillRect(x - Math.round(6 * s), arm, aw, 1);
+          g.fillStyle = '#1a0a0a';
+          g.fillRect(x - 5, 193, 13, 2); // kopczyk
+        }
+      },
     });
-    this.add.image(0, 0, 'over_bg').setOrigin(0);
     // czerwona poświata nad poległymi (PointLight z gameover.js)
     this.add.ellipse(BASE_W / 2, 176, 300, 60, 0xc43d2f, 0.12).setDepth(1);
     // polegli: poza "die" - przewracają się jeden po drugim i zostają na ziemi
@@ -127,6 +136,8 @@ export class GameOverScene extends Phaser.Scene {
     const dt = Math.min(delta / 1000, 0.1);
     this.t += dt;
     this.dust?.update(dt);
+    this.bgT += dt;
+    this.bgUpdate(this.bgT, dt);
     this.tw?.update(dt);
     // przyciski po skończeniu tekstu albo po 3 s (gameover.js:37)
     if (this.tw?.done || this.t > 3) this.showButtons();
@@ -139,6 +150,8 @@ export class GameOverScene extends Phaser.Scene {
 }
 
 export class VictoryScene extends Phaser.Scene {
+  private bgUpdate: (t: number, dt: number) => void = () => {};
+  private bgT = 0;
   private tw: Typewriter | null = null;
   private line = 0;
   private text!: PixelText;
@@ -160,17 +173,8 @@ export class VictoryScene extends Phaser.Scene {
     this.line = 0;
     this.rolling = false;
     this.t = 0;
-    canvasTexture(this, 'win_bg', BASE_W, BASE_H, (g, w, h) => {
-      skyGradient(g, w, h, [[0, '#2a3a6a'], [0.4, '#c07050'], [0.62, '#f0b060'], [0.8, '#ffe0a0']]);
-      g.fillStyle = '#fff4c8';
-      g.beginPath();
-      g.arc(240, 150, 40, 0, Math.PI * 2);
-      g.fill();
-      skyline(g, w, seeded(40), { n: 34, base: 186, hMin: 8, hMax: 56, color: '#3a2420', lit: '#ffd070' });
-      dunes(g, w, h, 186, 3, '#5a3a28', 14, 0.03);
-      dunes(g, w, h, 200, 2, '#3c2418', 3, 0.05);
-    });
-    this.add.image(0, 0, 'win_bg').setOrigin(0);
+    this.bgT = 0;
+    this.bgUpdate = backdrop(this, 'win', { mood: MOODS.dawn, seed: 40, orb: [240, 150, 36], farBase: 188, midBase: 194, midH: [10, 56], groundY: 192 });
     this.fire = campfire(this, BASE_W / 2, 204, 1.5, 3);
     campaign.state.party.forEach((ch, i, a) => addUnit(this, BASE_W / 2 + (i - (a.length - 1) / 2) * 44, 206, `pc_${ch.recruitId ?? ch.id}`, unitLookOf(ch), 'idle', 2).setDepth(4).setFlipX(i >= a.length / 2));
     this.dust = new Motes(this, 100, { x: 0, y: 80, w: BASE_W, h: 140 }, 0xffe0a0, 10, -3, 21, 0.6, 6);
@@ -245,6 +249,8 @@ export class VictoryScene extends Phaser.Scene {
     this.t += dt;
     this.fire(this.t);
     this.dust?.update(dt);
+    this.bgT += dt;
+    this.bgUpdate(this.bgT, dt);
     this.tw?.update(dt);
   }
 }

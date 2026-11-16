@@ -1462,8 +1462,8 @@ export class UIScene extends Phaser.Scene {
       ['PANELE', 'Ekwipunek i dziennik można przesuwać, przeciągając za nagłówek (LPM). Dziennik: dolna krawędź = wysokość, róg prawy dolny = rozmiar. W nagłówku każdego panelu: − / + = skala okna (czcionka zmienia się razem z nim), a / A = mniejsza / większa czcionka przy tym samym oknie, ● = przezroczystość. Menu i panel akcji pamiętają osobny układ (skala, czcionka, miejsce) w eksploracji i w walce. Karty drużyny (w walce także wrogów) przesuwa się, przeciągając kartę; prawy dolny róg kart = skala wszystkich kart; daleko od górnej / dolnej krawędzi układają się pionowo, przy krawędzi poziomo. PPM na karcie = domyślnie. PPM na nagłówku = domyślne miejsce i rozmiar.'],
       ['ZASADY', 'Osłona +2 KP; flankowanie = cel odsłonięty. Powaleni potrzebują Pierwszej pomocy, inaczej umierają. Gdy padnie cała drużyna - nikt nie wraca.'],
     ];
-    // Czcionka ma stały rozmiar (6x8): okno układa się w pełnej skali, a gdy nie mieści się w wysokości ekranu,
-    // cała zawartość przechodzi na drobny druk (SMALL_TEXT - całe piksele płótna przy każdej rozdzielczości).
+    // Czcionka ma stały rozmiar (6x8); okno pomocy używa drobnego druku (SMALL_TEXT - całe piksele płótna przy każdej
+    // rozdzielczości), żeby długie opisy mieściły się w ramce z zapasem.
     const build = (k: number): { items: Phaser.GameObjects.GameObject[]; w: number; h: number } => {
       const w = Math.floor(W / k);
       const items: Phaser.GameObjects.GameObject[] = [this.text(w / 2, 4, 'STEROWANIE  [H / Esc]', C.amber).setOrigin(0.5, 0)];
@@ -1477,13 +1477,9 @@ export class UIScene extends Phaser.Scene {
       }
       return { items, w, h: y + 2 };
     };
-    let k = 1;
-    let lay = build(k);
-    if (lay.h > BASE_H - 8) {
-      for (const o of lay.items) o.destroy();
-      k = SMALL_TEXT;
-      lay = build(k);
-    }
+    // drobny druk od razu (w pełnej skali tekst dochodził do ramki / wychodził poza nią przy większej skali UI)
+    const k = SMALL_TEXT;
+    const lay = build(k);
     const box = this.add.container(0, 0).setDepth(950).setScale(k);
     box.setPosition(Math.round(BASE_W / 2 - (lay.w * k) / 2), Math.max(4, Math.round(BASE_H / 2 - (lay.h * k) / 2)));
     const bg = uiBg(this.add.rectangle(0, 0, lay.w, lay.h, C.bg, 1).setOrigin(0).setStrokeStyle(1, C.amber).setInteractive());
