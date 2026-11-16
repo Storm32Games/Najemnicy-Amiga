@@ -135,12 +135,23 @@ export interface Battlefield {
   isBlocked?: (gx: number, gy: number) => boolean;
   /** Czy postać jest w polu widzenia drużyny (mgła wojny misji). Domyślnie: ≤9 pól i linia wzroku od żywego najemnika. */
   inSight?: (a: Actor) => boolean;
+  /** Eksploracja: najemnicy mogą używać zdolności i przedmiotów poza walką (bez kosztu akcji). */
+  freeActions?: () => boolean;
 }
 
 /** Na kogo działa zdolność obszarowa. Dystansowe obszary (granaty) trafiają wszystkich - także swoich. */
 const AREA_ALLIES: ReadonlySet<AbilityId> = new Set<AbilityId>(['rally', 'field_clinic', 'chief_rally', 'kostucha_command']);
 export const areaAffects = (ab: AbilityDef): 'allies' | 'foes' | 'all' =>
   AREA_ALLIES.has(ab.id as AbilityId) ? 'allies' : ab.range > 0 ? 'all' : 'foes';
+
+/** Postawy i zdolności z sensem tylko w turze walki (poza walką niedostępne). */
+const COMBAT_ONLY: ReadonlySet<AbilityId> = new Set<AbilityId>(['strike', 'raise_shield', 'take_cover', 'dodge', 'rage', 'frenzy', 'stand']);
+/** Czy zdolność da się użyć w eksploracji: tylko na siebie / sojuszników (leczenie, wzmocnienia). */
+export const exploreAbilityOk = (ab: AbilityDef): boolean =>
+  !COMBAT_ONLY.has(ab.id as AbilityId) && ab.actions !== 'reaction' &&
+  (ab.target === 'self' || ab.target === 'ally' || (ab.target === 'area' && areaAffects(ab) === 'allies'));
+/** Czy przedmiot jednorazowy da się użyć w eksploracji (na siebie / sojusznika, bez wybuchów i dymu). */
+export const exploreItemOk = (c: ConsumableStats): boolean => c.target !== 'enemy' && c.target !== 'area';
 
 const UNIVERSAL: ReadonlySet<string> = new Set(UNIVERSAL_ABILITIES);
 export const isUniversalAbility = (id: string): boolean => UNIVERSAL.has(id);
@@ -317,7 +328,23 @@ export class Combat {
     return out;
   }
 
+  /**
+   * Eksploracja: zdolności bez limitu użyć (np. Pierwsza pomoc) działają na danego sojusznika raz między walkami,
+   * żeby leczenie poza walką nie było nieskończone. Czyszczone na starcie kolejnej walki.
+   */
+  private restUsed = new Map<Actor, Set<AbilityId>>();
+  /** Czy zdolność bez limitu była już użyta na tym celu od ostatniej walki. */
+  restSpent(id: AbilityId, target: Actor): boolean {
+    return !!this.restUsed.get(target)?.has(id);
+  }
+
+  /** Poza walką (eksploracja) najemnik działa bez tury i bez kosztu akcji. */
+  get exploring(): boolean {
+    return !this.active && !!this.field.freeActions?.();
+  }
+
   private canAct(a: Actor, cost: number): string | null {
+    if (this.exploring && a.side === 'pc') return a.state !== 'up' ? `${a.ch.name} nie może działać.` : null;
     const t = this.turn;
     if (!this.active || !t || t.actor !== a) return 'Nie twoja tura.';
     if (a.state !== 'up') return `${a.ch.name} nie może działać.`;
@@ -327,6 +354,7 @@ export class Combat {
   /** Wydaje akcje bieżącej postaci (np. interakcja ze skrzynią w trakcie walki). */
   spendActions(a: Actor, n: number): boolean {
     if (this.canAct(a, n)) return false;
+    if (this.exploring) return true;
     const t = this.turn!;
     t.actions -= n;
     if (n > 0) t.used = true;
@@ -515,13 +543,16 @@ export class Combat {
     if (err) return fail(err);
     if (!a.ch.abilities.includes(id)) return fail(`${a.ch.name} nie zna tej zdolności.`);
     if (ab.uses && !canUse(a.ch, id)) return fail('Brak użyć.');
-    if (cost === 0 && a.used['_free_' + id]) return fail('Już użyto w tej turze.');
+    const free = this.exploring;
+    if (free && !exploreAbilityOk(ab)) return fail('Tego można użyć tylko w walce.');
+    if (!free && cost === 0 && a.used['_free_' + id]) return fail('Już użyto w tej turze.');
 
     let tg = targets;
     if (ab.target === 'enemy' || ab.target === 'ally') {
       const valid = this.abilityTargets(a, ab);
       tg = targets.filter((x) => valid.includes(x));
       if (!tg.length) return fail(ab.target === 'ally' ? 'Wskaż sojusznika w zasięgu.' : 'Wskaż wroga w zasięgu i na linii strzału.');
+      if (free && !ab.uses && tg.every((x) => this.restSpent(id, x))) return fail(`${ab.name}: ${tg[0].ch.name} już ${tg[0] === a ? 'skorzystał(a)' : 'otrzymał(a)'} to po ostatniej walce.`);
     } else if (ab.target === 'area') {
       if (ab.range > 0) {
         if (!cell || !this.areaCellOk(a, cell, ab.range)) return fail('Poza zasięgiem / brak linii.');
@@ -534,8 +565,16 @@ export class Combat {
     } else if (ab.target === 'self') tg = [a];
     else tg = this.foesOf(a);
 
+    if (free && !ab.uses && (ab.target === 'self' || ab.target === 'ally')) {
+      if (ab.target === 'self' && this.restSpent(id, a)) return fail(`${ab.name}: już użyte po ostatniej walce.`);
+      for (const x of tg) {
+        const set = this.restUsed.get(x) ?? new Set<AbilityId>();
+        set.add(id);
+        this.restUsed.set(x, set);
+      }
+    }
     this.spendActions(a, cost);
-    if (cost === 0) a.used['_free_' + id] = true;
+    if (cost === 0 && !free) a.used['_free_' + id] = true;
 
     let path: GridPos[] | undefined;
     if (ab.move && tg[0] && tg[0] !== a && cheb(a, tg[0]) > 1) {
@@ -572,6 +611,7 @@ export class Combat {
   useItem(a: Actor, inst: ItemInstance, target?: Actor | null, cell?: GridPos): ActionOutcome {
     const c = this.consumableOf(inst);
     if (!c) return fail('Tego nie da się użyć.');
+    if (this.exploring && !exploreItemOk(c)) return fail('Tego można użyć tylko w walce.');
     const err = this.canAct(a, c.actions);
     if (err) return fail(err);
     let targets: Actor[] = [a];
@@ -692,6 +732,7 @@ export class Combat {
       this.engage(foes);
       return this.order;
     }
+    this.restUsed.clear();
     const enemies = foes.filter((e) => e.side === 'enemy' && e.state !== 'dead');
     const unaware = new Set(enemies.filter((e) => !e.group?.alerted));
     for (const e of enemies) {
