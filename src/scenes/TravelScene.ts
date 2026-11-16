@@ -18,6 +18,7 @@ import { paintCreatureSheet } from './iso/CreatureArt';
 import { ArtBook } from './iso/IsoArt';
 import { type Box, MAP_H, MAP_W, beaconPos, paintRegion, regionFires, regionOccluders, scrX, scrXf, scrY, scrYf } from './iso/RegionArt';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
+import { dirOfVector, type SpriteDir } from './iso/SpriteUnits';
 import { BASE_H, BASE_W, Motes, PAL, VW, VH, VX, VY, ZOOM, ZOOM_EVENT, type UiButton, button, campfire, cut, enter, fitViewport, goto, label, panel, parseColor, tiledImage } from './ui/Kit';
 import { modalOpen, openWindow } from './ui/Widgets';
 
@@ -35,8 +36,6 @@ const TYPE_COLOR: Record<ObjectiveType, number> = {
 };
 const TONE = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 const Q = (v: number): number => Math.round(v * WQ);
-/** Pozioma oś ekranu w rzucie izometrycznym (x - z): do odwracania postaci w kierunku marszu. */
-const isoU = (p: WPos): number => p.x - p.z;
 /** Punkt świata (Q8) -> ekran z wysokością terenu. */
 const scr = (p: WPos, up = 0): { x: number; y: number } => ({ x: scrX(Math.round(p.x), Math.round(p.z)), y: scrY(Math.round(p.x), Math.round(p.z), up) });
 /** Jak scr, bez zaokrąglania do piksela mapy - postacie i kamera w marszu suną płynnie. */
@@ -48,6 +47,14 @@ const scrF = (p: WPos): { x: number; y: number } => ({ x: scrXf(p.x, p.z), y: sc
 const keyDepth = (key: number): number => 5 + Phaser.Math.Clamp((key + 60) / 120, 0, 0.999);
 /** Głębia postaci / bestii w punkcie świata (Q8): przed pasmem obiektów, w którym stoi. */
 const unitDepth = (p: WPos): number => keyDepth((p.x + p.z) / WQ) + 0.0005;
+/** Członek drużyny na mapie: `dir` - obrót postaci PixelLab (null = jeszcze nie ustawiony / brak obrotów). */
+interface Walker {
+  sprite: Phaser.GameObjects.Sprite;
+  ghost: Phaser.GameObjects.Sprite;
+  pos: WPos;
+  name: string;
+  dir: SpriteDir | null;
+}
 /** Odstęp między członkami drużyny w kolumnie marszowej (Q8 długości trasy). */
 const GAP = Math.round(0.55 * WQ);
 /** Sylwetki zasłoniętych członków drużyny: nad wszystkimi warstwami przesłaniającymi. */
@@ -104,11 +111,11 @@ export class TravelScene extends Phaser.Scene {
   private routes = new Map<string, Route>();
   private spots = new Map<string, WPos>();
   /** Cała drużyna na mapie: prowadzący i reszta idąca za nim gęsiego po trasie. */
-  private walkers: { sprite: Phaser.GameObjects.Sprite; ghost: Phaser.GameObjects.Sprite; pos: WPos }[] = [];
+  private walkers: Walker[] = [];
   /** Budynki nad mapą: prostokąt na mapie, podstawa i głębia - do rozstrzygania "przed / za" postaci. */
   private blocks: { x0: number; y0: number; x1: number; y1: number; box: Box; depth: number }[] = [];
   private route: Route | null = null;
-  /** Postęp marszu w tickach 50 Hz i czas całej trasy (Oldgame: max(6 s, długość / 4.2)). */
+  /** Postęp marszu w tickach 50 Hz i czas całej trasy (region.routeTicks: 2.1 j./s, min. 8 s). */
   private tick = 0;
   private dur = 300;
   private readonly clock = new TickClock();
@@ -244,7 +251,7 @@ export class TravelScene extends Phaser.Scene {
       // sylwetka nad budynkami: widać, gdzie idzie drużyna, gdy zasłania ją budynek przed nią
       const ghost = this.add.sprite(0, 0, sprite.texture.key, sprite.frame.name).setOrigin(sprite.originX, sprite.originY).setScale(0.6);
       ghost.setTint(0xffd27a).setTintMode(Phaser.TintModes.FILL).setAlpha(0.4).setDepth(GHOST_DEPTH).setVisible(false);
-      return { sprite, ghost, pos: this.formation(i) };
+      return { sprite, ghost, pos: this.formation(i), name: `pc_${c.recruitId ?? c.id}`, dir: null };
     });
     this.dust = new Motes(this, 90, { x: 0, y: 0, w: MAP_W, h: MAP_H }, 0xf0c080, 12, 1, 4, 0.35, 9);
     this.spawnFauna();
@@ -459,7 +466,10 @@ export class TravelScene extends Phaser.Scene {
         this.view.y = p.y;
       }
     } else this.pulse?.setVisible(false);
-    if (this.route) for (const w of this.walkers) w.sprite.setFlipX(isoU(routePointAt(this.route, Q(1.5))) < isoU(HOME));
+    if (this.route) {
+      const a = scrF(HOME), b = scrF(routePointAt(this.route, Q(1.5)));
+      for (const w of this.walkers) this.faceWalker(w, b.x - a.x, b.y - a.y);
+    }
     this.drawList();
     this.drawSide();
   }
@@ -603,6 +613,26 @@ export class TravelScene extends Phaser.Scene {
     SoundManager.sfx('step');
   }
 
+  /**
+   * Postać zwrócona w stronę marszu (wektor na ekranie): postacie PixelLab mają chód i spoczynek w 8 kierunkach
+   * (iso/SpriteUnits: `<nazwa>_<kierunek>_walk`), pozostałe tylko przód i odbicie w poziomie.
+   */
+  private faceWalker(w: Walker, dx: number, dy: number): void {
+    if (Math.hypot(dx, dy) < 2) return;
+    const dir = dirOfVector(dx, dy);
+    if (!this.anims.exists(`${w.name}_${dir}_walk`)) {
+      if (Math.abs(dx) > 2) w.sprite.setFlipX(dx < 0);
+      return;
+    }
+    if (dir === w.dir) return;
+    w.dir = dir;
+    const cur = w.sprite.anims.currentAnim?.key ?? '';
+    const key = `${w.name}_${dir}_${cur.endsWith('_walk') ? 'walk' : 'idle'}`;
+    // ten sam takt kroku po obrocie (klatka o tym samym indeksie)
+    const frame = w.sprite.anims.currentFrame?.index ?? 1;
+    w.sprite.setFlipX(false).play({ key, startFrame: Math.max(0, frame - 1) });
+  }
+
   /** Animacja marszu albo postoju dla całej drużyny (bez restartu, gdy już gra właściwa). */
   private setWalking(on: boolean): void {
     for (const w of this.walkers) {
@@ -704,8 +734,8 @@ export class TravelScene extends Phaser.Scene {
     this.walkers.forEach((w, i) => {
       const di = d - i * GAP;
       w.pos = this.formation(i, d);
-      const here = routePointAt(this.route!, Math.max(0, di)), ahead = routePointAt(this.route!, Math.max(0, di) + Q(0.6));
-      if (Math.abs(isoU(ahead) - isoU(here)) > 8) w.sprite.setFlipX(isoU(ahead) < isoU(here));
+      const here = scrF(routePointAt(this.route!, Math.max(0, di))), ahead = scrF(routePointAt(this.route!, Math.max(0, di) + Q(0.6)));
+      this.faceWalker(w, ahead.x - here.x, ahead.y - here.y);
     });
     this.pos = this.walkers[0].pos;
     this.placeWalkers();

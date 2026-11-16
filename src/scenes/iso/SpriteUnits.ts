@@ -21,6 +21,8 @@ export type SpriteDir = (typeof SPRITE_DIRS)[number];
 
 const UNIT_URLS = import.meta.glob('../../assets/units/*/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const PORTRAIT_URLS = import.meta.glob('../../assets/portraits/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+/** Animacje szkieletowe PixelLab (skeleton-v3): src/assets/units/<id>/anims/<animacja>_<kierunek>.png, pasek kwadratowych klatek. */
+const STRIP_URLS = import.meta.glob('../../assets/units/*/anims/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
 /** Id postaci z kompletem obrotów. */
 const UNITS = new Set<string>();
@@ -37,6 +39,10 @@ const FOOT_X = 32, FOOT_Y = 63;
 
 export const spriteTexKey = (id: string, dir: SpriteDir): string => `pl_${id}_${dir}`;
 export const spritePortraitKey = (id: string): string => `plp_${id}`;
+export const spriteStripKey = (id: string, anim: StripAnim, dir: SpriteDir): string => `pla_${id}_${anim}_${dir}`;
+
+/** Paski animacji z PixelLab (nazwy plików). */
+export type StripAnim = 'walk' | 'sneak' | 'crouch' | 'shoot' | 'hack' | 'pick';
 
 /** Wczytuje obroty i portrety (wywołać w preload pierwszej sceny). */
 export function preloadSprites(scene: Phaser.Scene): void {
@@ -45,6 +51,11 @@ export function preloadSprites(scene: Phaser.Scene): void {
     scene.load.image(spriteTexKey(id, file.replace('.png', '') as SpriteDir), url);
   }
   for (const [path, url] of Object.entries(PORTRAIT_URLS)) scene.load.image(spritePortraitKey(path.split('/').pop()!.replace('.png', '')), url);
+  for (const [path, url] of Object.entries(STRIP_URLS)) {
+    const parts = path.split('/');
+    const [anim, dir] = parts[parts.length - 1].replace('.png', '').split(/_(.+)/);
+    scene.load.image(spriteStripKey(parts[parts.length - 3], anim as StripAnim, dir as SpriteDir), url);
+  }
 }
 
 /** Id sprite'a postaci: rekrut (Character.recruitId albo RecruitDef.id), o ile ma komplet obrotów. */
@@ -282,32 +293,174 @@ function glow(pc: PixelCanvas, y: number, cast: number): void {
 const FRAME_ALIASES: Record<string, string> = { attack: 'attack2', hurt: 'hurt0' };
 const SHEET_COLS = 17;
 
+/** Animacja z klatek arkusza (zamiast ANIMS z UnitArt): klucz `${nazwa jednostki}_${suffix}`. */
+export interface SheetAnim {
+  suffix: string;
+  frames: string[];
+  durs: number[];
+  loop: boolean;
+  yoyo?: boolean;
+}
+
+/**
+ * Jak paski PixelLab zastępują animacje gry (przód 'f' = south-east, tył 'b' = north-east):
+ * `frames` - indeksy klatek paska, `ms` - czasy klatek, `ground` - każda klatka stopami / kolanem na ziemi
+ * (klęk i przysiad: model przesuwa sylwetkę w pionie), `flash` - klatka z błyskiem wylotowym (+1: dym).
+ */
+interface StripUse {
+  anim: string;
+  strip: StripAnim;
+  frames?: (n: number) => number[];
+  ms: number | number[];
+  loop: boolean;
+  yoyo?: boolean;
+  ground?: boolean;
+  flash?: number;
+}
+const range = (a: number, b: number): number[] => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
+const STRIP_USES: readonly StripUse[] = [
+  { anim: 'walk', strip: 'walk', ms: 105, loop: true },
+  { anim: 'sneak', strip: 'sneak', ms: 135, loop: true, ground: true },
+  // przypadnięcie do osłony: cały pasek kucania, potem postawa 'crouch' = ostatnia klatka
+  { anim: 'hide', strip: 'crouch', ms: 75, loop: false, ground: true },
+  { anim: 'crouch', strip: 'crouch', frames: (n) => [n - 1], ms: 600, loop: true, ground: true },
+  // strzał: od klatki składania się do strzału (WorldScene wypuszcza pocisk ~90 ms po starcie)
+  { anim: 'shoot', strip: 'shoot', frames: (n) => range(Math.min(2, n - 2), n), ms: [50, 70, 110, 220], loop: false, flash: 1 },
+  // czynności: przyklęk (cały pasek), potem pętla pracy rąk (WorldScene.act łańcuchem '<anim>_loop')
+  { anim: 'hack', strip: 'hack', ms: 110, loop: false, ground: true },
+  { anim: 'hack_loop', strip: 'hack', frames: (n) => range(Math.max(0, n - 4), n), ms: 170, loop: true, yoyo: true, ground: true },
+  { anim: 'pick', strip: 'pick', ms: 110, loop: false, ground: true },
+  { anim: 'pick_loop', strip: 'pick', frames: (n) => range(Math.max(0, n - 4), n), ms: 190, loop: true, yoyo: true, ground: true },
+];
+
+/** Kierunek widoku (wektor ekranu) -> obrót sprite'a (8 kierunków, y w dół). */
+export function dirOfVector(dx: number, dy: number): SpriteDir {
+  const a = Math.atan2(dy, dx); // 0 = wschód, + = w dół ekranu
+  const k = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8; // 0 E, 1 SE, 2 S, 3 SW, 4 W, 5 NW, 6 N, 7 NE
+  return (['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'] as const)[k];
+}
+
+/** Paski PixelLab postaci: klatki (kwadratowe) i obrys pierwszej klatki. */
+function stripFrames(scene: Phaser.Scene, id: string, anim: StripAnim, dir: SpriteDir): Src[] | null {
+  const key = spriteStripKey(id, anim, dir);
+  if (!scene.textures.exists(key)) return null;
+  const p = texturePixels(scene, key);
+  const fw = p.h, n = Math.floor(p.w / fw);
+  const out: Src[] = [];
+  for (let k = 0; k < n; k++) {
+    const data = new Uint8ClampedArray(fw * fw * 4);
+    for (let y = 0; y < fw; y++) data.set(p.data.subarray((y * p.w + k * fw) * 4, (y * p.w + (k + 1) * fw) * 4), y * fw * 4);
+    out.push(measure({ w: fw, h: fw, data }));
+  }
+  return out;
+}
+
+/**
+ * Klatka paska w komórce arkusza: sylwetka ustawiona tak, jak obrót spoczynkowy `rest` (środek i stopy w FOOT_X,
+ * FOOT_Y) - przesunięcie z pierwszej klatki paska, wspólne dla wszystkich klatek (zostaje ruch w animacji);
+ * przy `ground` każda klatka osobno stoi na ziemi.
+ */
+function stripCell(rest: Src, first: Src, f: Src, ground: boolean): PixelCanvas {
+  const pc = new PixelCanvas(FW, FH);
+  const ox = FOOT_X - Math.round((rest.left + rest.right + 1) / 2) + Math.round((rest.left + rest.right - first.left - first.right) / 2);
+  const oy = FOOT_Y - (ground ? f.bottom : first.bottom);
+  for (let y = 0; y < f.h; y++) {
+    const ty = y + oy;
+    if (ty < 0 || ty >= FH) continue;
+    for (let x = 0; x < f.w; x++) {
+      const tx = x + ox;
+      if (tx < 0 || tx >= FW) continue;
+      const i = (y * f.w + x) * 4;
+      if (!f.data[i + 3]) continue;
+      const o = (ty * FW + tx) * 4;
+      pc.data[o] = f.data[i];
+      pc.data[o + 1] = f.data[i + 1];
+      pc.data[o + 2] = f.data[i + 2];
+      pc.data[o + 3] = f.data[i + 3];
+    }
+  }
+  return pc;
+}
+
 /**
  * Arkusz klatek (te same nazwy co paintUnitSheet) z obrotów south-east (przód) i north-east (tył).
- * Płótno i ramki w pikselach obrazu; `density` mówi, ile pikseli obrazu przypada na piksel projektowy.
+ * Animacje, dla których są paski PixelLab (szkielet postaci), biorą klatki z pasków (`anims` - nowe definicje),
+ * reszta jest składana z obrotu (poseFrame). Do tego chód i spoczynek w 8 kierunkach (`<nazwa>_<kierunek>_walk`
+ * / `_idle`, mapa regionu). Płótno i ramki w pikselach obrazu; `density` - pikseli obrazu na piksel projektowy.
  */
-export function paintSpriteSheet(scene: Phaser.Scene, id: string): UnitSheet & { density: number } {
+export function paintSpriteSheet(scene: Phaser.Scene, id: string): UnitSheet & { density: number; anims: SheetAnim[] } {
   const names: string[] = ANIM_ORDER.flatMap((a) => ANIMS[a].poses.map((p) => `${a}${p.i}`));
   const poses = new Map<string, Pose>(ANIM_ORDER.flatMap((a) => ANIMS[a].poses.map((p) => [`${a}${p.i}`, p] as const)));
-  const cols = Math.min(SHEET_COLS, names.length);
-  const blocks = Math.ceil(names.length / cols);
-  const pc = new PixelCanvas(FW * cols, FH * 2 * blocks);
-  const frames: UnitSheet['frames'] = [];
-  const at = (i: number, row: number) => ({ x: (i % cols) * FW, y: (Math.floor(i / cols) * 2 + row) * FH });
-  (['f', 'b'] as const).forEach((facing, row) => {
-    const src = measure(texturePixels(scene, spriteTexKey(id, facing === 'f' ? 'south-east' : 'north-east')));
-    names.forEach((name, i) => {
-      const fpc = poseFrame(src, poses.get(name)!, facing === 'f');
-      const { x, y } = at(i, row);
-      for (let yy = 0; yy < FH; yy++) pc.data.set(fpc.data.subarray(yy * FW * 4, (yy + 1) * FW * 4), ((y + yy) * pc.w + x) * 4);
-      frames.push({ name: `${facing}_${name}`, x, y, w: FW, h: FH });
-    });
-    for (const [alias, srcName] of Object.entries(FRAME_ALIASES)) {
-      const { x, y } = at(names.indexOf(srcName), row);
-      frames.push({ name: `${facing}_${alias}`, x, y, w: FW, h: FH });
+  const cells: { name: string; pc: PixelCanvas }[] = [];
+  const anims: SheetAnim[] = [];
+  const rest = new Map<SpriteDir, Src>();
+  const restOf = (dir: SpriteDir): Src => {
+    let r = rest.get(dir);
+    if (!r) rest.set(dir, (r = measure(texturePixels(scene, spriteTexKey(id, dir)))));
+    return r;
+  };
+  const msOf = (u: StripUse, k: number): number => (typeof u.ms === 'number' ? u.ms : u.ms[Math.min(k, u.ms.length - 1)]);
+
+  (['f', 'b'] as const).forEach((facing) => {
+    const dir: SpriteDir = facing === 'f' ? 'south-east' : 'north-east';
+    const src = restOf(dir);
+    for (const name of names) cells.push({ name: `${facing}_${name}`, pc: poseFrame(src, poses.get(name)!, facing === 'f') });
+    // paski PixelLab
+    const strips = new Map<StripAnim, Src[] | null>();
+    for (const u of STRIP_USES) {
+      if (!strips.has(u.strip)) strips.set(u.strip, stripFrames(scene, id, u.strip, dir));
+      const fr = strips.get(u.strip);
+      if (!fr || !fr.length) continue;
+      const idx = u.frames ? u.frames(fr.length) : range(0, fr.length);
+      const frames = idx.map((k, j) => {
+        const name = `${facing}_${u.anim}_x${j}`;
+        const pc = stripCell(src, fr[0], fr[k], !!u.ground);
+        if (u.flash !== undefined && (j === u.flash || j === u.flash + 1)) {
+          const h = src.bottom - src.top + 1;
+          muzzle(pc, j === u.flash ? 1 : 2, FOOT_Y - Math.round(h * 0.55));
+        }
+        cells.push({ name, pc });
+        return name;
+      });
+      anims.push({ suffix: `${facing}_${u.anim}`, frames, durs: idx.map((_, j) => msOf(u, j)), loop: u.loop, yoyo: u.yoyo });
     }
   });
-  return { pc, frames, density: SPRITE_DENSITY };
+
+  // mapa regionu: 8 kierunków (chód z paska albo kołysanie nóg na obrocie, spoczynek = oddech)
+  const walkPoses = ANIMS.walk.poses, idleDef = ANIMS.idle;
+  const walkUse = STRIP_USES[0];
+  for (const dir of SPRITE_DIRS) {
+    const src = restOf(dir);
+    const front = dir.startsWith('south') || dir === 'east';
+    idleDef.poses.forEach((p) => cells.push({ name: `d_${dir}_idle${p.i}`, pc: poseFrame(src, p, front) }));
+    const seq = idleDef.seq ?? idleDef.poses.map((_, i) => i);
+    anims.push({ suffix: `${dir}_idle`, frames: seq.map((i) => `d_${dir}_idle${i}`), durs: idleDef.durs.slice(0, seq.length), loop: true });
+    const fr = stripFrames(scene, id, 'walk', dir);
+    if (fr && fr.length) {
+      fr.forEach((f, k) => cells.push({ name: `d_${dir}_walk${k}`, pc: stripCell(src, fr[0], f, false) }));
+      anims.push({ suffix: `${dir}_walk`, frames: fr.map((_, k) => `d_${dir}_walk${k}`), durs: fr.map(() => msOf(walkUse, 0)), loop: true });
+    } else {
+      walkPoses.forEach((p) => cells.push({ name: `d_${dir}_walk${p.i}`, pc: poseFrame(src, p, front) }));
+      anims.push({ suffix: `${dir}_walk`, frames: walkPoses.map((p) => `d_${dir}_walk${p.i}`), durs: ANIMS.walk.durs.map((d) => d * 1.3), loop: true });
+    }
+  }
+
+  const cols = SHEET_COLS;
+  const pc = new PixelCanvas(FW * cols, FH * Math.ceil(cells.length / cols));
+  const frames: UnitSheet['frames'] = [];
+  const pos = new Map<string, { x: number; y: number }>();
+  cells.forEach((c, i) => {
+    const x = (i % cols) * FW, y = Math.floor(i / cols) * FH;
+    for (let yy = 0; yy < FH; yy++) pc.data.set(c.pc.data.subarray(yy * FW * 4, (yy + 1) * FW * 4), ((y + yy) * pc.w + x) * 4);
+    frames.push({ name: c.name, x, y, w: FW, h: FH });
+    pos.set(c.name, { x, y });
+  });
+  for (const facing of ['f', 'b'] as const)
+    for (const [alias, srcName] of Object.entries(FRAME_ALIASES)) {
+      const p = pos.get(`${facing}_${srcName}`)!;
+      frames.push({ name: `${facing}_${alias}`, x: p.x, y: p.y, w: FW, h: FH });
+    }
+  return { pc, frames, density: SPRITE_DENSITY, anims };
 }
 
 /**

@@ -272,8 +272,11 @@ export function routePointAt(r: Route, d: number): WPos {
   return { x: r.x[lo] + (((r.x[hi] - r.x[lo]) * k) / span | 0), z: r.z[lo] + (((r.z[hi] - r.z[lo]) * k) / span | 0) };
 }
 
-/** Czas marszu w tickach 50 Hz: 4.2 jednostki/s, minimum 6 s (Oldgame: max(6, length / 4.2)). */
-export const routeTicks = (r: Route): number => Math.max(300, ((r.len * 500) / 10752) | 0);
+/**
+ * Czas marszu w tickach 50 Hz: 2.1 jednostki/s, minimum 8 s (Oldgame: max(6, length / 4.2) - w 2D z postaciami
+ * PixelLab to było ~3 wzrosty postaci na sekundę, nogi nie nadążały za przesuwaniem).
+ */
+export const routeTicks = (r: Route): number => Math.max(400, ((r.len * 1000) / 10752) | 0);
 
 /** Miejsca zleceń na mapie: kolejne stałe miejsca sektora biomu (zawijane), jak w Oldgame. */
 export function contractSpots(contracts: readonly { id: string; biome: Biome }[]): Map<string, WPos> {

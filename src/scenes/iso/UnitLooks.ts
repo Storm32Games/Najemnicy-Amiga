@@ -8,7 +8,7 @@ import { mix, shade } from './Pixel';
 import { RECRUITS } from '../../core/data/recruits';
 import { hashStr } from './Pixel';
 import { addHiRes } from './HiRes';
-import { hasSprite, paintSpriteSheet, spriteIdOf } from './SpriteUnits';
+import { hasSprite, paintSpriteSheet, spriteIdOf, type SheetAnim } from './SpriteUnits';
 import {
   ANIMS, ANIM_ORDER, type AncestryLook, type BodyBuild, type HeadKind, LOOK_RAIDER, LOOK_SOLDIER, UNIT_FH, UNIT_FOOT_X, UNIT_FOOT_Y, UNIT_FW,
   type UnitLook, type UnitSheet, type WeaponKind, paintUnitSheet,
@@ -347,6 +347,8 @@ export function ensureUnit(scene: Phaser.Scene, name: string, look: UnitLook | C
       addHiRes(scene, tex, sheet.pc, { w: sheet.pc.w / d, h: sheet.pc.h / d, smooth: false }, frames);
     } else new ArtBook(scene).sheet(tex, sheet.pc, sheet.frames);
     painted.set(scene.textures.get(tex), sig);
+    // animacje z pasków PixelLab / 8 kierunków (paintSpriteSheet) - zastępują te z ANIMS o tej samej nazwie
+    if ('anims' in sheet) (scene.textures.get(tex).customData as { anims?: SheetAnim[] }).anims = sheet.anims as SheetAnim[];
   } else if (!sprite) {
     const t = scene.textures.get(tex);
     if (painted.get(t) !== sig && t instanceof Phaser.Textures.CanvasTexture) {
@@ -357,6 +359,18 @@ export function ensureUnit(scene: Phaser.Scene, name: string, look: UnitLook | C
       }
       painted.set(t, sig);
     }
+  }
+  const own = (scene.textures.get(tex).customData as { anims?: SheetAnim[] }).anims ?? [];
+  for (const a of own) {
+    const key = `${name}_${a.suffix}`;
+    if (scene.anims.exists(key)) continue;
+    scene.anims.create({
+      key,
+      frames: a.frames.map((frame, k) => ({ key: tex, frame, duration: a.durs[k] })),
+      frameRate: 10,
+      repeat: a.loop ? -1 : 0,
+      yoyo: !!a.yoyo,
+    });
   }
   for (const f of ['f', 'b'] as const) {
     for (const a of ANIM_ORDER) {
