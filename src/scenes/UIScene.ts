@@ -90,13 +90,13 @@ const PARTY_EDGE = 14;
 const BTN_W = 78;
 const BTN_H = 12;
 const BTN_GAP = 2;
-const MENU_ROWS = 5;
+const MENU_ROWS = 6;
 const LOG_W = 196;
 const LOG_LINES = 9;
 const LOG_H = 13 + LOG_LINES * LH + 3;
 const SHEET_W = 186;
 const SHEET_X = M + PARTY_W + 4;
-/** Prawa kolumna: siatka przycisków 2 x 4 + panel celów. */
+/** Prawa kolumna: siatka przycisków 2 x 6 + panel celów. */
 const RCOL_W = BTN_W * 2 + 4;
 /** Nagłówek menu (uchwyt do przesuwania + przyciski skali). */
 const MENU_HEAD = 11;
@@ -339,6 +339,8 @@ export class UIScene extends Phaser.Scene {
   private btnSpeed!: Button;
   private btnRetreat!: Button;
   private btnQuit!: Button;
+  private btnSave!: Button;
+  private btnLoad!: Button;
   private btnOptions!: Button;
   private btnZoomOut!: Button;
   private btnZoomIn!: Button;
@@ -956,6 +958,8 @@ export class UIScene extends Phaser.Scene {
     this.btnInv.set(hud.inventoryOpen ? 'ZAMKNIJ EKWIPUNEK [I]' : 'EKWIPUNEK [I]', true);
     this.btnRetreat.style(hud.contractDone ? 'primary' : 'danger');
     this.btnRetreat.set(hud.contractDone ? 'POWRÓT' : 'ODWRÓT', !locked || (hud.inCombat && !enemy && !hud.busy));
+    this.btnSave.set('ZAPISZ GRĘ', !locked && !hud.inCombat);
+    this.btnLoad.set('WCZYTAJ GRĘ', !locked || (hud.inCombat && !enemy && !hud.busy));
     this.btnQuit.set('WYJDŹ Z GRY', !locked || (hud.inCombat && !enemy && !hud.busy));
   }
 
@@ -980,7 +984,9 @@ export class UIScene extends Phaser.Scene {
     this.btnZoomIn = this.button(bx2, row(2), bw, '', () => this.hud.command({ kind: 'zoom', f: 1.25 }), 'normal', B);
     this.btnInv = this.button(bx, row(3), W, '', () => this.toggleSheet(), 'normal', B);
     this.btnRetreat = this.button(bx, row(4), bw, '', () => this.hud.command({ kind: 'retreat' }), 'danger', B);
-    this.btnQuit = this.button(bx2, row(4), bw, '', () => this.hud.command({ kind: 'quit' }), 'normal', B);
+    this.btnSave = this.button(bx2, row(4), bw, '', () => !modalOpen(this) && this.hud.command({ kind: 'save' }), 'normal', B);
+    this.btnLoad = this.button(bx, row(5), bw, '', () => !modalOpen(this) && this.hud.command({ kind: 'load' }), 'normal', B);
+    this.btnQuit = this.button(bx2, row(5), bw, '', () => this.hud.command({ kind: 'quit' }), 'normal', B);
     B.add(this.objLayer);
   }
 

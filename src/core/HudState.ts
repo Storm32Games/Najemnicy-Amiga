@@ -40,6 +40,8 @@ export type HudCommand =
   | { kind: 'retreat' }
   /** Wyjście z gry do ekranu tytułowego (misja przepada). */
   | { kind: 'quit' }
+  | { kind: 'save' }
+  | { kind: 'load' }
   | { kind: 'toggleGroup' }
   | { kind: 'cycleSpeed' }
   /** Mapa − / Mapa + (przybliżenie kamery; f = mnożnik). */
