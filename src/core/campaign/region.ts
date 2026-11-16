@@ -249,7 +249,14 @@ export function contractSpots(contracts: readonly { id: string; biome: Biome }[]
   const used: Partial<Record<Biome, number>> = {}, out = new Map<string, WPos>();
   for (const c of contracts) {
     const sec = sectorOf(c.biome), n = (used[c.biome] = (used[c.biome] ?? 0) + 1);
-    out.set(c.id, sec.spots[(n - 1) % sec.spots.length]);
+    const s = sec.spots[(n - 1) % sec.spots.length], lap = Math.floor((n - 1) / sec.spots.length);
+    // więcej zleceń niż miejsc w sektorze: kolejne flagi obok (przesunięcie w stronę środka sektora)
+    if (!lap) out.set(c.id, s);
+    else {
+      const dx = sec.x - s.x, dz = sec.z - s.z, len = Math.max(1, Math.abs(dx) + Math.abs(dz));
+      const k = Math.min(q(1.6) * lap, len >> 1);
+      out.set(c.id, { x: s.x + Math.trunc((dx * k) / len), z: s.z + Math.trunc((dz * k) / len) });
+    }
   }
   return out;
 }

@@ -18,7 +18,9 @@ import { Combat, makeActor, type Actor, type CombatEnd, type EnemyGroup, type Lo
 import { CellKind, cheb, dist, TacticalGrid, UNREACHABLE } from './grid.ts';
 import { generateMap, inEntryZone, type Biome, type FindKind, type FindSpawn, type TacticalMap } from './mapgen.ts';
 
-export type ObjectiveType = 'eliminate' | 'retrieve' | 'rescue' | 'hunt' | 'boss';
+export type ObjectiveType = 'eliminate' | 'retrieve' | 'rescue' | 'hunt' | 'boss' | 'hack' | 'liberate' | 'purge' | 'defend';
+/** Cele, po których trzeba wrócić do strefy ewakuacji (przedmiot, jeniec, dane z serwera). */
+export const EXTRACTION_OBJECTIVES: readonly ObjectiveType[] = ['retrieve', 'rescue', 'hack'];
 export type MissionOutcome = 'success' | 'fail' | 'retreat';
 
 /** Minimum danych zlecenia potrzebne misji (pełny typ: campaign/contracts.ts). */
@@ -33,7 +35,8 @@ export interface MissionContract {
 }
 
 /** door = zamknięte drzwi (wytrych / wyważenie), device = urządzenie elektroniczne (hakowanie). */
-export type ThingKind = 'crate' | 'item' | 'captive' | 'door' | 'device';
+/** nest = gniazdo zmutowanej fauny (zlecenie oczyszczenia). */
+export type ThingKind = 'crate' | 'item' | 'captive' | 'door' | 'device' | 'nest';
 export interface MissionThing extends GridPos {
   kind: ThingKind;
   name: string;
@@ -47,6 +50,8 @@ export interface MissionThing extends GridPos {
   lock?: LockState;
   quality?: LockQuality;
   device?: DeviceKind;
+  /** Obiekt jest celem zlecenia (serwer, osadnik, gniazdo). */
+  objective?: boolean;
 }
 export interface MissionFind extends FindSpawn {
   found: boolean;
@@ -80,6 +85,8 @@ export type MissionSignal =
   /** Próba otwarcia drzwi wytrychem / wyważenia albo hakowania urządzenia. */
   | { kind: 'lock'; thing: MissionThing; by: Actor; attempt: LockAttempt; hack: boolean }
   | { kind: 'objective'; lines: ObjectiveLine[] }
+  /** Cel zlecenia wykonany; `leftovers` = co jeszcze zostało na terenie (łupy, wrogowie, ukryte znaleziska). */
+  | { kind: 'complete'; leftovers: string[] }
   | { kind: 'visibility' }
   | { kind: 'finish'; result: MissionResult };
 
@@ -112,6 +119,15 @@ export class Mission {
   readonly target: Actor | null = null;
   itemThing: MissionThing | null = null;
   captive: MissionThing | null = null;
+  /** Serwer do włamania (zlecenie 'hack'). */
+  objDevice: MissionThing | null = null;
+  /** Osadnicy do uwolnienia (zlecenie 'liberate'). */
+  readonly settlers: MissionThing[] = [];
+  /** Gniazda do zniszczenia (zlecenie 'purge'). */
+  readonly nests: MissionThing[] = [];
+  /** Obrona: indeks następnej fali i krok, od którego nadciąga. */
+  wave = 0;
+  nextWave = 3;
   mode: 'explore' | 'combat' | 'over' = 'explore';
   /** 1 = cel zdobyty / jeniec uwolniony. */
   stage = 0;
@@ -176,6 +192,41 @@ export class Mission {
       this.actors.push(a);
       this.captive = { kind: 'captive', gx: oc.gx, gy: oc.gy, done: false, name: 'Jeniec', actor: a };
       this.things.push(this.captive);
+    } else if (oc && this.objType === 'hack') {
+      const c = this.solidSpot(oc) ?? this.freeCell(oc, 1, 4, true) ?? oc;
+      this.objDevice = this.addDevice(c.gx, c.gy, 'server');
+      this.objDevice.objective = true;
+      this.grid.setKind(c.gx, c.gy, CellKind.LOW);
+    } else if (oc && this.objType === 'liberate') {
+      const NAMES = ['Osadnik', 'Osadniczka', 'Starzec', 'Pasterz', 'Kowalka'];
+      const n = 3 + (this.level >= 4 ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const c = i === 0 ? oc : this.freeCell(oc, 1.5, 5);
+        if (!c) break;
+        const ch = createCharacter({ name: NAMES[i % NAMES.length], classId: 'scavenger', ancestry: 'human' });
+        ch.maxHp = 10;
+        ch.hp = 10;
+        const a = makeActor(ch, 'neutral', c);
+        this.neutral.push(a);
+        this.actors.push(a);
+        const th: MissionThing = { kind: 'captive', gx: c.gx, gy: c.gy, done: false, name: ch.name, actor: a, objective: true };
+        this.settlers.push(th);
+        this.things.push(th);
+      }
+    } else if (this.objType === 'purge') {
+      const n = 2 + (this.level >= 3 ? 1 : 0);
+      const far = this.map.maxD * 0.4;
+      for (let i = 0; i < n; i++) {
+        const near = i === 0 && oc ? oc : null;
+        const c = (near ? this.freeCell(near, 1, 4, true) : null) ??
+          this.pickCell((r) => r.d >= far && this.nests.every((x) => cheb(x, r) >= 7), true) ??
+          this.pickCell((r) => r.d >= 8, true);
+        if (!c) break;
+        const th: MissionThing = { kind: 'nest', gx: c.gx, gy: c.gy, done: false, name: 'Gniazdo mutantów', objective: true };
+        this.grid.setKind(c.gx, c.gy, CellKind.LOW);
+        this.nests.push(th);
+        this.things.push(th);
+      }
     }
 
     this.combat = new Combat(
@@ -188,11 +239,40 @@ export class Mission {
     this.combat.on((s) => {
       if (s.kind === 'state' && s.actor.side === 'enemy' && s.to === 'dead' && !this.killed.includes(s.actor.ch)) {
         this.killed.push(s.actor.ch);
+        if (s.actor === this.target) this.log('CEL ELIMINOWANY', 'good');
         this.emitObjectives();
+        this.checkObjective();
       } else if (s.kind === 'join' || s.kind === 'move') this.updateVisibility();
       else if (s.kind === 'end') this.onCombatEnd(s.outcome);
     });
     this.updateVisibility();
+  }
+
+  // ---------- rozmieszczanie celów
+  /** Pole wolne od wszystkiego (postacie, obiekty, znaleziska, strefa wejścia). `solid` = wokół zostaje przejście. */
+  private cellOk(c: GridPos, solid = false): boolean {
+    if (!this.grid.isFree(c.gx, c.gy) || inEntryZone(this.map.entry, c)) return false;
+    if (this.actors.some((a) => a.gx === c.gx && a.gy === c.gy) || this.things.some((t) => t.gx === c.gx && t.gy === c.gy)) return false;
+    if (this.map.finds.some((f) => f.gx === c.gx && f.gy === c.gy)) return false;
+    if (!solid) return true;
+    // obiekt blokujący: wszystkie 4 sąsiednie pola wolne, żeby nie zatkać korytarza
+    return [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => this.grid.isFree(c.gx + dx, c.gy + dy));
+  }
+  private pickCell(pred: (r: { gx: number; gy: number; d: number }) => boolean, solid = false): GridPos | null {
+    const c = this.map.reach.filter((r) => pred(r) && this.cellOk(r, solid));
+    if (!c.length) return null;
+    const r = c[Math.floor(this.rng() * c.length)];
+    return { gx: r.gx, gy: r.gy };
+  }
+  /** Losowe pole w pierścieniu [r0, r1] wokół `p`. */
+  private freeCell(p: GridPos, r0: number, r1: number, solid = false): GridPos | null {
+    return this.pickCell((r) => {
+      const d = Math.hypot(r.gx - p.gx, r.gy - p.gy);
+      return d >= r0 && d <= r1;
+    }, solid);
+  }
+  private solidSpot(p: GridPos): GridPos | null {
+    return this.cellOk(p, true) ? { gx: p.gx, gy: p.gy } : null;
   }
 
   // ---------- sygnały
@@ -447,6 +527,8 @@ export class Mission {
    */
   checkSpotting(): EnemyGroup | null {
     if (this.mode !== 'explore') return null;
+    const w = this.checkWave();
+    if (w) return w;
     for (const g of this.groups) {
       if (g.alerted) continue;
       const alive = g.actors.filter((a) => a.state !== 'dead');
@@ -488,6 +570,19 @@ export class Mission {
     return null;
   }
 
+  /** Obrona: kolejna grupa wrogów rusza do ataku na drużynę (po kilku krokach od poprzedniej fali). */
+  private checkWave(): EnemyGroup | null {
+    if (this.objType !== 'defend' || this.steps < this.nextWave) return null;
+    const g = this.groups.find((x) => !x.alerted && x.actors.some((e) => e.state !== 'dead'));
+    if (!g) return null;
+    this.wave++;
+    const by = g.actors.find((e) => e.state !== 'dead')!;
+    this.log(`Fala ${this.wave}/${this.groups.length}: napastnicy ruszają do ataku!`, 'bad');
+    this.emit({ kind: 'spotted', group: g, by, close: false });
+    this.startCombat(g);
+    return g;
+  }
+
   /** Walka z grupą; `ambush` = drużyna zaczyna z zaskoczenia (patrz Combat.start). */
   startCombat(g: EnemyGroup, ambush = false): void {
     this.mode = 'combat';
@@ -516,15 +611,11 @@ export class Mission {
       this.finish('fail');
       return;
     }
-    if (outcome === 'target') {
-      this.log('CEL ELIMINOWANY', 'good');
-      this.finish('success');
-      return;
-    }
     this.mode = 'explore';
     this.steps += 3;
+    if (this.objType === 'defend') this.nextWave = this.steps + 2;
     this.emitObjectives();
-    if (this.objType === 'eliminate' && this.enemies.every((e) => e.state === 'dead')) this.finish('success');
+    this.checkObjective();
   }
 
   // ---------- interakcje
@@ -547,6 +638,25 @@ export class Mission {
       this.log(`${a.ch.name} zabiera: ${th.name}. Czas wracać do strefy ewakuacji!`, 'good');
       this.emit({ kind: 'interact', thing: th, by: a });
       this.emitObjectives();
+      return true;
+    }
+    if (th.kind === 'nest') {
+      th.done = true;
+      this.grid.setKind(th.gx, th.gy, CellKind.FREE);
+      this.log(`${a.ch.name} niszczy ${th.name.toLowerCase()}.`, 'good');
+      this.emit({ kind: 'interact', thing: th, by: a });
+      this.emitObjectives();
+      this.checkObjective();
+      return true;
+    }
+    if (th.kind === 'captive' && th.objective) {
+      th.done = true;
+      th.freed = true;
+      this.log(`${a.ch.name} uwalnia: ${th.name}.`, 'good');
+      this.emit({ kind: 'interact', thing: th, by: a });
+      this.updateVisibility();
+      this.emitObjectives();
+      this.checkObjective();
       return true;
     }
     if (th.kind === 'captive') {
@@ -602,8 +712,17 @@ export class Mission {
     const at = hackDevice(a.ch, dev, skill, this.rng, th.name);
     this.log(at.log, at.opened ? 'good' : at.roll.degree === 0 ? 'bad' : 'dim');
     if (at.opened) th.done = true;
-    if (at.jammed) th.done = true;
+    if (at.jammed && th.objective && !at.opened) {
+      // serwer z celem zlecenia nie blokuje się na stałe - alarm i restart zabezpieczeń
+      dev.jammed = false;
+      dev.progress = 0;
+      this.log(`${th.name} restartuje zabezpieczenia — trzeba zacząć od nowa.`, 'bad');
+    } else if (at.jammed) th.done = true;
     this.emit({ kind: 'lock', thing: th, by: a, attempt: at, hack: true });
+    if (at.opened && th.objective) {
+      this.log('Dane pobrane. Czas wracać do strefy ewakuacji!', 'good');
+      this.checkObjective();
+    }
     if (at.alarm && this.mode === 'explore') {
       const g = this.groups
         .filter((x) => !x.alerted && x.actors.some((e) => e.state !== 'dead'))
@@ -704,6 +823,56 @@ export class Mission {
   objectiveDone(): boolean {
     return this.stage >= 1;
   }
+  /** Czy po wykonaniu celu trzeba wrócić do strefy ewakuacji (bez tego - ewakuacja w dowolnej chwili). */
+  needsExtraction(): boolean {
+    return EXTRACTION_OBJECTIVES.includes(this.objType);
+  }
+  private allDead(): boolean {
+    return this.enemies.every((e) => e.state === 'dead');
+  }
+  /** Czy cel zlecenia jest spełniony (retrieve / rescue ustawiają etap w interact). */
+  private objectiveMet(): boolean {
+    switch (this.objType) {
+      case 'eliminate':
+      case 'defend':
+        return this.allDead();
+      case 'hunt':
+      case 'boss':
+        return this.target?.state === 'dead';
+      case 'hack':
+        return !!this.objDevice?.done;
+      case 'liberate':
+        return this.allDead() && this.settlers.every((x) => x.freed);
+      case 'purge':
+        return this.allDead() && this.nests.every((x) => x.done);
+      default:
+        return this.stage >= 1;
+    }
+  }
+  /** Sprawdza cel; przy pierwszym spełnieniu ogłasza wykonanie (sygnał 'complete' z listą pozostałych nagród). */
+  checkObjective(): void {
+    if (this.stage >= 1 || this.mode === 'over' || !this.objectiveMet()) return;
+    this.stage = 1;
+    const left = this.leftovers();
+    this.log(left.length ? `Cel zlecenia wykonany. Na terenie zostało jeszcze: ${left.join(', ')}.` : 'Cel zlecenia wykonany.', 'good');
+    this.emit({ kind: 'complete', leftovers: left });
+    this.emitObjectives();
+  }
+  /** Co jeszcze można zdobyć / odkryć na terenie misji (opisy dla gracza). */
+  leftovers(): string[] {
+    const out: string[] = [];
+    const crates = this.things.filter((x) => x.kind === 'crate' && !x.done).length;
+    if (crates) out.push(`zamknięte skrzynie: ${crates}`);
+    const finds = this.finds.filter((f) => f.found && !f.taken).length;
+    if (finds) out.push(`znaleziska do zabrania: ${finds}`);
+    const hidden = this.finds.filter((f) => !f.found && !f.taken).length;
+    if (hidden) out.push('ukryte znaleziska do odkrycia');
+    const devices = this.things.filter((x) => x.kind === 'device' && !x.done && !x.lock?.jammed && !x.objective).length;
+    if (devices) out.push(`urządzenia do zhakowania: ${devices}`);
+    const foes = this.enemies.filter((e) => e.state !== 'dead').length;
+    if (foes) out.push(`wrogowie: ${foes}`);
+    return out;
+  }
 
   objectives(): ObjectiveLine[] {
     const alive = this.enemies.filter((a) => a.state !== 'dead').length;
@@ -714,6 +883,20 @@ export class Mission {
     else if (t === 'hunt' || t === 'boss') {
       L.push({ text: `Zabij cel: ${this.target?.ch.name ?? 'cel'}`, done: this.target?.state === 'dead' });
       L.push({ text: `Eskorta wrogów: ${alive}`, done: false, tone: 'dim' });
+    } else if (t === 'hack') {
+      const d = this.objDevice;
+      L.push({ text: `Włam się do serwera (${d?.lock?.progress ?? 0}/${d?.lock?.needed ?? 3})`, done: !!d?.done });
+      L.push({ text: 'Wróć z danymi do strefy ewakuacji', done: false, go: this.stage >= 1 });
+    } else if (t === 'liberate') {
+      L.push({ text: `Uwolnij osadników (${this.settlers.filter((x) => x.freed).length}/${this.settlers.length})`, done: this.settlers.every((x) => x.freed) });
+      L.push({ text: `Pokonaj szabrowników (${tot - alive}/${tot})`, done: alive === 0 });
+    } else if (t === 'purge') {
+      L.push({ text: `Zniszcz gniazda (${this.nests.filter((x) => x.done).length}/${this.nests.length})`, done: this.nests.every((x) => x.done) });
+      L.push({ text: `Wybij faunę (${tot - alive}/${tot})`, done: alive === 0 });
+    } else if (t === 'defend') {
+      const waves = this.groups.length;
+      const cleared = this.groups.filter((g) => g.actors.every((e) => e.state === 'dead')).length;
+      L.push({ text: `Odeprzyj fale napastników (${cleared}/${waves})`, done: alive === 0 });
     } else if (t === 'retrieve') {
       L.push({ text: `Odzyskaj: ${this.itemThing?.name ?? 'cel'}`, done: this.stage >= 1 });
       L.push({ text: 'Wróć do strefy ewakuacji', done: false, go: this.stage >= 1 });
@@ -721,6 +904,7 @@ export class Mission {
       L.push({ text: 'Znajdź i uwolnij jeńca', done: this.stage >= 1 });
       L.push({ text: 'Doprowadź go do strefy ewakuacji', done: false, go: this.stage >= 1 });
     }
+    if (this.stage >= 1 && !this.needsExtraction()) L.push({ text: 'Cel wykonany: przeszukaj teren lub wróć do ewakuacji', done: false, go: true });
     const crates = this.things.filter((x) => x.kind === 'crate');
     L.push({ text: `Skrzynie: ${crates.filter((x) => x.done).length}/${crates.length}`, done: false, tone: 'dim' });
     return L;
@@ -765,6 +949,8 @@ export class Mission {
 
   /** Odwrót z misji (w eksploracji i w walce - stary przycisk "Odwrót" działał zawsze). */
   retreat(): MissionResult | null {
-    return this.mode === 'over' ? null : this.finish('retreat');
+    if (this.mode === 'over') return null;
+    // cel wykonany (poza jeńcem, którego trzeba wyprowadzić) = zlecenie zaliczone
+    return this.finish(this.objectiveDone() && this.objType !== 'rescue' ? 'success' : 'retreat');
   }
 }

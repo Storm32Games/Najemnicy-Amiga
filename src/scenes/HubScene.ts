@@ -26,7 +26,11 @@ type Tab = 'board' | 'shop' | 'heal' | 'party' | 'tavern';
 const TITLES: Record<Tab, string> = { board: 'Tablica zleceń', shop: 'Handlarz Nomadów', heal: 'Lecznica', party: 'Drużyna', tavern: 'Karczma' };
 const TONE = { good: PAL.good, amber: PAL.amber, bad: PAL.bad } as const;
 const SLOTS: [EquipSlot, string][] = [['weapon', 'Broń główna'], ['weapon2', 'Broń zapasowa'], ['armor', 'Pancerz'], ['shield', 'Tarcza']];
-const OBJECTIVE: Record<string, string> = { eliminate: 'Wyeliminuj wszystkich wrogów.', rescue: 'Odnajdź i uratuj jeńca.', hunt: 'Wytrop i zabij cel polowania.', boss: 'Zabij Kostuchę.' };
+const OBJECTIVE: Record<string, string> = {
+  eliminate: 'Wyeliminuj wszystkich wrogów.', rescue: 'Odnajdź i uratuj jeńca.', hunt: 'Wytrop i zabij cel polowania.', boss: 'Zabij Kostuchę.',
+  hack: 'Włam się do serwera i wróć z danymi.', liberate: 'Pokonaj szabrowników i uwolnij osadników.',
+  purge: 'Zniszcz gniazda i wybij zmutowaną faunę.', defend: 'Odeprzyj kolejne fale napastników.',
+};
 
 const WX = 6, WY = 22, WW = 376, WH = 242; // okno zakładki
 const BY = 20, BH = WH - BY - 4; // obszar treści wewnątrz okna

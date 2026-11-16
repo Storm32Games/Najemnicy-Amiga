@@ -884,6 +884,34 @@ export function paintExtractPost(): { pc: PixelCanvas; ax: number; ay: number } 
 }
 
 /** Cel misji: walizka z nadajnikiem. */
+/** Gniazdo zmutowanej fauny: kopiec z mięsistej narośli, pulsujące jaja i macki (zlecenie oczyszczenia). */
+export function paintNest(seed = 1): { pc: PixelCanvas; ax: number; ay: number } {
+  const R = rng(seed * 53 + 11);
+  return propCanvas((pen) => {
+    castShadow(pen, 0.12, 0.14, 0.88, 0.86, 0.25, 55);
+    // kopiec: kilka warstw coraz mniejszych elips (cieniowanie od lewej-góry)
+    for (let k = 0; k < 4; k++) {
+      const [x, y] = pen.p(0.5, 0.5, k * 3);
+      const rx = 13 - k * 3, ry = 7 - k * 1.5;
+      pen.pc.ellipse(x, y, rx, ry, (px, py, dx, dy) => {
+        const l = -dx * 0.6 - dy * 0.8 + (hash2(px, py, 9 + k) - 0.5) * 0.5;
+        return l > 0.45 ? 0x8a4a78 : l > 0 ? 0x5e2c56 : l > -0.5 ? 0x3e1a3c : 0x24101f;
+      });
+    }
+    // jaja
+    for (let i = 0; i < 6; i++) {
+      const a = R() * Math.PI * 2, d = 0.12 + R() * 0.2;
+      const [x, y] = pen.p(0.5 + Math.cos(a) * d, 0.5 + Math.sin(a) * d, 2 + R() * 6);
+      pen.pc.ellipse(x, y, 2, 2.5, (_x, _y, dx, dy) => (dx + dy < -0.6 ? 0xe8ffb0 : dx * dx + dy * dy > 0.7 ? 0x4a7a30 : 0x9ad860));
+    }
+    // macki
+    for (let i = 0; i < 4; i++) {
+      const u = 0.35 + R() * 0.3, v = 0.35 + R() * 0.3;
+      line3(pen, u, v, 6, u + (R() - 0.5) * 0.5, v + (R() - 0.5) * 0.5, 12 + R() * 8, 0x6a2a5a);
+    }
+  });
+}
+
 export function paintObjective(): { pc: PixelCanvas; ax: number; ay: number } {
   return propCanvas((pen) => {
     castShadow(pen, 0.3, 0.32, 0.7, 0.68, 0.2);

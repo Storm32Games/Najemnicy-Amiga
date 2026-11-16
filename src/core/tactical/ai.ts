@@ -70,7 +70,7 @@ export function aiMove(c: Combat, a: Actor, w: WeaponRef, foes: Actor[]): Action
   // mapa odległości (po ścieżce) do najbliższego przeciwnika
   const dm = new Float32Array(res.cost.length).fill(UNREACHABLE);
   for (const f of foes) {
-    const r = grid.search(f, 60, () => true);
+    const r = grid.search(f, 160, () => true);
     for (let i = 0; i < dm.length; i++) if (r.cost[i] < dm[i]) dm[i] = r.cost[i];
   }
   const flee = isFleeing(a);

@@ -26,7 +26,7 @@ import { TurnPhase } from '../core/TurnManager';
 import { MAX_ACTION_POINTS } from '../core/TurnState';
 import {
   ArtBook, BIOME_STYLE, type DecalType, FLOOR_SPILL, paintAO, paintBlend, paintBlobShadow, paintBlock, paintCursor, paintDecal, paintEdge, paintFlames,
-  paintExtractPost, paintFloor, paintGlow, paintLootCrate, paintLootCrateOpen, paintObjective, paintPathDot, paintProp, paintSparkle, paintText,
+  paintExtractPost, paintFloor, paintGlow, paintLootCrate, paintLootCrateOpen, paintNest, paintObjective, paintPathDot, paintProp, paintSparkle, paintText,
   paintVignette, paintWall,
 } from './iso/IsoArt';
 import { PixelCanvas, hash2, rng } from './iso/Pixel';
@@ -293,6 +293,10 @@ export class WorldScene extends Phaser.Scene {
   private extractAsked = false;
   private crates = new Map<number, { img: Phaser.GameObjects.Image; sparkle: Phaser.GameObjects.Sprite | null }>();
   private objMarker: { imgs: Phaser.GameObjects.Image[]; light: LightView | null } | null = null;
+  /** Obiekty celów zlecenia na mapie: serwer (włamanie) i gniazda (oczyszczanie). */
+  private thingMarks = new Map<MissionThing, { imgs: Phaser.GameObjects.Image[]; light: LightView | null }>();
+  /** Cel wykonany - pytanie o dalsze przeszukiwanie / ewakuację przy najbliższym powrocie do eksploracji. */
+  private completeAsk = false;
   private extract: { caps: Phaser.GameObjects.Image[]; posts: Phaser.GameObjects.Image[]; beacon: Phaser.GameObjects.Container } | null = null;
   private floatStack = new Map<Actor, { t: number; n: number }>();
   private drag: { x: number; y: number; moved: boolean; btn: number } | null = null;
@@ -327,6 +331,8 @@ export class WorldScene extends Phaser.Scene {
     this.burning = new Map();
     this.geigerAt = 0;
     this.objDone = false;
+    this.completeAsk = false;
+    this.thingMarks = new Map();
     this.atmo = null;
     this.revealing = new Set();
     this.sparkles = new Map();
@@ -376,10 +382,13 @@ export class WorldScene extends Phaser.Scene {
         ch.nameAcc = p.acc;
         return ch;
       });
-      // demo: ?type=retrieve|rescue|hunt|eliminate
-      const tp = params.get('type');
-      const type = tp === 'retrieve' || tp === 'rescue' || tp === 'hunt' ? tp : 'eliminate';
-      const titles = { eliminate: 'Oczyść teren', retrieve: 'Odzyskaj ładunek', rescue: 'Uwolnij jeńca', hunt: 'Polowanie' } as const;
+      // demo: ?type=retrieve|rescue|hunt|eliminate|hack|liberate|purge|defend
+      const titles = {
+        eliminate: 'Oczyść teren', retrieve: 'Odzyskaj ładunek', rescue: 'Uwolnij jeńca', hunt: 'Polowanie',
+        hack: 'Włamanie do serwera', liberate: 'Uwolnić osadę Nomadów', purge: 'Oczyścić dzielnicę', defend: 'Obrona Przystani',
+      } as const;
+      const tp = params.get('type') ?? '';
+      const type: keyof typeof titles = tp in titles ? (tp as keyof typeof titles) : 'eliminate';
       contract = { id: seed, title: titles[type], type, level: 1, biome: this.biome, enemies: foes.length ? foes : ENEMIES, objective: { type, itemId: type === 'retrieve' ? 'radio_part' : null } };
     }
     this.mission = new Mission(contract, party);
@@ -485,6 +494,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.scene.launch('UIScene', { hud: this.hud });
     this.hud.pushLog(this.job ? `Zlecenie: ${this.job.title}. ${this.job.desc}` : 'Zlecenie: oczyść teren z szabrowników.', 'amber');
+    if (this.mission.objType === 'defend') this.hud.pushLog('Zajmijcie pozycje — za chwilę nadciągnie pierwsza fala napastników.', 'bad');
     this.hud.pushLog('Klikaj pola, by się poruszać; klik na skrzynię / cel = interakcja. Wrogowie czyhają w ciemności. [H] sterowanie.');
     this.updateFoes();
     this.refreshOverlay();
@@ -866,7 +876,38 @@ export class WorldScene extends Phaser.Scene {
       const sparkle = this.addSparkle(gx, gy, -10);
       this.objMarker = { imgs: [img, sparkle as unknown as Phaser.GameObjects.Image], light };
     }
+    for (const th of this.mission.things) this.addThingMark(th);
     this.buildExtraction();
+  }
+
+  /** Serwer (zostaje po zhakowaniu, gaśnie światło) albo gniazdo mutantów (znika po zniszczeniu). */
+  private addThingMark(th: MissionThing): void {
+    if (!th.objective || (th.kind !== 'device' && th.kind !== 'nest') || (th.kind === 'nest' && th.done)) return;
+    const { gx, gy } = th;
+    const v = (gx * 7 + gy * 13) % 3;
+    const k = th.kind === 'device' ? `prop_terminal_${VIEW.r % 2}_0_${this.biome}` : `mission_nest_${v}`;
+    const info = th.kind === 'device' ? this.art.get(k, () => paintProp('terminal', VIEW.r, 1, this.biome)) : this.art.get(k, () => paintNest(v + 1));
+    const img = this.place(gx, gy, k, info.ax, info.ay, objDepth(gx, gy, L_PROP));
+    let light: LightView | null = null;
+    if (!th.done) {
+      this.addLight(gx, gy, th.kind === 'device' ? 0x40e0d0 : 0xc060ff, 0.5, 0.5, 6, 0.8, 'blink', 0.5, objDepth(gx, gy, L_FX), 'fx_halo');
+      light = this.glows[this.glows.length - 1];
+    }
+    this.thingMarks.set(th, { imgs: [img], light });
+  }
+  /** Gaszenie / usuwanie znacznika obiektu po wykonaniu. */
+  private clearThingMark(th: MissionThing): void {
+    const m = this.thingMarks.get(th);
+    if (!m) return;
+    if (m.light) {
+      m.light.img.destroy();
+      this.glows.splice(this.glows.indexOf(m.light), 1);
+      m.light = null;
+    }
+    if (th.kind === 'nest') {
+      for (const img of m.imgs) this.dropCellImg(this.idx(th.gx, th.gy), img);
+      this.thingMarks.delete(th);
+    }
   }
 
   /**
@@ -1257,6 +1298,7 @@ export class WorldScene extends Phaser.Scene {
     this.sparkles = new Map();
     this.crates = new Map();
     this.objMarker = null;
+    this.thingMarks = new Map();
     this.extract = null;
 
     VIEW.r = (VIEW.r + dir + 4) % 4;
@@ -1569,7 +1611,42 @@ export class WorldScene extends Phaser.Scene {
     this.hud.setBusy(false);
     this.refreshOverlay();
     this.refreshPathPreview();
+    if (await this.askAfterObjective()) return;
     await this.checkExtraction();
+  }
+
+  /**
+   * Cel wykonany: bez potrzeby powrotu (eliminacja, polowanie, obrona...) - gdy nic nie zostało, misja kończy się
+   * od razu; gdy zostały łupy / ukryte znaleziska / wrogowie - wybór: przeszukać teren dalej albo ewakuacja.
+   * Zwraca true, gdy misja się zakończyła.
+   */
+  private async askAfterObjective(): Promise<boolean> {
+    if (!this.completeAsk || this.over || this.mission.mode !== 'explore') return false;
+    this.completeAsk = false;
+    if (this.mission.needsExtraction()) return false;
+    const left = this.mission.leftovers();
+    if (!left.length) {
+      this.mission.finish('success');
+      await this.flush();
+      return true;
+    }
+    this.hud.setBusy(true);
+    SoundManager.sfx('radio', { vol: 0.6 });
+    const v = await this.hud.ask({
+      title: 'Cel wykonany',
+      body: `Zlecenie zaliczone. Na terenie zostało jeszcze:\n- ${left.join('\n- ')}\n\nMożecie dalej przeszukiwać okolicę i wrócić do strefy ewakuacji (albo użyć Odwrotu - nagroda za zlecenie zostaje).`,
+      options: [{ label: 'Przeszukaj teren', value: null, primary: true }, { label: 'Ewakuacja teraz', value: 'go' }],
+      w: 360,
+    });
+    if (this.over) return true;
+    if (v === 'go') {
+      this.mission.finish('success');
+      await this.flush();
+      return true;
+    }
+    this.hud.setBusy(false);
+    this.refreshOverlay();
+    return false;
   }
 
   /** Interakcja w eksploracji: podejście (jeden ruch) do pola obok obiektu, potem skrzynia / cel / jeniec. */
@@ -1734,7 +1811,9 @@ export class WorldScene extends Phaser.Scene {
     this.hud.setBusy(true);
     const v = await this.hud.ask({
       title: 'Odwrót?',
-      body: 'Wycofujecie się ze zlecenia. Nagroda za cel przepada, ale zachowujecie łupy i doświadczenie za pokonanych wrogów.',
+      body: this.mission.objectiveDone() && this.mission.objType !== 'rescue'
+        ? 'Cel zlecenia jest wykonany — opuszczacie teren z nagrodą. Czego nie zabraliście, zostaje na miejscu.'
+        : 'Wycofujecie się ze zlecenia. Nagroda za cel przepada, ale zachowujecie łupy i doświadczenie za pokonanych wrogów.',
       options: [{ label: 'Zostań', value: null }, { label: 'Odwrót', value: 'go', danger: true }],
     });
     if (this.over) return;
@@ -1819,6 +1898,7 @@ export class WorldScene extends Phaser.Scene {
     this.hud.setBusy(false);
     this.refreshOverlay();
     this.refreshPathPreview();
+    if (await this.askAfterObjective()) return;
     await this.checkExtraction();
   }
 
@@ -1995,7 +2075,10 @@ export class WorldScene extends Phaser.Scene {
     const cons = this.combat.consumables(a);
     if (cons.length) add('items', `Przedmioty (${cons.reduce((s, x) => s + x.qty, 0)})`, null, { tip: 'Użyj przedmiotu z plecaka.' });
     const th = this.mission.things.find((x) => !x.done && cheb(a, x) <= 1);
-    if (th) add('interact', th.kind === 'crate' ? 'Otwórz skrzynię' : th.kind === 'item' ? 'Zabierz cel' : 'Uwolnij', 1, { tip: 'Interakcja z obiektem obok (1 akcja).' });
+    if (th) {
+      const INTERACT: Partial<Record<MissionThing['kind'], string>> = { crate: 'Otwórz skrzynię', item: 'Zabierz cel', nest: 'Zniszcz gniazdo', door: 'Otwórz drzwi', device: 'Hakuj' };
+      add('interact', INTERACT[th.kind] ?? 'Uwolnij', 1, { tip: 'Interakcja z obiektem obok (1 akcja).' });
+    }
     add('delay', 'Odłóż turę', null, { tip: 'Przesuń swoją turę na koniec rundy.' });
     add('end', 'Koniec tury', null, { tip: 'Zakończ turę [Spacja].' });
     this.hud.setActions(a.ch.name, list);
@@ -2327,6 +2410,10 @@ export class WorldScene extends Phaser.Scene {
         }
         this.hud.setObjectives(this.mission.contract.title ?? 'Zlecenie', s.lines.map((l) => ({ text: l.text, done: l.done, go: l.go, dim: l.tone === 'dim' })));
         break;
+      case 'complete':
+        this.completeAsk = true;
+        if (!this.mission.needsExtraction()) this.hud.showBanner('CEL WYKONANY', 'good', s.leftovers.length ? 'Teren można dalej przeszukać' : undefined);
+        break;
       case 'finish':
         this.onMissionFinish(s.result);
         break;
@@ -2423,6 +2510,10 @@ export class WorldScene extends Phaser.Scene {
     if (at.opened) {
       SoundManager.sfx(hack ? 'radio' : 'door', { vol: 0.6 });
       this.floatAbove(by, hack ? 'DOSTĘP!' : at.broken ? 'WYWAŻONE' : 'OTWARTE', C_LOOT);
+      if (th.objective) {
+        this.clearThingMark(th);
+        this.hud.showBanner('DANE POBRANE', 'amber', 'Wróć do strefy ewakuacji');
+      }
     } else if (at.alarm) {
       SoundManager.sfx('alarm', { vol: 0.5 });
       this.floatAbove(by, 'ALARM!', COLOR_HOSTILE);
@@ -2460,6 +2551,15 @@ export class WorldScene extends Phaser.Scene {
         }
         this.objMarker = null;
       }
+    } else if (th.kind === 'nest') {
+      SoundManager.sfx('explosion', { vol: 0.5 });
+      this.floatAbove(by, 'Gniazdo zniszczone', C_LOOT);
+      this.clearThingMark(th);
+    } else if (th.kind === 'captive' && th.objective && th.actor) {
+      SoundManager.sfx('door');
+      const u = this.units.get(th.actor);
+      if (u) this.setUnitVisible(u, true);
+      this.floatAbove(th.actor, 'Wolny!', 0x7fc46a);
     } else if (th.kind === 'captive' && th.actor) {
       SoundManager.sfx('door');
       const u = this.units.get(th.actor);
@@ -2837,7 +2937,9 @@ export class WorldScene extends Phaser.Scene {
       const what = th.kind === 'crate' ? `Skrzynia (KT ${this.mission.crateDC()}) — kliknij, by otworzyć`
         : th.kind === 'door' ? `${th.name} (ST ${th.lock?.dc}, ${th.lock?.progress}/${th.lock?.needed}) — kliknij: wytrych / wyważenie`
         : th.kind === 'device' ? `${th.name} (ST ${th.lock?.dc}, ${th.lock?.progress}/${th.lock?.needed})${th.lock?.jammed ? ' — ZABLOKOWANY' : ' — kliknij, by zhakować'}`
-        : th.kind === 'item' ? `${th.name} — kliknij, by zabrać` : 'Jeniec — kliknij, by uwolnić';
+        : th.kind === 'item' ? `${th.name} — kliknij, by zabrać`
+        : th.kind === 'nest' ? `${th.name} — kliknij, by zniszczyć`
+        : `${th.name} — kliknij, by uwolnić`;
       this.hud.setHover(`${what}${t ? ' (obok, 1 akcja)' : ''}`);
       return;
     }

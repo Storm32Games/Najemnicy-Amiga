@@ -32,15 +32,29 @@ export function rollItem(spec: string | null | undefined, level = 1, rng: Rng = 
   return c.length ? pickOne(c, rng).id : null;
 }
 
+/** Co jest już na tablicy: obłożenie sektorów (flagi na mapie) i użyte tytuły (bez powtórek). */
+export interface BoardUse {
+  biomes: Partial<Record<Biome, number>>;
+  titles: Set<string>;
+}
+function pickTitle(titles: readonly string[], board: BoardUse | undefined, rng: Rng): string {
+  const free = board ? titles.filter((t) => !board.titles.has(t)) : titles;
+  const t = pickOne(free.length ? free : titles, rng);
+  board?.titles.add(t);
+  return t;
+}
+
 interface ContractTemplate {
   factions: readonly string[];
   biomes: readonly Biome[];
   moods: readonly Mood[];
   titles: readonly string[];
   descs: readonly string[];
+  /** Zleceniodawca zawsze z tej frakcji (domyślnie losowo). */
+  giver?: FactionId;
 }
 type SideType = Exclude<ObjectiveType, 'boss'>;
-export const SIDE_TYPES: readonly SideType[] = ['eliminate', 'retrieve', 'rescue', 'hunt'];
+export const SIDE_TYPES: readonly SideType[] = ['eliminate', 'retrieve', 'rescue', 'hunt', 'hack', 'liberate', 'purge', 'defend'];
 
 const TYPES: Readonly<Record<SideType, ContractTemplate>> = {
   eliminate: {
@@ -79,6 +93,42 @@ const TYPES: Readonly<Record<SideType, ContractTemplate>> = {
       'Za głowę potwora wyznaczono nagrodę. Przynieś dowód.',
     ],
   },
+  hack: {
+    factions: ['machine', 'raider'], biomes: ['bunker', 'industrial'], moods: ['night', 'dusk', 'toxic'],
+    titles: ['Włamanie do serwera', 'Archiwum sprzed Wojny', 'Szyfry Żelaznych Szczęk', 'Martwa sieć', 'Dane z centrum dowodzenia', 'Ostatni serwer Vaultu'],
+    descs: [
+      'W starym centrum danych wciąż działa serwer z mapami tras przedwojennych konwojów. Włamcie się i ściągnijcie wszystko.',
+      'Szabrownicy trzymają listy swoich dostaw na zdobycznym serwerze. Wejdźcie do systemu, zanim zatrą ślady.',
+      'Maszyny strzegą serwera z planami oczyszczalni wody. Ktoś z głową do elektroniki musi się tam dostać.',
+    ],
+  },
+  liberate: {
+    factions: ['raider'], biomes: ['wastes', 'ruins'], moods: ['day', 'dusk', 'night'], giver: 'nomads',
+    titles: ['Uwolnić osadę Nomadów', 'Jarzmo szabrowników', 'Studnia w niewoli', 'Obóz pod Czerwoną Skałą', 'Spętani wędrowcy'],
+    descs: [
+      'Szabrownicy zajęli osadę Nomadów i trzymają jej mieszkańców w klatkach. Wybijcie najeźdźców i uwolnijcie ludzi.',
+      'Nasze rodziny zostały przy studni, gdy przyszli bandyci. Każdego dnia ktoś znika. Odbijcie osadę.',
+      'Osada przy szlaku karawan płaci szabrownikom daninę krwią. Skończcie z tym i przetnijcie więzy jeńców.',
+    ],
+  },
+  purge: {
+    factions: ['beast', 'mutant'], biomes: ['ruins', 'industrial', 'wastes'], moods: ['toxic', 'night', 'dusk', 'storm'],
+    titles: ['Oczyścić dzielnicę', 'Gniazda w kanałach', 'Plaga w starym osiedlu', 'Zmutowana fauna', 'Wypalić lęgowiska'],
+    descs: [
+      'Zmutowana fauna zagnieździła się w całej dzielnicy. Zniszczcie gniazda i wybijcie wszystko, co się rusza.',
+      'Z ruin wypełzają kolejne pomioty. Dopóki gniazda stoją, nie da się tam zbierać złomu. Spalcie je.',
+      'Kupcy omijają tę dzielnicę szerokim łukiem. Oczyśćcie ją z bestii, a szlak znów będzie bezpieczny.',
+    ],
+  },
+  defend: {
+    factions: ['raider', 'mutant', 'beast'], biomes: ['wastes', 'ruins'], moods: ['dusk', 'night', 'storm'], giver: 'survivors',
+    titles: ['Obrona Przystani', 'Oblężenie przedpola', 'Noc długich noży', 'Ostatnia linia', 'Atak na posterunek'],
+    descs: [
+      'Zwiadowcy donoszą, że w stronę Przystani ciągnie kilka band naraz. Zajmijcie przedpole i odeprzyjcie każdą falę.',
+      'Coś wygoniło stada mutantów z pustkowi i pędzi je prosto na nasze mury. Zatrzymajcie je, zanim dotrą do bram.',
+      'Posterunek przy Przystani zgłasza ruch na horyzoncie. Potrzebujemy ludzi, którzy wytrzymają kilka szturmów z rzędu.',
+    ],
+  },
 };
 const GIVERS: Readonly<Record<FactionId, readonly string[]>> = {
   survivors: ['Starsza Wiera', 'Kapitan Dobosz', 'Mechanik Rudy', 'Siostra Hanna', 'Burmistrz Kalinowski'],
@@ -89,12 +139,18 @@ const GIVERS: Readonly<Record<FactionId, readonly string[]>> = {
  * Zlecenie poboczne. Budżet PD (4 postacie): ~85-110 standardowo, 125 gdy zlecenie jest powyżej poziomu drużyny
  * (grupy walczy się zwykle po kolei, więc całość jest nieco ponad "umiarkowane" starcie).
  */
-export function makeContract(type: SideType, level: number, state: Pick<CampaignState, 'party' | 'day'> | null, rng: Rng = Math.random): Contract {
-  const T = TYPES[type];
-  const faction: FactionId = rng() < 0.55 ? 'survivors' : 'nomads';
+export function makeContract(
+  type: SideType, level: number, state: Pick<CampaignState, 'party' | 'day'> | null, rng: Rng = Math.random, board?: BoardUse,
+): Contract {
+  const biomeUse = board?.biomes;
+  const base = TYPES[type];
+  // obrona: jedna frakcja napastników na zlecenie (fale z tej samej bandy / stada)
+  const T: ContractTemplate = type === 'defend' ? { ...base, factions: [pickOne(base.factions, rng)] } : base;
+  const faction: FactionId = T.giver ?? (rng() < 0.55 ? 'survivors' : 'nomads');
   const plv = campaignPartyLevel(state);
   const hard = level > plv;
-  let budget = (hard ? 125 : 85 + Math.floor(rng() * 25)) + (type === 'hunt' ? 10 : 0);
+  const BONUS: Partial<Record<SideType, number>> = { hunt: 10, liberate: 10, purge: 10, defend: 20 };
+  let budget = (hard ? 125 : 85 + Math.floor(rng() * 25)) + (BONUS[type] ?? 0);
   const cost = (id: EnemyId): number => encounterXP(plv, [createEnemy(id)]) || 40;
   const enemies: EnemyId[] = [];
   if (type === 'hunt') {
@@ -108,7 +164,8 @@ export function makeContract(type: SideType, level: number, state: Pick<Campaign
   }
   const p = allEnemyIds().filter((id) => !isBossEnemy(id) && T.factions.includes(factionOf(id)) && levelOf(id) <= level && levelOf(id) >= level - 3);
   const fallback = pool(T.factions, level);
-  for (let guard = 0; guard < 20 && enemies.length < 8; guard++) {
+  const maxN = type === 'defend' ? 10 : 8;
+  for (let guard = 0; guard < 24 && enemies.length < maxN; guard++) {
     const fit = (p.length ? p : fallback).filter((id) => cost(id) <= budget);
     if (!fit.length) break;
     const id = pickOne(fit, rng);
@@ -119,15 +176,21 @@ export function makeContract(type: SideType, level: number, state: Pick<Campaign
   const objective: Contract['objective'] =
     type === 'retrieve' ? { type, itemId: rollItem('@tech', 5, rng) ?? rollItem('@consumable', 5, rng) ?? 'scrap_metal', count: 1 } : { type };
   const anyItem = rollItem('@any', level, rng);
+  const techItem = type === 'hack' ? rollItem('@tech', level, rng) : null;
+  // sektor: najmniej obłożony z pasujących (flagi zleceń na mapie się nie nakładają)
+  const least = biomeUse ? Math.min(...T.biomes.map((b) => biomeUse[b] ?? 0)) : 0;
+  const biome = pickOne(biomeUse ? T.biomes.filter((b) => (biomeUse[b] ?? 0) === least) : T.biomes, rng);
+  if (biomeUse) biomeUse[biome] = (biomeUse[biome] ?? 0) + 1;
+  const MULT: Partial<Record<SideType, number>> = { rescue: 1.15, hack: 1.1, liberate: 1.2, purge: 1.15, defend: 1.25 };
   return {
     id: 'k' + (state?.day ?? 1) + '_' + rng().toString(36).slice(2, 7),
-    title: pickOne(T.titles, rng), giver: pickOne(GIVERS[faction], rng), faction, desc: pickOne(T.descs, rng),
-    type, level, biome: pickOne(T.biomes, rng), mood: pickOne(T.moods, rng), enemies, objective,
+    title: pickTitle(T.titles, board, rng), giver: pickOne(GIVERS[faction], rng), faction, desc: pickOne(T.descs, rng),
+    type, level, biome, mood: pickOne(T.moods, rng), enemies, objective,
     reward: {
-      scrap: Math.round((35 + level * 32 + Math.floor(rng() * 30)) * (hard ? 1.2 : 1) * (type === 'rescue' ? 1.15 : 1)),
-      xp: 300 + level * 100,
-      items: rng() < 0.4 && anyItem ? [anyItem] : [],
-      rep: { [faction]: 1 + (hard ? 1 : 0) },
+      scrap: Math.round((35 + level * 32 + Math.floor(rng() * 30)) * (hard ? 1.2 : 1) * (MULT[type] ?? 1)),
+      xp: 300 + level * 100 + (type === 'defend' || type === 'liberate' ? 100 : 0),
+      items: techItem ? [techItem] : rng() < 0.4 && anyItem ? [anyItem] : [],
+      rep: { [faction]: 1 + (hard ? 1 : 0) + (type === 'liberate' || type === 'defend' ? 1 : 0) },
     },
     travelDays: 1 + (rng() < 0.25 ? 1 : 0),
   };
@@ -194,17 +257,30 @@ function cloneStory(i: number, state: CampaignState): Contract {
 
 const levelJitter = (lvl: number, rng: Rng): number => clamp(lvl + (rng() < 0.25 ? 1 : rng() < 0.2 ? -1 : 0), 1, 10);
 
-/** Nowa tablica: 4-6 zleceń pobocznych (+ fabularne, jeśli odblokowane). */
+/** Liczba zleceń pobocznych na tablicy: 10-11. */
+const BOARD_MIN = 10;
+const boardTarget = (rng: Rng): number => BOARD_MIN + Math.floor(rng() * 2);
+const boardUse = (list: readonly Contract[]): BoardUse => {
+  const out: BoardUse = { biomes: {}, titles: new Set() };
+  for (const c of list) {
+    out.biomes[c.biome] = (out.biomes[c.biome] ?? 0) + 1;
+    out.titles.add(c.title);
+  }
+  return out;
+};
+
+/** Nowa tablica: 10-11 zleceń pobocznych, każdy typ co najmniej raz (+ fabularne, jeśli odblokowane). */
 export function generateContracts(state: CampaignState, rng: Rng = Math.random): Contract[] {
   const lvl = campaignPartyLevel(state);
   const out: Contract[] = [];
-  const n = 4 + Math.floor(rng() * 2);
-  for (let i = 0; i < n; i++) out.push(makeContract(i < 4 ? SIDE_TYPES[i] : pickOne(SIDE_TYPES, rng), levelJitter(lvl, rng), state, rng));
+  const use = boardUse([]);
+  const n = boardTarget(rng);
+  for (let i = 0; i < n; i++) out.push(makeContract(i < SIDE_TYPES.length ? SIDE_TYPES[i] : pickOne(SIDE_TYPES, rng), levelJitter(lvl, rng), state, rng, use));
   if (storyUnlocked(state)) out.unshift(cloneStory(state.story || 0, state));
   return out;
 }
 
-/** Odświeża tablicę: usuwa `drop` losowych pobocznych, dopełnia do 4-6, dokłada fabularne. MUTUJE state.contracts. */
+/** Odświeża tablicę: usuwa `drop` losowych pobocznych, dopełnia do 10-11, dokłada fabularne. MUTUJE state.contracts. */
 export function refreshBoard(state: CampaignState, drop = 0, rng: Rng = Math.random): Contract[] {
   for (let i = 0; i < drop; i++) {
     const side = state.contracts.filter((c) => !c.story);
@@ -212,10 +288,11 @@ export function refreshBoard(state: CampaignState, drop = 0, rng: Rng = Math.ran
   }
   if (storyUnlocked(state) && !state.contracts.some((c) => c.story)) state.contracts.unshift(cloneStory(state.story || 0, state));
   const lvl = campaignPartyLevel(state);
-  const target = 4 + Math.floor(rng() * 2);
+  const target = boardTarget(rng);
+  const use = boardUse(state.contracts);
   while (state.contracts.filter((c) => !c.story).length < target) {
     const missing = SIDE_TYPES.find((t) => !state.contracts.some((c) => c.type === t));
-    state.contracts.push(makeContract(missing ?? pickOne(SIDE_TYPES, rng), clamp(lvl + (rng() < 0.25 ? 1 : 0), 1, 10), state, rng));
+    state.contracts.push(makeContract(missing ?? pickOne(SIDE_TYPES, rng), clamp(lvl + (rng() < 0.25 ? 1 : 0), 1, 10), state, rng, use));
   }
   return state.contracts;
 }
@@ -228,6 +305,9 @@ export function difficulty(contractLevel: number, partyLevel: number): { label: 
   return { label: d === 1 ? 'Trudne' : 'Śmiertelne', tone: 'bad' };
 }
 export const BIOME_NAMES: Readonly<Record<Biome, string>> = { ruins: 'Ruiny', wastes: 'Pustkowia', industrial: 'Strefa przemysłowa', bunker: 'Bunkier' };
-export const TYPE_NAMES: Readonly<Record<ObjectiveType, string>> = { eliminate: 'Eliminacja', retrieve: 'Odzyskanie', rescue: 'Ratunek', hunt: 'Polowanie', boss: 'Wódz' };
+export const TYPE_NAMES: Readonly<Record<ObjectiveType, string>> = {
+  eliminate: 'Eliminacja', retrieve: 'Odzyskanie', rescue: 'Ratunek', hunt: 'Polowanie', boss: 'Wódz',
+  hack: 'Włamanie', liberate: 'Wyzwolenie', purge: 'Oczyszczanie', defend: 'Obrona',
+};
 export const FACTION_NAMES: Readonly<Record<FactionId, string>> = { survivors: 'Ocaleni z Przystani', nomads: 'Nomadzi' };
 export const MOOD_NAMES: Readonly<Record<Mood, string>> = { day: 'dzień', dusk: 'zmierzch', night: 'noc', toxic: 'toksyczna mgła', storm: 'burza' };

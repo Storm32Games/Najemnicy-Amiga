@@ -798,11 +798,10 @@ export class Combat {
     return { ok: true, immediate: false, message: `${b.ch.name} wykona turę jako następny.` };
   }
 
-  /** Sprawdza koniec walki: porażka drużyny, śmierć celu, brak zaalarmowanych wrogów. */
+  /** Sprawdza koniec walki: porażka drużyny albo brak zaalarmowanych wrogów (śmierć celu nie przerywa walki z eskortą). */
   checkEnd(): CombatEnd | null {
     if (!this.active) return null;
     if (this.pcs.every((p) => p.state !== 'up')) return this.finish('defeat');
-    if (this.field.target && this.field.target.state === 'dead') return this.finish('target');
     if (!this.enemies.some((e) => e.group?.alerted && e.state !== 'dead')) {
       for (const a of this.field.actors) {
         a.mapN = 0;

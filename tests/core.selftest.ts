@@ -298,17 +298,20 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
         ? null
         : m.objectiveDone()
           ? m.map.entry.cells[5]
-          : (m.itemThing && !m.itemThing.done ? m.itemThing : m.captive && !m.captive.done ? m.captive : foe) ?? m.map.entry.cells[5];
+          : (m.itemThing && !m.itemThing.done ? m.itemThing : m.captive && !m.captive.done ? m.captive
+            : m.things.find((t) => t.objective && !t.done) ?? foe) ?? m.map.entry.cells[5];
       if (!goal) {
         m.finish('success');
         break;
       }
       const th = m.things.find((t) => !t.done && t.kind !== 'crate' && Math.max(Math.abs(t.gx - leader.gx), Math.abs(t.gy - leader.gy)) <= 1);
       if (th) {
-        m.interact(leader, th);
+        m.interact(leader, th, th.kind === 'device' ? 'crafting' : th.kind === 'door' ? 'athletics' : undefined);
         continue;
       }
-      const r = m.exploreMove(leader, goal);
+      // obiekt celu blokuje pole - podejdź obok
+      const tgt = 'kind' in goal && !m.grid.isFree(goal.gx, goal.gy) ? (m.interactCell(leader, goal) ?? goal) : goal;
+      const r = m.exploreMove(leader, tgt);
       if (!r.ok && foe) m.startCombat(foe.group!);
       else if (!r.ok) m.finish('retreat');
       continue;
@@ -351,7 +354,13 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
   const st = freshState();
   st.party = (['soldier', 'medic', 'scout', 'techie'] as ClassId[]).map((c, i) => createCharacter({ name: `K${i}`, classId: c }));
   st.contracts = generateContracts(st, makeRng(5));
-  ok(st.contracts.length >= 4 && st.contracts.every((c) => c.enemies.length >= 2), 'contract board');
+  ok(st.contracts.length >= 10 && st.contracts.every((c) => c.enemies.length >= 2), 'contract board');
+  ok(['eliminate', 'retrieve', 'rescue', 'hunt', 'hack', 'liberate', 'purge', 'defend'].every((t) => st.contracts.some((c) => c.type === t)), 'every contract type on board');
+  {
+    const spots = contractSpots(st.contracts);
+    const keys = new Set([...spots.values()].map((p) => p.x + ',' + p.z));
+    ok(keys.size === st.contracts.length, 'contract flags do not overlap');
+  }
   const c = st.contracts[0];
   const scrap0 = st.scrap;
   const sum = applyMissionResult(st, { contractId: c.id, result: 'success', xp: 120, loot: [newItem('bandage', 2)], scrap: 25, casualties: [] });
