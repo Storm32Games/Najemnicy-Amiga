@@ -98,3 +98,59 @@ ${D.chances.map((x: Any) => `  {${x.mod}, ${x.dc}, ${x.halves}, ${x.hit20}, ${x.
 const out = join(ROOT, 'amiga', 'tests', 'vectors_dice.h');
 writeFileSync(out, L.join('\n'));
 console.log('OK: ' + out);
+
+// ------------------------------------------------------------------ karty postaci (vectors_char.h)
+const up = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+const ITEM = (id: string | null): string => (id === null ? 'ITEM_NONE' : id === 'fist' ? 'ITEM_FIST' : 'ITEM_' + up(id));
+const STAT_KEY: Record<string, string> = {
+  ac: 'STAT_AC', speed: 'STAT_SPEED', perception: 'STAT_PERCEPTION', classDC: 'STAT_CLASS_DC', fortitude: 'STAT_FORT', reflex: 'STAT_REF', will: 'STAT_WILL',
+};
+const statKey = (k: string): string => STAT_KEY[k] ?? 'SKILL_' + up(k);
+const ATTR_ORDER = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+function sheetRow(x: Any, kind: 0 | 1): string {
+  const who = kind === 0 ? `RECRUIT_${up(x.id)}` : `ENEMY_${up(x.id)}`;
+  const arg = kind === 0 ? x.level : x.levelAdj;
+  const uses = Object.entries(x.uses as Record<string, number>).map(([k, n]) => `{ABIL_${up(k)}, ${n}}`);
+  const stats = Object.entries(x.stats as Record<string, number>).map(([k, n]) => `{${statKey(k)}, ${n}}`);
+  const atks = x.attacks.map((a: Any) => {
+    const [n, s, m] = parse(a.dmg);
+    return `{{${n}, ${s}, ${m}}, ${a.range}, ${list(a.bonus)}}`;
+  });
+  const eq = ['weapon', 'weapon2', 'armor', 'shield'].map((s) => ITEM(x.equipment[s]));
+  const inv = x.inventory.map(([id, q]: [string, number]) => `{${ITEM(id)}, ${q}}`);
+  return `  {${kind}, ${who}, ${arg}, ${x.level}, ${x.maxHp}, ${list(ATTR_ORDER.map((a) => x.attrs[a]))},\n` +
+    `   ${x.abilities.length}, ${list(x.abilities.map((a: string) => 'ABIL_' + up(a)))}, ${uses.length}, {${uses.join(', ') || '{0, 0}'}},\n` +
+    `   ${list(eq)}, ${inv.length}, {${inv.join(', ') || '{0, 0}'}},\n   ${stats.length}, {${stats.join(', ')}},\n   ${atks.length}, {${atks.join(', ')}}},`;
+}
+const CL: string[] = [`/* Wygenerowane przez tools/amiga/gen_test_vectors.ts z amiga/data/test_vectors.json. NIE EDYTUJ RĘCZNIE. */
+#ifndef VECTORS_CHAR_H
+#define VECTORS_CHAR_H
+#include <stdint.h>
+#include "../src/core/character.h"
+
+typedef struct { uint8_t id, n; } VecUse;
+typedef struct { uint8_t id, qty; } VecInv;
+typedef struct { int16_t key, value; } VecStat;
+typedef struct { Dice dmg; uint8_t range; int8_t bonus[3]; } VecAttack;
+/* kind 0: rekrut (who = RecruitId, arg = poziom); kind 1: wróg (who = EnemyId, arg = levelAdj) */
+typedef struct {
+  uint8_t kind, who; int8_t arg;
+  uint8_t level; int16_t max_hp; int8_t attrs[6];
+  uint8_t n_abil, abil[16];
+  uint8_t n_uses; VecUse uses[8];
+  uint8_t equip[4];
+  uint8_t n_inv; VecInv inv[8];
+  uint8_t n_stats; VecStat stats[24];
+  uint8_t n_attacks; VecAttack attacks[2];
+} VecSheet;
+
+static const VecSheet VEC_SHEETS[] = {
+${[...v.recruits.map((x: Any) => sheetRow(x, 0)), ...v.enemies.map((x: Any) => sheetRow(x, 1))].join('\n')}
+};
+#define VEC_SHEETS_N (sizeof VEC_SHEETS / sizeof VEC_SHEETS[0])
+
+#endif
+`];
+const outC = join(ROOT, 'amiga', 'tests', 'vectors_char.h');
+writeFileSync(outC, CL.join('\n'));
+console.log('OK: ' + outC);
