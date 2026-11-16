@@ -121,6 +121,7 @@ export type ItemId =
   | 'mutant_gland'
   | 'fuel_can'
   | 'battery'
+  | 'lockpick'
   | 'gas_mask'
   | 'memory_card'
   | 'radio_part'

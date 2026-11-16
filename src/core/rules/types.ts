@@ -150,6 +150,8 @@ export interface ActionResult {
   d20?: CheckResult;
   /** Główny rzut obrażeń (do animacji kości obrażeń). */
   dmg?: DamageRoll;
+  /** Główny rzut leczenia (do animacji kości). */
+  heal?: DamageRoll;
   hit?: boolean;
   dealt?: number;
   weapon?: NormWeapon;

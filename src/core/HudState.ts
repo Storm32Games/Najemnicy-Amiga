@@ -87,6 +87,8 @@ export interface DamageShow {
   /** Gotowy tekst wyniku, np. "(4+2+3) ×2 +5 = 23". */
   text: string;
   mine: boolean;
+  /** Rzut leczenia (inny kolor tabliczki). */
+  heal?: boolean;
   duration: number;
 }
 

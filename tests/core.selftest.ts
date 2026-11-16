@@ -5,6 +5,7 @@ import {
   addCondition, addXP, applyDamage, canAct, check, createCharacter, createEnemy, dcForLevel, encounterXP, endTurn, equip,
   getAttackBonus, getStat, heal, isAlive, isDown, longRest, makeRng, newItem, profBonus, removeCondition, roll, rollInitiative,
   skillCheck, startTurn, strike, summarize, useAbility, useConsumable, d,
+  LOCKS, DEVICES, lockState, deviceState, pickLock, hackDevice, lockForLevel, hasLockpick, fmtDamage,
   generateMap, Mission, runAiTurn, CellKind, MAP_W, MAP_H,
   freshState, generateContracts, applyMissionResult, EVENTS, resolveEventChoice, shopStock, buy, sellPrice, restDay,
 } from '../src/core/index.ts';
@@ -556,6 +557,73 @@ function simulateMission(contract: Contract, party: Character[], seed: number): 
   ok(gateOk && avoid && ends && mono && ticksOk, 'routes: gate / avoid city / endpoints / monotonic / ticks');
   const sp = contractSpots([{ id: 'a', biome: 'ruins' }, { id: 'b', biome: 'ruins' }, { id: 'c', biome: 'bunker' }]);
   ok(sp.get('a') === PLAZAS[0] && sp.get('b') === PLAZAS[1] && sp.get('c') === SECTORS[3].spots[0], 'contract spots');
+}
+
+// ---- kości obrażeń / leczenia, zamki i hakowanie (PF2e)
+{
+  const r = roll('2d6+1d4+3', makeRng(7));
+  ok(r.dice.length === 3 && r.dice[0].sides === 6 && r.dice[2].sides === 4 && r.total === r.dice.reduce((s, x) => s + x.value, 0) + 3, 'roll: dice with sides');
+  ok(fmtDamage({ dice: [{ sides: 6, value: 4 }, { sides: 6, value: 2 }], flat: 3, mult: 2, post: [{ sides: 10, value: 5 }], total: 23 }) === '(4+2+3) ×2 +5 = 23', 'fmtDamage');
+  // trafienie ma rzut obrażeń zgodny z sumą (przed odpornościami)
+  let dmgOk = true;
+  for (let i = 0; i < 60; i++) {
+    const att = createCharacter({ name: 'A', classId: 'scout', ancestry: 'human' });
+    const def = createEnemy('raider_thug');
+    const res = strike(att, def, { rng: makeRng(100 + i) });
+    if (res.hit && (!res.dmg || !res.dmg.dice.length || res.dmg.dice.some((x) => x.value < 1 || x.value > x.sides))) dmgOk = false;
+    if (!res.hit && res.dmg) dmgOk = false;
+  }
+  ok(dmgOk, 'strike: dmg roll recorded on hit only');
+
+  ok(LOCKS.poor.dc === 15 && LOCKS.simple.successes === 3 && LOCKS.superior.dc === 40, 'locks: PF2e table');
+  const thief = createCharacter({ name: 'T', classId: 'scavenger', ancestry: 'human' });
+  thief.inventory.push(newItem('lockpick', 2));
+  ok(hasLockpick(thief), 'lockpick item');
+  const lk = lockState('poor');
+  let tries = 0, broke = 0;
+  const lrng = makeRng(99);
+  while (lk.progress < lk.needed && tries < 60) {
+    const at = pickLock(thief, lk, 'thievery', lrng);
+    if (at.gained !== (at.roll.degree === 3 ? 2 : at.roll.degree === 2 ? 1 : 0)) tries = 999;
+    if (at.brokeTool) broke++;
+    tries++;
+  }
+  ok(lk.progress === lk.needed && tries < 60, 'pickLock: opens after enough successes');
+  ok(thief.inventory.filter((i) => i.id === 'lockpick').reduce((s, i) => s + i.qty, 0) === Math.max(0, 2 - broke), 'pickLock: crit fail breaks lockpick');
+  const bare = createCharacter({ name: 'B', classId: 'scavenger', ancestry: 'human' });
+  const a1 = pickLock(bare, lockState('simple'), 'thievery', makeRng(3));
+  ok(a1.improvised && a1.roll.mod === getStat(bare, 'thievery') - 2, 'pickLock: improvised -2');
+  const f = pickLock(bare, lockState('poor'), 'athletics', makeRng(4));
+  ok(f.roll.dc === 20 && (f.roll.degree >= 2) === f.opened, 'forceOpen: DC+5, one check');
+  const dv = deviceState('server', 2);
+  ok(dv.dc === dcForLevel(4) && dv.needed === DEVICES.server.successes, 'device: DC by level');
+  let alarm = false, opened = false;
+  for (let i = 0; i < 40 && !opened && !alarm; i++) {
+    const at = hackDevice(thief, dv, 'crafting', makeRng(500 + i));
+    alarm = at.alarm;
+    opened = at.opened;
+    if (at.alarm && !dv.jammed) alarm = false;
+  }
+  ok(opened || (alarm && dv.jammed), 'hack: opens or locks out with alarm');
+  ok(['poor', 'simple'].includes(lockForLevel(1, makeRng(1))), 'lockForLevel 1');
+
+  // misja: drzwi i urządzenie (dodawane ręcznie - mapy dodadzą je później)
+  const c0 = generateContracts(freshState(), makeRng(5))[0];
+  const mp = [createCharacter({ name: 'X', classId: 'scavenger', ancestry: 'human' })];
+  mp[0].inventory.push(newItem('lockpick', 3));
+  const ms = new Mission(c0, mp, makeRng(8));
+  const pc = ms.pcs[0];
+  let fx = -1, fy = -1;
+  for (let dy = -1; dy <= 1 && fx < 0; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && ms.grid.isFree(pc.gx + dx, pc.gy + dy) && !ms.thingAt(pc.gx + dx, pc.gy + dy)) { fx = pc.gx + dx; fy = pc.gy + dy; break; }
+  if (fx >= 0) {
+    const door = ms.addLockedDoor(fx, fy, 'poor');
+    ok(!ms.grid.isFree(fx, fy), 'door blocks cell');
+    let sig = 0;
+    ms.on((s) => { if (s.kind === 'lock') sig++; });
+    for (let i = 0; i < 40 && !door.done; i++) ms.interact(pc, door, 'thievery');
+    ok(door.done && ms.grid.isFree(fx, fy) && sig > 0, 'mission: door opened, cell freed, signals');
+    ok(!ms.interact(pc, door), 'mission: door needs skill');
+  } else ok(false, 'no free cell for door test');
 }
 
 console.log(`\n${checks} checks, ${fails} failures`);

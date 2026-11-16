@@ -1150,7 +1150,7 @@ export class UIScene extends Phaser.Scene {
     const dieY = 12 + S / 2;
     const lab = this.text(0, 0, cut(r.label, 34), C.amber, 7).setOrigin(0.5, 0);
     box.add(lab);
-    const col = r.mine ? 0x8fe06a : 0xff7a5a;
+    const col = r.heal ? 0x7ff0d0 : r.mine ? 0x8fe06a : 0xff7a5a;
     const roll = Math.max(140, Math.round(Math.min(520, r.duration * 0.48)));
     const settle = Math.round(roll * 0.22);
     const dirX = Math.random() < 0.5 ? -1 : 1;

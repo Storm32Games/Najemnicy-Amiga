@@ -682,6 +682,15 @@ export const JUNK = {
     level: 1,
     icon: 'battery',
   },
+  lockpick: {
+    id: 'lockpick',
+    name: 'Wytrychy',
+    desc: 'Narzędzia złodziejskie: otwieranie zamków bez kary -2. Pękają przy krytycznej porażce.',
+    type: 'tech',
+    price: 30,
+    level: 1,
+    icon: 'lockpick',
+  },
   gas_mask: {
     id: 'gas_mask',
     name: 'Maska gazowa',

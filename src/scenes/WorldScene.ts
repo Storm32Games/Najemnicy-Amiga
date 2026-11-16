@@ -15,6 +15,7 @@ import { swapWeapons } from '../core/rules/equipment';
 import { abilityDef, conditionDef, enemyDef, itemDef } from '../core/rules/lookup';
 import { getStat, getWeapon, hasCondition, normWeapon } from '../core/rules/stats';
 import type { CheckResult, DamageRoll } from '../core/rules/dice';
+import { HACK_SKILLS, hasLockpick, IMPROVISED_PENALTY, LOCK_SKILLS, type LockAttempt } from '../core/rules/locks';
 import type { ActionResult, Character, GridPos } from '../core/rules/types';
 import { aiStep } from '../core/tactical/ai';
 import { type ActionOutcome, type Actor, type ActorState, type CombatSignal, type TurnInfo, Combat } from '../core/tactical/combat';
@@ -1539,8 +1540,8 @@ export class WorldScene extends Phaser.Scene {
     }
     this.face(this.units.get(sel)!, { gx: th.gx - sel.gx, gy: th.gy - sel.gy });
     let skill: SkillId | undefined;
-    if (th.kind === 'crate') {
-      skill = (await this.pickCrateSkill(sel)) ?? undefined;
+    if (th.kind === 'crate' || th.kind === 'door' || th.kind === 'device') {
+      skill = (await this.pickThingSkill(sel, th)) ?? undefined;
       this.lastCrateSkill = skill ?? null;
       if (!skill) return this.afterExplore();
     }
@@ -1549,6 +1550,67 @@ export class WorldScene extends Phaser.Scene {
     const np = this.mission.followNeutral(sel);
     if (np && this.mission.captive?.actor) await this.walk(this.mission.captive.actor, np);
     await this.afterExplore();
+  }
+
+  /** Wybór umiejętności do obiektu: skrzynia, drzwi (wytrych / wyważenie) albo urządzenie (hakowanie). */
+  private pickThingSkill(a: Actor, th: MissionThing): Promise<SkillId | null> {
+    if (th.kind === 'door') return this.pickLockSkill(a, th);
+    if (th.kind === 'device') return this.pickHackSkill(a, th);
+    return this.pickCrateSkill(a);
+  }
+
+  /** Opcje wyboru umiejętności z szansą (%) - najlepsza wyróżniona. */
+  private skillOptions(list: readonly SkillId[], dcOf: (id: SkillId) => number, modOf: (id: SkillId) => number, note: (id: SkillId) => string = () => '') {
+    const opts = list.map((id) => {
+      const m = modOf(id);
+      const pct = Math.round(hitChances(m, dcOf(id)).hit * 100);
+      return { label: `${note(id) || SKILLS[id].name} ${fmtMod(m)} (${pct}%)`, value: id as string, primary: false, pct };
+    });
+    const best = opts.reduce((x, y) => (y.pct > x.pct ? y : x));
+    best.primary = true;
+    return opts.map(({ pct: _p, ...o }) => o);
+  }
+
+  /** Drzwi: Otwieranie zamka (PF2e Pick a Lock, kilka sukcesów) albo Wyważenie (Force Open). */
+  private async pickLockSkill(a: Actor, th: MissionThing): Promise<SkillId | null> {
+    const lock = th.lock;
+    if (!lock) return null;
+    const tools = hasLockpick(a.ch);
+    const opts = this.skillOptions(
+      LOCK_SKILLS,
+      (id) => (id === 'athletics' ? lock.dc + 5 : lock.dc),
+      (id) => getStat(a.ch, id) + (id === 'athletics' ? IMPROVISED_PENALTY + lock.forcePenalty : tools ? 0 : IMPROVISED_PENALTY),
+      (id) => (id === 'athletics' ? 'Wyważenie (Atletyka)' : 'Wytrych (Złodziejstwo)'),
+    );
+    const v = await this.hud.ask({
+      title: th.name,
+      body:
+        `${a.ch.name} ogląda zamek: ST ${lock.dc}, postęp ${lock.progress}/${lock.needed} sukcesów.
+` +
+        `Wytrych: sukces = 1, kryt. sukces = 2 sukcesy; kryt. porażka łamie wytrych${tools ? '' : ' (brak wytrychów: kara -2)'}. 2 akcje w walce.
+` +
+        `Wyważenie: ST ${lock.dc + 5}, kara -2 bez łomu; sukces otwiera, ale niszczy zamek.`,
+      options: [{ label: 'Zostaw', value: null }, ...opts],
+      w: 380,
+    });
+    return (v as SkillId | null) ?? null;
+  }
+
+  /** Urządzenie: hakowanie (Technika) albo obejście sprzętowe (Złodziejstwo). */
+  private async pickHackSkill(a: Actor, th: MissionThing): Promise<SkillId | null> {
+    const dev = th.lock;
+    if (!dev) return null;
+    const opts = this.skillOptions(HACK_SKILLS, () => dev.dc, (id) => getStat(a.ch, id), (id) => (id === 'crafting' ? 'Hakowanie (Technika)' : 'Obejście (Złodziejstwo)'));
+    const v = await this.hud.ask({
+      title: th.name,
+      body:
+        `${a.ch.name} podłącza się do urządzenia: ST ${dev.dc}, zabezpieczenia ${dev.progress}/${dev.needed}.
+` +
+        `Sukces łamie 1 warstwę, kryt. sukces 2. Kryt. porażka blokuje urządzenie i włącza alarm. 2 akcje w walce.`,
+      options: [{ label: 'Zostaw', value: null }, ...opts],
+      w: 380,
+    });
+    return (v as SkillId | null) ?? null;
   }
 
   /** Wybór sposobu otwarcia skrzyni (Oldgame/src/scenes/mission.js:532-549): premia najemnika i szansa vs KT. */
@@ -1806,12 +1868,14 @@ export class WorldScene extends Phaser.Scene {
     if (cheb(a, th) > 1) return this.deny('Podejdź bliżej (obok obiektu).');
     if (t.actions < 1) return this.deny('Brak akcji.');
     let skill: SkillId | undefined;
-    if (th.kind === 'crate') {
+    if (th.kind === 'crate' || th.kind === 'door' || th.kind === 'device') {
       this.hud.setBusy(true);
-      skill = (await this.pickCrateSkill(a)) ?? undefined;
+      skill = (await this.pickThingSkill(a, th)) ?? undefined;
       this.lastCrateSkill = skill ?? null;
       this.hud.setBusy(false);
       if (!skill || this.playerTurn !== t) return;
+      // PF2e: wytrych i hakowanie = 2 akcje
+      if ((th.kind === 'device' || (th.kind === 'door' && skill !== 'athletics')) && t.actions < 2) return this.deny('Potrzeba 2 akcji.');
     }
     return this.combatAct((x) => (this.mission.interact(x, th, skill) ? { ok: true } : { ok: false, reason: 'Nic się nie stało.' }));
   }
@@ -2123,7 +2187,7 @@ export class WorldScene extends Phaser.Scene {
         const def = itemDef(s.item.id);
         const c = def?.type === 'consumable' ? def.consumable : null;
         const foe = s.targets.find((x) => x.side !== s.actor.side);
-        if (s.result.d20) await this.dice(s.result.d20, def?.name ?? 'Przedmiot', s.actor, s.result.dmg);
+        if (s.result.d20 || s.result.heal) await this.dice(s.result.d20, def?.name ?? 'Przedmiot', s.actor, s.result.dmg, s.result.heal);
         if (c?.target === 'area' && s.cell)
           await this.animateBlast(s.actor, s.cell, s.result, c.effect === 'smoke' ? 'smoke' : c.dmgType === 'fire' ? 'fire' : c.dmgType === 'elec' ? 'elec' : 'frag', c.radius ?? 1.5);
         else if (c?.target === 'enemy' && foe) await this.animateAttack(s.actor, foe, 'shot', 'explosion', s.result);
@@ -2177,6 +2241,9 @@ export class WorldScene extends Phaser.Scene {
       case 'interact':
         this.onInteract(s.thing, s.by);
         break;
+      case 'lock':
+        await this.onLock(s.thing, s.by, s.attempt, s.hack);
+        break;
       case 'objective':
         if (this.mission.objectiveDone() && !this.objDone) {
           this.objDone = true;
@@ -2193,11 +2260,13 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /** Rzut k20 w HUD-zie (port G.showD20Roll): wrogowie tylko widoczni; tempo x2 pomija rzuty wrogów, x4 wszystkie. */
-  private async dice(r: CheckResult, label: string, by: Actor, dmg?: DamageRoll): Promise<void> {
+  private async dice(r: CheckResult | undefined, label: string, by: Actor, dmg?: DamageRoll, heal?: DamageRoll): Promise<void> {
     if (by.side !== 'pc' && !this.units.get(by)?.sprite.visible) return;
     const mine = by.side === 'pc';
-    const ms = this.hud.showRoll({ label, d20: r.d20, mod: r.mod, total: r.total, dc: r.dc, degree: r.degree, mine });
+    const ms = r ? this.hud.showRoll({ label, d20: r.d20, mod: r.mod, total: r.total, dc: r.dc, degree: r.degree, mine }) : 0;
     if (ms) await this.wait(1100);
+    const hms = heal ? this.hud.showDamage({ label: 'Leczenie', dice: heal.dice, post: heal.post, text: fmtDamage(heal), mine, heal: true }) : 0;
+    if (hms) await this.wait(hms);
     // kości obrażeń PF2e (k4..k12) - zielone najemników, czerwone wrogów
     const dms = dmg ? this.hud.showDamage({ label: 'Obrażenia', dice: dmg.dice, post: dmg.post, text: fmtDamage(dmg), mine }) : 0;
     if (dms) await this.wait(dms);
@@ -2251,6 +2320,35 @@ export class WorldScene extends Phaser.Scene {
     await this.wait(250);
   }
   private lastCrateSkill: SkillId | null = null;
+
+  /** Wynik próby wytrychem / wyważenia / hakowania: kość k20 z postępem, dźwięk i napis nad postacią. */
+  private async onLock(th: MissionThing, by: Actor, at: LockAttempt, hack: boolean): Promise<void> {
+    const lock = th.lock;
+    const how = hack ? (at.skill === 'crafting' ? 'Hakowanie' : 'Obejście') : at.skill === 'athletics' ? 'Wyważenie' : 'Wytrych';
+    const prog = lock && !at.opened && at.skill !== 'athletics' ? ` [${lock.progress}/${lock.needed}]` : '';
+    await this.dice(at.roll, `${how}: ${th.name}${prog}`, by);
+    if (at.opened) {
+      SoundManager.sfx(hack ? 'radio' : 'door', { vol: 0.6 });
+      this.floatAbove(by, hack ? 'DOSTĘP!' : at.broken ? 'WYWAŻONE' : 'OTWARTE', C_LOOT);
+    } else if (at.alarm) {
+      SoundManager.sfx('alarm', { vol: 0.5 });
+      this.floatAbove(by, 'ALARM!', COLOR_HOSTILE);
+    } else if (at.brokeTool) {
+      SoundManager.sfx('error', { vol: 0.5 });
+      this.floatAbove(by, 'Wytrych pęka', COLOR_HOSTILE);
+    } else if (at.jammed) {
+      SoundManager.sfx('error', { vol: 0.5 });
+      this.floatAbove(by, 'ZACIĘTE', 0xbbbbbb);
+    } else if (at.gained) {
+      SoundManager.sfx('click', { vol: 0.6 });
+      this.floatAbove(by, `+${at.gained} (${lock?.progress}/${lock?.needed})`, 0x9ad0ff);
+    } else {
+      SoundManager.sfx('error', { vol: 0.4 });
+      this.floatAbove(by, 'Bez postępu', 0xbbbbbb);
+    }
+    this.hud.notify('stats');
+    await this.wait(250);
+  }
 
   /** Zabrany cel / uwolniony jeniec (Oldgame/src/scenes/mission.js:520-528). */
   private onInteract(th: MissionThing, by: Actor): void {
@@ -2376,7 +2474,7 @@ export class WorldScene extends Phaser.Scene {
   private async animateAbility(a: Actor, ab: AbilityDef, targets: Actor[], cell: GridPos | undefined, r: ActionResult): Promise<void> {
     const target = targets.find((x) => x !== a) ?? null;
     const fx = ab.fx;
-    if (r.d20) await this.dice(r.d20, ab.name, a, r.dmg);
+    if (r.d20 || r.heal) await this.dice(r.d20, ab.name, a, r.dmg, r.heal);
     const u = this.units.get(a);
     if (u && target) this.face(u, { gx: target.gx - a.gx, gy: target.gy - a.gy });
     if (fx === 'explosion' && (cell || target)) {
@@ -2625,7 +2723,10 @@ export class WorldScene extends Phaser.Scene {
       this.drawPath([], () => COLOR_OK);
       this.setCostLabel(null, target, 0);
       this.cursor.setTint(C_LOOT);
-      const what = th.kind === 'crate' ? `Skrzynia (KT ${this.mission.crateDC()}) — kliknij, by otworzyć` : th.kind === 'item' ? `${th.name} — kliknij, by zabrać` : 'Jeniec — kliknij, by uwolnić';
+      const what = th.kind === 'crate' ? `Skrzynia (KT ${this.mission.crateDC()}) — kliknij, by otworzyć`
+        : th.kind === 'door' ? `${th.name} (ST ${th.lock?.dc}, ${th.lock?.progress}/${th.lock?.needed}) — kliknij: wytrych / wyważenie`
+        : th.kind === 'device' ? `${th.name} (ST ${th.lock?.dc}, ${th.lock?.progress}/${th.lock?.needed})${th.lock?.jammed ? ' — ZABLOKOWANY' : ' — kliknij, by zhakować'}`
+        : th.kind === 'item' ? `${th.name} — kliknij, by zabrać` : 'Jeniec — kliknij, by uwolnić';
       this.hud.setHover(`${what}${t ? ' (obok, 1 akcja)' : ''}`);
       return;
     }

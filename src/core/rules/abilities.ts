@@ -74,6 +74,13 @@ function doHeal(res: ActionResult, t: Character, amount: number, label: string):
   res.log.push(`${label}: ${t.name} odzyskuje ${n} PW.`);
   return n;
 }
+/** Rzut leczenia: suma + zapis kości do pokazu (res.heal, tylko pierwszy rzut w akcji). */
+function healRoll(res: ActionResult, expr: string, rng: Rng, extra = 0): number {
+  const rr = roll(expr, rng);
+  const total = rr.total + extra;
+  if (!res.heal) res.heal = { dice: rr.dice, flat: rr.mod + extra, mult: 1, post: [], total };
+  return total;
+}
 function tempHp(res: ActionResult, t: Character, n: number): void {
   grantTempHp(t, n);
   res.events.push({ type: 'heal', target: t, amount: n, temp: true });
@@ -213,7 +220,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       t.conditions.wounded = Math.min(3, condValue(t, 'wounded') + 1);
       r.log.push(`${u.name} stabilizuje ${acc(t)} (${info}).`);
       r.events.push({ type: 'condition', target: t, condition: 'stable' });
-      if (c.degree === 3) doHeal(r, t, roll('1d6', rng).total, 'Opatrunek');
+      if (c.degree === 3) doHeal(r, t, healRoll(r, '1d6', rng), 'Opatrunek');
       return r;
     }
     if (hasCondition(t, 'bleeding')) {
@@ -221,7 +228,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
       r.log.push(`${u.name} tamuje krwawienie ${t.name} (${info}).`);
       return r;
     }
-    doHeal(r, t, roll(c.degree === 3 ? '2d6' : '1d6', rng).total + 1, `Pierwsza pomoc (${info})`);
+    doHeal(r, t, healRoll(r, c.degree === 3 ? '2d6' : '1d6', rng, 1), `Pierwsza pomoc (${info})`);
     return r;
   },
   stand: (ctx) => {
@@ -354,13 +361,13 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const bonus = Math.max(0, attrMod(u, 'wis')) + u.level;
     const info = `Medycyna k20 ${c.d20}${fmtMod(c.mod)}=${c.total} vs WT ${dc}`;
     if (c.degree === 3) {
-      doHeal(r, t, roll(`4d6+${bonus}`, rng).total, `Opatrunek (${info})`);
+      doHeal(r, t, healRoll(r, `4d6+${bonus}`, rng), `Opatrunek (${info})`);
       removeCondition(t, 'bleeding');
       removeCondition(t, 'poisoned');
     } else if (c.degree === 2) {
-      doHeal(r, t, roll(`2d6+${bonus}`, rng).total, `Opatrunek (${info})`);
+      doHeal(r, t, healRoll(r, `2d6+${bonus}`, rng), `Opatrunek (${info})`);
       removeCondition(t, 'bleeding');
-    } else if (c.degree === 1) doHeal(r, t, roll('1d4', rng).total, `Marny opatrunek (${info})`);
+    } else if (c.degree === 1) doHeal(r, t, healRoll(r, '1d4', rng), `Marny opatrunek (${info})`);
     else r.log.push(`${u.name} partaczy opatrunek ${t.name} (${info}).`);
     return r;
   },
@@ -383,7 +390,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     if (isDead(t)) return deadNote(r, t);
     spend(u, 'adrenaline');
     if (t.hp <= 0) {
-      doHeal(r, t, roll('1d8', rngOf(ctx)).total + Math.max(0, attrMod(u, 'wis')) + u.level, `Adrenalina: ${t.name} wraca do walki`);
+      doHeal(r, t, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'wis')) + u.level), `Adrenalina: ${t.name} wraca do walki`);
       removeCondition(t, 'prone');
     } else {
       quietCond(r, t, 'quickened', 1);
@@ -397,7 +404,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const rng = rngOf(ctx);
     spend(u, 'field_clinic');
     for (const t of targetsOrSelf(ctx)) {
-      if (!isDead(t)) doHeal(r, t, roll('1d8', rng).total + Math.max(0, attrMod(u, 'wis')) + u.level, 'Punkt medyczny');
+      if (!isDead(t)) doHeal(r, t, healRoll(r, '1d8', rng, Math.max(0, attrMod(u, 'wis')) + u.level), 'Punkt medyczny');
     }
     return r;
   },
@@ -595,7 +602,7 @@ export const ABILITY_EFFECTS: Readonly<Record<AbilityId, AbilityResolver>> = {
     const u = ctx.user;
     const r = R();
     spend(u, 'second_wind');
-    doHeal(r, u, roll('1d8', rngOf(ctx)).total + Math.max(0, attrMod(u, 'con')) + u.level + 4, 'Drugi oddech');
+    doHeal(r, u, healRoll(r, '1d8', rngOf(ctx), Math.max(0, attrMod(u, 'con')) + u.level + 4), 'Drugi oddech');
     return r;
   },
 
