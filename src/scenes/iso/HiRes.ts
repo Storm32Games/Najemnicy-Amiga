@@ -1,7 +1,7 @@
 // Tekstury w wysokiej rozdzielczości dla siatki projektowej 480x270.
 //
 // Proceduralny pixel art jest malowany w pikselach projektowych (kafelek 32x16, klatka postaci 24x32), ale płótno
-// gry ma rozmiar BASE * ZOOM (przy 1080p: 1920x1080). Zamiast powiększać teksturę na GPU (gruby, schodkowy piksel)
+// gry ma rozmiar presetu (domyślnie 1920x1080, ZOOM 4). Zamiast powiększać teksturę na GPU (gruby, schodkowy piksel)
 // powiększamy ją tu skalerem pixel artu (Scale2x / Scale3x - wygładza schodki ukośnych krawędzi, zachowuje
 // dithering i kontury) do gęstości ART tekseli na piksel projektowy, czyli 1 teksel = 1 piksel płótna.
 //

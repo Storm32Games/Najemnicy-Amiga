@@ -1,12 +1,31 @@
 // Opcje gracza (port Oldgame/src/core/settings.js): rozdzielczość, rozmiar interfejsu, efekty retro, profil Amiga. Głośność i wyciszenie trzyma SoundManager.
-// Zapis w localStorage pod tym samym kluczem co w Oldgame - osobno od zapisu gry. `?res=auto|2..6` w URL nadpisuje (bez zapisu).
+// Zapis w localStorage pod tym samym kluczem co w Oldgame - osobno od zapisu gry. `?res=640x480|hd|fhd|qhd|4k` w URL nadpisuje
+// (bez zapisu); stare `?res=2..6` (krotność siatki 480x270) trafia na najbliższy preset.
 // Moduł bez zależności od Kit.ts (Kit czyta stąd rozdzielczość przy starcie).
 
 const KEY = 'pyl-i-rdza-settings-v1';
 
-/** 'auto' = największy zoom mieszczący się w oknie; liczba = stały zoom (piksele płótna na piksel projektowy 480x270). */
-export type ResSetting = 'auto' | 2 | 3 | 4 | 5 | 6;
-export const RES_CHOICES: readonly ResSetting[] = ['auto', 2, 3, 4, 5, 6];
+/**
+ * Rozdzielczość płótna (presety). Domyślnie Full HD 1920x1080 = siatka projektowa 480x270 x4; w dół HD i 640x480,
+ * w górę QHD i 4K. Zoom = min(szer./480, wys./270) bywa ułamkowy (HD 2.67, QHD 5.33); 640x480 (4:3) ma czarne pasy.
+ */
+export type ResSetting = '640x480' | 'hd' | 'fhd' | 'qhd' | '4k';
+export interface ResPreset {
+  id: ResSetting;
+  w: number;
+  h: number;
+  label: string;
+}
+export const RES_PRESETS: readonly ResPreset[] = [
+  { id: '640x480', w: 640, h: 480, label: '640×480' },
+  { id: 'hd', w: 1280, h: 720, label: 'HD' },
+  { id: 'fhd', w: 1920, h: 1080, label: 'Full HD' },
+  { id: 'qhd', w: 2560, h: 1440, label: 'QHD' },
+  { id: '4k', w: 3840, h: 2160, label: '4K' },
+];
+export const RES_CHOICES: readonly ResSetting[] = RES_PRESETS.map((p) => p.id);
+export const DEFAULT_RES: ResSetting = 'fhd';
+export const resPreset = (id: ResSetting): ResPreset => RES_PRESETS.find((p) => p.id === id) ?? RES_PRESETS[2];
 
 /** Rozmiar interfejsu (Oldgame/src/core/settings.js:9 UI_SIZES): skala okien, podpowiedzi i komunikatów. */
 export const UI_SIZES: readonly (readonly [number, string])[] = [[0.9, 'Mały'], [1, 'Normalny'], [1.15, 'Duży'], [1.3, 'Bardzo duży']];
@@ -27,17 +46,26 @@ export interface SettingsValues {
   layout: boolean;
 }
 
-const DEFAULTS: SettingsValues = { res: 'auto', ui: 1, scanlines: true, grain: true, dither: true, amiga: false, layout: false };
+const DEFAULTS: SettingsValues = { res: DEFAULT_RES, ui: 1, scanlines: true, grain: true, dither: true, amiga: false, layout: false };
 
-const validRes = (v: unknown): v is ResSetting => v === 'auto' || (typeof v === 'number' && [2, 3, 4, 5, 6].includes(v));
+const validRes = (v: unknown): v is ResSetting => typeof v === 'string' && (RES_CHOICES as readonly string[]).includes(v);
+
+/** Stary zapis / URL: krotność siatki 480x270 (2..6) -> preset o najbliższej wysokości; reszta -> domyślny. */
+function migrateRes(v: unknown): ResSetting {
+  if (validRes(v)) return v;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_RES;
+  const h = 270 * n;
+  return RES_PRESETS.reduce((a, b) => (Math.abs(b.h - h) < Math.abs(a.h - h) ? b : a)).id;
+}
 
 function read(): SettingsValues {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null') as Partial<SettingsValues> | null;
     if (s && typeof s === 'object') {
       const v = { ...DEFAULTS, ...s };
-      // stare zapisy z Oldgame miały nazwy presetów ('hd', 'fhd'...) - te mapujemy na 'auto'
-      if (!validRes(v.res)) v.res = 'auto';
+      // stare zapisy: 'auto' lub krotność 2..6 -> preset
+      v.res = migrateRes(v.res);
       if (!UI_SIZES.some(([k]) => Math.abs(k - Number(v.ui)) < 0.01)) v.ui = 1;
       return v;
     }
@@ -56,13 +84,10 @@ export const Settings = {
   get uiScale(): number {
     return Number(this.values.ui) || 1;
   },
-  /** Rozdzielczość, z którą wystartowała ta sesja (później zmieniana na żywo przez Kit.applyZoom, poza misją). */
+  /** Rozdzielczość, z którą wystartowała ta sesja (później zmieniana na żywo przez Kit.applyResolution, poza misją). */
   get startRes(): ResSetting {
     const q = new URLSearchParams(window.location.search).get('res');
-    if (q) {
-      const n = q === 'auto' ? 'auto' : Number(q);
-      if (validRes(n)) return n;
-    }
+    if (q) return migrateRes(q);
     return this.values.res;
   },
   /** Profil Amiga, z którym wystartowała sesja (`?profile=amiga|pc` w URL nadpisuje; zmiana wymaga restartu). */

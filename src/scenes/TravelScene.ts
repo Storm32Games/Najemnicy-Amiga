@@ -18,7 +18,7 @@ import { paintCreatureSheet } from './iso/CreatureArt';
 import { ArtBook } from './iso/IsoArt';
 import { MAP_H, MAP_W, beaconPos, paintRegion, regionFires, scrX, scrY } from './iso/RegionArt';
 import { addUnit, unitLookOf } from './iso/UnitLooks';
-import { BASE_H, BASE_W, Motes, PAL, ZOOM, ZOOM_EVENT, type UiButton, button, campfire, cut, enter, goto, label, panel, parseColor, tiledImage } from './ui/Kit';
+import { BASE_H, BASE_W, Motes, PAL, VW, VH, VX, VY, ZOOM, ZOOM_EVENT, type UiButton, button, campfire, cut, enter, fitViewport, goto, label, panel, parseColor, tiledImage } from './ui/Kit';
 import { modalOpen, openWindow } from './ui/Widgets';
 
 // Mapa regionu i podróż na miejsce zlecenia (port Oldgame/src/scenes/worldmap.js + meta/worldterrain.js).
@@ -163,11 +163,14 @@ export class TravelScene extends Phaser.Scene {
 
     // kamera interfejsu nad mapą; wszystko, co powstanie przed `uiLayer = true`, widzi tylko kamera mapy
     this.uiLayer = false;
-    this.uiCam = this.cameras.add(0, 0, BASE_W * ZOOM, BASE_H * ZOOM).setZoom(ZOOM).centerOn(BASE_W / 2, BASE_H / 2);
+    this.uiCam = this.cameras.add(VX, VY, VW, VH).setZoom(ZOOM).centerOn(BASE_W / 2, BASE_H / 2);
     this.uiCam.fadeIn(500, 0, 0, 0);
     const onAdded = (go: Phaser.GameObjects.GameObject): void => void (this.uiLayer ? this.cameras.main.ignore(go) : this.uiCam.ignore(go));
     this.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, onAdded);
-    const onZoom = (): void => void this.uiCam.setZoom(ZOOM).centerOn(BASE_W / 2, BASE_H / 2);
+    const onZoom = (): void => {
+      fitViewport(this.cameras.main);
+      this.uiCam.setViewport(VX, VY, VW, VH).setZoom(ZOOM).centerOn(BASE_W / 2, BASE_H / 2);
+    };
     this.events.on(ZOOM_EVENT, onZoom);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, onAdded);
@@ -324,7 +327,7 @@ export class TravelScene extends Phaser.Scene {
     const z1 = Z_LEVELS[Phaser.Math.Clamp((i0 < 0 ? Z_LEVELS.length - 1 : i0) + step, 0, Z_LEVELS.length - 1)];
     if (z1 === z0) return;
     if (p) {
-      const sx = p.x / ZOOM, sy = p.y / ZOOM;
+      const sx = (p.x - VX) / ZOOM, sy = (p.y - VY) / ZOOM;
       const wx = this.view.x + (sx - BASE_W / 2) / z0, wy = this.view.y + (sy - BASE_H / 2) / z0;
       this.view.x = wx - (sx - BASE_W / 2) / z1;
       this.view.y = wy - (sy - BASE_H / 2) / z1;

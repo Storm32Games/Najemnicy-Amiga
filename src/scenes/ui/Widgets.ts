@@ -9,8 +9,8 @@ import { abilityDef, itemDef } from '../../core/rules/lookup';
 import { abilityIcon, abilityKind, itemIcon } from '../legacy/icons';
 import { portraitCanvas } from '../legacy/portraits';
 import { addHiRes } from '../iso/HiRes';
-import { ART, BASE_H, BASE_W, PAL, type UiButton, ZOOM, applyZoom, autoZoom, button, canApplyZoomLive, hex, label, panel, parseColor } from './Kit';
-import { RES_CHOICES, type ResSetting, Settings, UI_SIZES } from './Settings';
+import { ART, BASE_H, BASE_W, CANVAS_H, CANVAS_W, PAL, RES, type UiButton, ZOOM, applyResolution, button, canApplyZoomLive, hex, label, panel, parseColor } from './Kit';
+import { RES_PRESETS, type ResSetting, Settings, UI_SIZES, resPreset } from './Settings';
 import { MissionLayout } from './MissionLayout';
 
 // Okna, podpowiedzi, listy przewijane, pole tekstowe, opcje i zapis gry - odpowiedniki UI.modal / UI.toast / UI.tooltip,
@@ -190,7 +190,7 @@ const hashStr = (s: string): string => {
  * Tekstura portretu o rozmiarze projektowym `size` (domyślnie 32). Portret jest malowany w 2x gęstości projektowej
  * (32 -> 64 px, 40 -> 80 px), a HiRes dokłada Scale2x do gęstości płótna - bez skalowania na GPU, więc jest ostry.
  * Wyświetlaj go w tym samym rozmiarze, w jakim został zamówiony. Klucz zawiera ART: po zmianie rozdzielczości
- * (applyZoom) powstaje nowa tekstura w nowej gęstości.
+ * (applyResolution) powstaje nowa tekstura w nowej gęstości.
  */
 export function portraitKey(scene: Phaser.Scene, ch: PortraitSource, size = 32): string {
   const id = hashStr(`${ch.recruitId ?? ch.id ?? ch.name}|${ch.classId}|${ch.ancestry}|${JSON.stringify(ch.look ?? {})}`);
@@ -496,25 +496,25 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     // --- rozdzielczość (dół, pełna szerokość); poza misją zmienia się od razu, w misji po ponownym uruchomieniu
     head(L, 164, 'Rozdzielczość obrazu');
     const marks: [ResSetting, UiButton][] = [];
+    const zoomTxt = (z: number): string => (Number.isInteger(z) ? `${z}` : z.toFixed(2));
     const paintRes = (): void => {
-      for (const [r, b] of marks) b.setLabel((Settings.values.res === r ? '● ' : '○ ') + (r === 'auto' ? 'Auto' : `${r}×`));
-      const want = Settings.values.res === 'auto' ? autoZoomFor() : Settings.values.res;
-      const now = `Teraz: ${BASE_W * ZOOM}×${BASE_H * ZOOM} (${ZOOM}× siatki ${BASE_W}×${BASE_H})`;
-      resNote.setText(want !== ZOOM ? `${now} → po ponownym uruchomieniu: ${BASE_W * want}×${BASE_H * want}` : now);
-      restart.box.setVisible(want !== ZOOM);
+      for (const [r, b] of marks) b.setLabel((Settings.values.res === r ? '● ' : '○ ') + resPreset(r).label);
+      const want = resPreset(Settings.values.res);
+      const now = `Teraz: ${CANVAS_W}×${CANVAS_H} (siatka ${BASE_W}×${BASE_H} ×${zoomTxt(ZOOM)})`;
+      resNote.setText(want.id !== RES ? `${now} → po ponownym uruchomieniu: ${want.w}×${want.h}` : now);
+      restart.box.setVisible(want.id !== RES);
     };
-    RES_CHOICES.forEach((r, i) => {
-      const b = button(scene, L + i * 51, 174, '', () => {
-        Settings.set('res', r);
-        const want = r === 'auto' ? autoZoomFor() : r;
-        if (canApplyZoomLive(scene.game)) applyZoom(scene.game, want);
+    RES_PRESETS.forEach((r, i) => {
+      const b = button(scene, L + i * 61, 174, '', () => {
+        Settings.set('res', r.id);
+        if (canApplyZoomLive(scene.game)) applyResolution(scene.game, r.id);
         paintRes();
-      }, { w: 48, h: 13, size: 6 });
-      marks.push([r, b]);
+      }, { w: 58, h: 13, size: 6 });
+      marks.push([r.id, b]);
       win.add(b.box);
     });
     const resNote = win.add(label(scene, L, 191, '', { size: 5.5, color: PAL.dim }));
-    win.add(label(scene, L, 200, 'Auto = największa ostra skala mieszcząca się w oknie przeglądarki.', { size: 5.5, color: PAL.dim }));
+    win.add(label(scene, L, 200, 'Domyślna: Full HD 1920×1080. Przy 640×480 (4:3) obraz ma czarne pasy.', { size: 5.5, color: PAL.dim }));
     win.add(label(scene, L, 208, 'W trakcie misji zmiana rozdzielczości wymaga ponownego uruchomienia.', { size: 5.5, color: PAL.dim }));
     const restart = button(scene, L, H - 22, 'Uruchom ponownie', async () => {
       const inMission = scene.scene.isActive('WorldScene');
@@ -539,9 +539,6 @@ export function openOptions(scene: Phaser.Scene): Promise<void> {
     win.add(button(scene, W - 62, H - 22, 'Gotowe', () => win.close(), { w: 54, size: 7, primary: true }).box);
   });
 }
-
-/** Zoom trybu "Auto" przy obecnym oknie. */
-const autoZoomFor = (): number => autoZoom();
 
 // ------------------------------------------------------------------ imię najemnika (Oldgame/src/scenes/meta/nameedit.js)
 
