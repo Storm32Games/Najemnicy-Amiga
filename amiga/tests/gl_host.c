@@ -90,6 +90,7 @@ int main(int argc, char **argv) {
       tok[n] = 0;
       if (f == i) {
         if (!strcmp(tok, "shot")) do_shot = 1;
+        else if (!strcmp(tok, "enemy")) g_debug_cmd = 1;
         else if (!strncmp(tok, "event=", 6)) g_force_event = atoi(tok + 6);
         else if (!strncmp(tok, "job=", 4)) {
           quick_party();

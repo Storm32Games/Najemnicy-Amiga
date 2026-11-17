@@ -1,7 +1,9 @@
 /* Misja taktyczna (port src/scenes/WorldScene.ts) - etap 1: świat izometryczny z biblioteki grafik (lib_common +
  * lib_<biom>, klucze jak ArtBook w buildWorld), mgła wojny (mission.vis / explored), drużyna i wrogowie (biblioteki
- * klatek unit_<id>), kursor pola joystickiem i ruch w eksploracji (mission_explore_move). Walka, akcje, interakcje
- * i pełny HUD - kolejne etapy. Plik w UTF-8, napisy przekodowuje tools/amiga/latin2_literals.py. */
+ * klatek unit_<id>), kursor pola joystickiem, ruch w eksploracji (mission_explore_move); etap 2: walka turowa -
+ * sygnały logiki (combat_on / mission_on) kopiowane do kolejki i odgrywane po kolei (ruch, atak, trafienia, stany),
+ * tura gracza (zasięg ruchu, szansa trafienia, menu tury), tura wrogów (ai_step). Akcje specjalne, przedmioty,
+ * interakcje i pełny HUD - kolejne etapy. Plik w UTF-8, napisy przekodowuje tools/amiga/latin2_literals.py. */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -68,29 +70,6 @@ static int n_spr;
 static uint8_t cell_state[GRID_N];   /* 0 nieodkryte, 1 zapamiętane, 2 widoczne */
 static uint8_t cell_reveal[GRID_N];  /* 0..255 */
 static uint32_t memory_tint;
-
-/* klatki postaci w atlasie */
-static const char *const DIR8[8] = {"east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"};
-typedef struct {
-  Actor *a;
-  int pc;                      /* 1 = najemnik (8 kierunków PixelLab), 0 = wróg (przód / tył + lustro) */
-  AtlasImg idle[8][5], walk[8][8];   /* pc: [kierunek][klatka]; wróg: [0] przód, [1] tył */
-  int has_walk, n_walk;
-  float x, y;                  /* pozycja na ekranie (stopy) */
-  int dir, step, ms, walking;
-  Pos path[MAX_PATH];
-  int n_path, path_i, path_ms;
-  Pos from;
-} UnitV;
-static UnitV units[MAX_UNITS];
-static int n_units;
-static AtlasImg img_shadow, img_cursor;
-static int leader;            /* indeks w mission.pcs */
-static Pos cursor;
-static float cam_x, cam_y;
-static int busy, rep_ms, combat_note;
-static TickClock clock;
-static UiDialog dlg;
 
 /* ------------------------------------------------------------------ rzut */
 static float iso_x(float gx, float gy) { return (gx - gy) * (TILE_W / 2); }
@@ -351,6 +330,95 @@ static void sort_world(void) {
 }
 
 /* ------------------------------------------------------------------ postacie */
+static const char *const DIR8[8] = {"east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"};
+enum { P_NONE, P_ATTACK, P_SHOOT, P_HURT, P_DIE, P_N };
+static const char *const POSE_NAME[P_N] = {"", "attack", "shoot", "hurt", "die"};
+static const int POSE_FRAMES[P_N] = {0, 5, 4, 3, 7};
+#define FRAME_DOWN 4
+#define FRAME_CORPSE 6
+
+typedef struct {
+  Actor *a;
+  int pc;                            /* 1 = najemnik (PixelLab, 8 kierunków spoczynku / chodu) */
+  AtlasImg idle[8][5], walk[8][8];   /* pc: [kierunek]; wróg: [0] przód, [1] tył */
+  AtlasImg pose[2][P_N][7];          /* [przód / tył][poza][klatka] */
+  int has_walk, n_walk;
+  float x, y;                        /* stopy na ekranie */
+  int dir, step, ms, walking;
+  Pos path[MAX_PATH];
+  int n_path, path_i, path_ms;
+  Pos from;
+  int pose_k, pose_f, pose_ms, hurt_ms;
+} UnitV;
+static UnitV units[MAX_UNITS];
+static int n_units;
+static AtlasImg img_shadow, img_cursor;
+static int leader;
+static Pos cursor;
+static float cam_x, cam_y;
+static int rep_ms;
+static TickClock clock;
+static UiDialog dlg;
+enum { D_RETREAT, D_TURN };
+static int dlg_kind;
+
+/* ---- kolejka sygnałów (dane kopiowane: bufory logiki są ważne tylko do następnej akcji) */
+#define EV_MAX 8
+typedef struct { Character *t; uint8_t type, degree, cond; int16_t amount; } EvHit;
+typedef struct {
+  uint8_t kind;                      /* SIG_* albo 100 + MSIG_* */
+  Actor *a, *b;
+  Pos path[MAX_PATH];
+  int n_path;
+  uint8_t ranged, from, to, ambush, has_d20;
+  CheckResult d20;
+  int dmg;
+  EvHit ev[EV_MAX];
+  int n_ev;
+  char label[40];
+} Sig;
+#define QUEUE_MAX 96
+static Sig queue[QUEUE_MAX];
+static int q_head, q_n;
+
+/* ---- przebieg */
+enum { M_EXPLORE, M_COMBAT, M_PLAYER, M_AI, M_OVER };
+static int mode, wait_ms, stall, over_ms;
+static TurnInfo *turn;
+static Actor *ai_actor;
+static int turn_banner_enemy;
+static Search reach;
+static int reach_sp, reach_ok;
+
+/* ---- napisy nad postaciami, baner, dziennik */
+typedef struct { float x, y; char text[24]; uint32_t col; int ms; } Float;
+static Float floats[24];
+static int n_floats;
+static char banner[48], banner_sub[48];
+static uint32_t banner_col;
+static int banner_ms;
+#define LOG_N 5
+static char log_line[LOG_N][120];
+static uint32_t log_col[LOG_N];
+static int n_log;
+
+static void push_log(const char *t, uint32_t col) {
+  if (n_log == LOG_N) {
+    memmove(log_line, log_line + 1, sizeof log_line[0] * (LOG_N - 1));
+    memmove(log_col, log_col + 1, sizeof log_col[0] * (LOG_N - 1));
+    n_log--;
+  }
+  snprintf(log_line[n_log], sizeof log_line[0], "%s", t);
+  log_col[n_log++] = col;
+}
+
+static void show_banner(const char *t, const char *sub, uint32_t col) {
+  snprintf(banner, sizeof banner, "%s", t);
+  snprintf(banner_sub, sizeof banner_sub, "%s", sub ? sub : "");
+  banner_col = col;
+  banner_ms = 1400;
+}
+
 static int load_frame(Lib *l, const char *name, AtlasImg *out) {
   const LibEntry *e = lib_find(l, name);
   uint8_t *rgba;
@@ -367,7 +435,7 @@ static void make_unit(Actor *a) {
   UnitV *u = &units[n_units];
   Lib l;
   char name[48];
-  int d, f;
+  int d, f, p, fb;
   memset(u, 0, sizeof *u);
   u->a = a;
   u->pc = a->side == SIDE_PC;
@@ -405,6 +473,12 @@ static void make_unit(Actor *a) {
     }
     u->n_walk = 4;
   }
+  for (fb = 0; fb < 2; fb++)
+    for (p = 1; p < P_N; p++)
+      for (f = 0; f < POSE_FRAMES[p]; f++) {
+        snprintf(name, sizeof name, "%s_%s%d", fb ? "b" : "f", POSE_NAME[p], f);
+        load_frame(&l, name, &u->pose[fb][p][f]);
+      }
   lib_free(&l);
   u->x = iso_x((float)a->gx, (float)a->gy);
   u->y = iso_y((float)a->gx, (float)a->gy) + TILE_H / 2;
@@ -413,7 +487,6 @@ static void make_unit(Actor *a) {
   n_units++;
 }
 
-/* kierunek patrzenia z wektora siatki: ekran = (dx - dy, (dx + dy) / 2) */
 static void face(UnitV *u, int dgx, int dgy) {
   float sx = (float)(dgx - dgy), sy = (dgx + dgy) * 0.5f, ax = sx < 0 ? -sx : sx, ay = sy < 0 ? -sy : sy;
   if (!dgx && !dgy) return;
@@ -421,6 +494,44 @@ static void face(UnitV *u, int dgx, int dgy) {
   else if (ax < ay * 0.41421f) u->dir = sy >= 0 ? 2 : 6;
   else if (sx >= 0) u->dir = sy >= 0 ? 1 : 7;
   else u->dir = sy >= 0 ? 3 : 5;
+}
+
+static UnitV *unit_of(const Actor *a) {
+  int i;
+  for (i = 0; i < n_units; i++) if (units[i].a == a) return &units[i];
+  return NULL;
+}
+static UnitV *unit_of_ch(const Character *c) {
+  int i;
+  for (i = 0; i < n_units; i++) if (units[i].a->ch == c) return &units[i];
+  return NULL;
+}
+
+static void pose(UnitV *u, int p) {
+  if (!u) return;
+  u->pose_k = p;
+  u->pose_f = 0;
+  u->pose_ms = 0;
+}
+
+static void float_above(const Actor *a, const char *t, uint32_t col) {
+  UnitV *u = unit_of(a);
+  int i, stack = 0;
+  if (!u || n_floats >= 24) return;
+  for (i = 0; i < n_floats; i++) if (floats[i].ms > 600 && floats[i].x == u->x) stack++;
+  floats[n_floats].x = u->x;
+  floats[n_floats].y = u->y - 34 - stack * 9;
+  snprintf(floats[n_floats].text, sizeof floats[0].text, "%s", t);
+  floats[n_floats].col = col;
+  floats[n_floats].ms = 1000;
+  n_floats++;
+}
+
+static int unit_visible(const UnitV *u) {
+  Pos p = mkpos((int)u->a->gx, (int)u->a->gy);
+  if (u->a->side == SIDE_PC) return 1;
+  if (u->a->side == SIDE_NEUTRAL) return mission_is_visible(&mission, p) || u->a->following;
+  return u->a->state == AST_DEAD ? mission.explored[gidx(p.gx, p.gy)] : mission_is_visible(&mission, p);
 }
 
 /* ------------------------------------------------------------------ mgła wojny */
@@ -433,6 +544,74 @@ static void update_fog(void) {
   }
 }
 
+/* ------------------------------------------------------------------ słuchacze logiki */
+static Sig *push_sig(int kind) {
+  Sig *s;
+  if (q_n >= QUEUE_MAX) return NULL;
+  s = &queue[(q_head + q_n) % QUEUE_MAX];
+  memset(s, 0, sizeof *s);
+  s->kind = (uint8_t)kind;
+  q_n++;
+  return s;
+}
+
+static void copy_events(Sig *s, const ActionResult *r) {
+  int i;
+  if (!r) return;
+  for (i = 0; i < r->n_events && s->n_ev < EV_MAX; i++) {
+    const RuleEvent *e = &r->events[i];
+    if (!e->target) continue;
+    s->ev[s->n_ev].t = e->target;
+    s->ev[s->n_ev].type = e->type;
+    s->ev[s->n_ev].degree = e->degree;
+    s->ev[s->n_ev].cond = e->cond;
+    s->ev[s->n_ev].amount = e->amount;
+    s->n_ev++;
+  }
+  if (r->has_d20) {
+    s->has_d20 = 1;
+    s->d20 = r->d20;
+  }
+  if (r->has_dmg) s->dmg = r->dmg.total;
+}
+
+static void on_combat(void *ctx, const CombatSignal *cs) {
+  Sig *s;
+  (void)ctx;
+  switch (cs->kind) {
+    case SIG_COMBAT_START: case SIG_ROUND: case SIG_TURN_START: case SIG_MOVE: case SIG_STRIKE: case SIG_ABILITY: case SIG_ITEM:
+    case SIG_RULES: case SIG_STATE: break;
+    default: return;
+  }
+  s = push_sig(cs->kind);
+  if (!s) return;
+  s->a = cs->actor;
+  s->b = cs->other;
+  s->ambush = cs->ambush;
+  s->from = cs->from;
+  s->to = cs->to;
+  if (cs->kind == SIG_MOVE && cs->path) {
+    s->n_path = cs->path_n < MAX_PATH ? cs->path_n : MAX_PATH;
+    memcpy(s->path, cs->path, sizeof(Pos) * (size_t)s->n_path);
+  }
+  if (cs->info) s->ranged = cs->info->ranged;
+  if (cs->kind == SIG_STRIKE && cs->info) snprintf(s->label, sizeof s->label, "%s", cs->info->weapon.name ? cs->info->weapon.name : "");
+  if (cs->kind == SIG_ABILITY) snprintf(s->label, sizeof s->label, "%s", ABILITY_DEFS[cs->ability].name);
+  if (cs->kind == SIG_ITEM) snprintf(s->label, sizeof s->label, "%s", ITEM_DEFS[cs->item].name);
+  if (cs->kind == SIG_ROUND) s->n_path = cs->round;
+  copy_events(s, cs->result);
+}
+
+static void on_mission(void *ctx, const MissionSignal *ms) {
+  Sig *s;
+  (void)ctx;
+  if (ms->kind != MSIG_SPOTTED && ms->kind != MSIG_FINISH && ms->kind != MSIG_PICKUP) return;
+  s = push_sig(100 + ms->kind);
+  if (!s) return;
+  s->a = ms->by;
+  s->dmg = ms->scrap;
+}
+
 /* ------------------------------------------------------------------ wejście / wyjście */
 static void enter(void) {
   static const uint32_t MEMORY[4] = {0x2a2e48, 0x262c4a, 0x283044, 0x262c42};
@@ -442,7 +621,10 @@ static void enter(void) {
   int i;
   loaded = 0;
   n_units = n_cache = 0;
-  busy = combat_note = 0;
+  q_head = q_n = n_floats = n_log = 0;
+  mode = M_EXPLORE;
+  wait_ms = banner_ms = 0;
+  turn = NULL;
   dlg.open = 0;
   if (g_job < 0 || g_job >= g_camp.n_contracts) return;
   c = &g_camp.contracts[g_job];
@@ -458,6 +640,8 @@ static void enter(void) {
   for (i = 0; i < g_camp.n_party; i++) party_ptr[i] = &g_camp.party[i];
   game_rng(&mrng);
   mission_init(&mission, &mc, party_ptr, g_camp.n_party, &mrng);
+  combat_on(&mission.combat, on_combat, NULL);
+  mission_on(&mission, on_mission, NULL);
   if (!lib_load(&lib_common, "lib_common")) {
     fprintf(stderr, "Najemnicy: %s\n", img_error());
     return;
@@ -488,6 +672,7 @@ static void enter(void) {
   cam_x = iso_x(cursor.gx, cursor.gy);
   cam_y = iso_y(cursor.gx, cursor.gy);
   clock_reset(&clock, 0);
+  push_log(c->title, PAL_AMBER);
   loaded = 1;
 }
 
@@ -496,63 +681,239 @@ static void leave(void) {
   n_units = 0;
 }
 
-/* ------------------------------------------------------------------ ruch */
-static UnitV *unit_of(const Actor *a) {
+/* ------------------------------------------------------------------ odgrywanie sygnałów */
+static void start_walk(UnitV *u, const Pos *path, int n) {
+  if (!u || !n) return;
+  memcpy(u->path, path, sizeof(Pos) * (size_t)n);
+  u->n_path = n;
+  u->path_i = 0;
+  u->path_ms = 0;
+  u->walking = 1;
+}
+
+static int any_walking(void) {
   int i;
-  for (i = 0; i < n_units; i++) if (units[i].a == a) return &units[i];
+  for (i = 0; i < n_units; i++) if (units[i].walking) return 1;
+  return 0;
+}
+
+static void short_name(const Character *c, char *out, int cap) {
+  int k = 0;
+  const char *s = c->name;
+  while (*s && *s != ' ' && k < cap - 1) {
+    if (*s != '"') out[k++] = *s;
+    s++;
+  }
+  out[k] = 0;
+}
+
+static void show_events(const Sig *s) {
+  int i;
+  char t[24];
+  for (i = 0; i < s->n_ev; i++) {
+    const EvHit *e = &s->ev[i];
+    UnitV *u = unit_of_ch(e->t);
+    if (!u) continue;
+    if (e->type == EV_DAMAGE && e->amount > 0) {
+      int crit = e->degree == 3;
+      if (u->a->state == AST_UP) pose(u, P_HURT);
+      u->hurt_ms = 110;
+      snprintf(t, sizeof t, crit ? "-%d!" : "-%d", e->amount);
+      float_above(u->a, t, u->a->side == SIDE_PC ? 0xff5040 : crit ? 0xffe060 : 0x9ad84a);
+      app_sfx(crit ? "crit" : "hit", 179, 256);
+    } else if (e->type == EV_MISS) {
+      float_above(u->a, "PUD\243O", 0xbbbbbb);
+      app_sfx("miss", 154, 256);
+    } else if (e->type == EV_HEAL && e->amount > 0) {
+      snprintf(t, sizeof t, "+%d", e->amount);
+      float_above(u->a, t, 0x7fe05a);
+    } else if (e->type == EV_CONDITION && e->cond < COND_COUNT && e->cond != COND_DEAD && e->cond != COND_DYING) {
+      float_above(u->a, CONDITION_DEFS[e->cond].name, 0xe0a0ff);
+    }
+  }
+}
+
+/* zaczyna odgrywać sygnał; czas trwania w wait_ms (ruch: do końca chodu) */
+static void play(const Sig *s) {
+  char buf[160], an[32], bn[32];
+  UnitV *ua = s->a ? unit_of(s->a) : NULL, *ub = s->b ? unit_of(s->b) : NULL;
+  switch (s->kind) {
+    case SIG_COMBAT_START:
+      show_banner(s->ambush ? "ZASADZKA!" : "WALKA!", NULL, s->ambush ? PAL_AMBER : PAL_BAD);
+      app_sfx("alarm", 154, 256);
+      update_fog();
+      wait_ms = 450;
+      break;
+    case SIG_ROUND:
+      snprintf(buf, sizeof buf, "Runda %d", s->n_path);
+      push_log(buf, PAL_DIM);
+      break;
+    case SIG_TURN_START:
+      if (s->a && s->a->side == SIDE_PC) {
+        short_name(s->a->ch, an, sizeof an);
+        snprintf(buf, sizeof buf, "TURA: %s", an);
+        latin2_upper(buf);
+        show_banner(buf, NULL, PAL_GOOD);
+        turn_banner_enemy = 0;
+      } else if (!turn_banner_enemy) {
+        show_banner("TURA WROGA", NULL, PAL_BAD);
+        turn_banner_enemy = 1;
+      }
+      app_sfx("turn", 256, 256);
+      break;
+    case SIG_MOVE:
+      if (ua && s->n_path) {
+        if (s->a->side != SIDE_PC && !unit_visible(ua)) {
+          /* ruch w mgle: bez animacji */
+          Pos e = s->path[s->n_path - 1];
+          ua->x = iso_x(e.gx, e.gy);
+          ua->y = iso_y(e.gx, e.gy) + TILE_H / 2;
+        } else start_walk(ua, s->path, s->n_path);
+      }
+      break;
+    case SIG_STRIKE:
+      if (ua && ub) {
+        face(ua, s->b->gx - s->a->gx, s->b->gy - s->a->gy);
+        pose(ua, s->ranged ? P_SHOOT : P_ATTACK);
+      }
+      if (s->a && s->b && s->has_d20) {
+        short_name(s->a->ch, an, sizeof an);
+        short_name(s->b->ch, bn, sizeof bn);
+        snprintf(buf, sizeof buf, "%s \222 %s (%s): k20 %d%s%d = %d vs KP %d \200 %s%s", an, bn, s->label, s->d20.d20, s->d20.mod >= 0 ? "+" : "", s->d20.mod, s->d20.total, s->d20.dc,
+                 DEGREE_NAMES[s->d20.degree], "");
+        push_log(buf, s->a->side == SIDE_PC ? (s->d20.degree >= 2 ? PAL_GOOD : PAL_DIM) : (s->d20.degree >= 2 ? PAL_BAD : PAL_DIM));
+      }
+      app_sfx(s->ranged ? "shot_rifle" : "melee", 256, 256);
+      wait_ms = 200;
+      break;
+    case SIG_ABILITY: case SIG_ITEM:
+      if (s->a) {
+        short_name(s->a->ch, an, sizeof an);
+        snprintf(buf, sizeof buf, "%s: %s", an, s->label);
+        push_log(buf, PAL_AMBER);
+      }
+      show_events(s);
+      wait_ms = 400;
+      break;
+    case SIG_RULES:
+      if (s->n_ev) {
+        show_events(s);
+        wait_ms = 220;
+      }
+      break;
+    case SIG_STATE:
+      if (ua) {
+        if (s->to == AST_DEAD) {
+          if (s->from != AST_DOWN) pose(ua, P_DIE);
+          if (s->a->side == SIDE_PC) float_above(s->a, "ZGIN\241\243", 0xff5040);
+          app_sfx("death", 179, 256);
+        } else if (s->to == AST_DOWN) {
+          pose(ua, P_DIE);
+          float_above(s->a, "POWALONY!", 0xff5040);
+          app_sfx("scream", 256, 256);
+        } else pose(ua, P_NONE);
+      }
+      break;
+    case 100 + MSIG_SPOTTED:
+      if (s->a && mission_is_visible(&mission, apos(s->a))) float_above(s->a, "!", 0xff5040);
+      break;
+    case 100 + MSIG_PICKUP:
+      if (s->a) {
+        snprintf(buf, sizeof buf, "+%d Z\263omu", s->dmg);
+        float_above(s->a, buf, 0xffd040);
+        app_sfx("coin", 256, 256);
+      }
+      break;
+    case 100 + MSIG_FINISH:
+      mode = M_OVER;
+      over_ms = 2500;
+      show_banner(mission.result.result == 0 ? "MISJA ZAKO\321CZONA" : "MISJA ZAKO\321CZONA", NULL, PAL_GOOD);
+      break;
+  }
+}
+
+/* drugi etap ataku: wynik nad celem po animacji */
+static Sig pending_hit;
+static int pending_ms;
+
+/* ------------------------------------------------------------------ akcje gracza */
+static void refresh_reach(void) {
+  reach_ok = 0;
+  if (mode != M_PLAYER || !turn || turn->actions < 1) return;
+  combat_reach_for(&mission.combat, turn->actor, turn->actions, &reach, &reach_sp);
+  reach_ok = 1;
+}
+
+static Actor *visible_actor_at(Pos p) {
+  int i;
+  for (i = 0; i < mission.n_actors; i++) {
+    Actor *a = mission.actors[i];
+    UnitV *u;
+    if (a->gx != p.gx || a->gy != p.gy || a->state == AST_DEAD) continue;
+    u = unit_of(a);
+    if (u && unit_visible(u)) return a;
+  }
   return NULL;
 }
 
-static void explore_to(Pos target) {
-  static ExploreResult r;
-  Actor *sel = mission.pcs[leader];
-  int i;
-  if (busy || sel->state != AST_UP) return;
-  mission_explore_move(&mission, sel, target, 1, &r);
-  if (!r.ok) {
+static void after_action(const ActionOutcome *o) {
+  static const char *const REASON[] = {"", "To nie twoja tura.", "Posta\346 nie mo\277e dzia\263a\346.", "Brak akcji.", "Pole zaj\352te.", "Brak drogi.", "Krok tylko o jedno pole.",
+                                       "Za daleko.", "Poza zasi\352giem.", "Brak linii strza\263u.", "Trzeba podej\266\346.", "Nie mo\277na podej\266\346.", "", "", "Brak u\277y\346.", "Tylko w walce.",
+                                       "Ju\277 u\277yte w tej turze.", "Wska\277 cel.", "", "Nie da si\352 u\277y\346.", "Z\263y cel.", "Brak drugiej broni."};
+  if (!o->ok && o->reason < sizeof REASON / sizeof REASON[0] && *REASON[o->reason]) {
+    push_log(REASON[o->reason], PAL_DIM);
     app_sfx("error", 128, 256);
-    return;
   }
-  for (i = 0; i < r.n; i++) {
-    UnitV *u = unit_of(r.paths[i].actor);
-    if (!u || !r.paths[i].n) continue;
-    memcpy(u->path, r.paths[i].path, sizeof(Pos) * (size_t)r.paths[i].n);
-    u->n_path = r.paths[i].n;
-    u->path_i = 0;
-    u->path_ms = 0;
-    u->walking = 1;
-    busy = 1;
-  }
-  update_fog();
+  reach_ok = 0;
 }
 
-static void update(unsigned held, unsigned pressed, int ms) {
-  int i, ticks = clock_advance(&clock, ms, 10), moving = 0;
-  (void)ticks;
-  ui_toast_update(ms);
-  /* odsłanianie pól */
-  for (i = 0; i < GRID_N; i++)
-    if (cell_state[i] && cell_reveal[i] < 255) cell_reveal[i] = (uint8_t)(cell_reveal[i] + ms * 255 / 250 > 255 ? 255 : cell_reveal[i] + ms * 255 / 250);
-  /* animacje postaci: spoczynek (UNIT_IDLE) albo chód po ścieżce, krok 130 ms */
+static void player_ok(void) {
+  Actor *a = turn->actor, *who = visible_actor_at(cursor);
+  ActionOutcome o;
+  if (who && who->side == SIDE_ENEMY) {
+    NormWeapon w[2];
+    if (turn->actions < 1) {
+      push_log("Brak akcji.", PAL_DIM);
+      return;
+    }
+    get_weapons(a->ch, w);
+    o = combat_attack_target(&mission.combat, a, who, &w[0]);
+  } else if (who) return;
+  else o = combat_stride(&mission.combat, a, cursor);
+  after_action(&o);
+}
+
+/* ------------------------------------------------------------------ aktualizacja */
+static void update_units(int ms) {
+  int i;
   for (i = 0; i < n_units; i++) {
     UnitV *u = &units[i];
+    if (u->hurt_ms > 0) u->hurt_ms -= ms;
+    if (u->pose_k) {
+      u->pose_ms += ms;
+      while (u->pose_k && u->pose_ms >= 110) {
+        u->pose_ms -= 110;
+        if (u->pose_f + 1 < POSE_FRAMES[u->pose_k] && (u->pose_k != P_DIE || u->pose_f + 1 <= (u->a->state == AST_DEAD ? FRAME_CORPSE : FRAME_DOWN))) u->pose_f++;
+        else if (u->pose_k != P_DIE) u->pose_k = P_NONE;
+        else break;
+      }
+    }
     if (u->walking) {
       Pos to = u->path[u->path_i];
-      float tx = iso_x(to.gx, to.gy), ty = iso_y(to.gx, to.gy) + TILE_H / 2, k;
+      float tx = iso_x(to.gx, to.gy), ty = iso_y(to.gx, to.gy) + TILE_H / 2, k, fx, fy;
       if (!u->path_ms) {
-        int fx = (int)floor(((u->x - 0) / 16 + (u->y - 8) / 8) / 2 + 0.5f), fy = (int)floor(((u->y - 8) / 8 - u->x / 16) / 2 + 0.5f);
-        face(u, to.gx - fx, to.gy - fy);
-        u->from.gx = (int8_t)fx;
-        u->from.gy = (int8_t)fy;
+        int gx = (int)floor((u->x / 16 + (u->y - 8) / 8) / 2 + 0.5f), gy = (int)floor(((u->y - 8) / 8 - u->x / 16) / 2 + 0.5f);
+        face(u, to.gx - gx, to.gy - gy);
+        u->from.gx = (int8_t)gx;
+        u->from.gy = (int8_t)gy;
       }
       u->path_ms += ms;
       k = u->path_ms / (float)STEP_MS;
       if (k > 1) k = 1;
-      {
-        float fx = iso_x(u->from.gx, u->from.gy), fy = iso_y(u->from.gx, u->from.gy) + TILE_H / 2;
-        u->x = fx + (tx - fx) * k;
-        u->y = fy + (ty - fy) * k;
-      }
+      fx = iso_x(u->from.gx, u->from.gy);
+      fy = iso_y(u->from.gx, u->from.gy) + TILE_H / 2;
+      u->x = fx + (tx - fx) * k;
+      u->y = fy + (ty - fy) * k;
       if (u->path_ms >= STEP_MS) {
         u->path_ms = 0;
         if (++u->path_i >= u->n_path) {
@@ -566,7 +927,6 @@ static void update(unsigned held, unsigned pressed, int ms) {
         u->ms -= 105;
         u->step = (u->step + 1) % u->n_walk;
       }
-      moving = 1;
     } else {
       u->ms += ms;
       while (u->ms >= 100 + UNIT_IDLE[u->step % UNIT_IDLE_STEPS].ms) {
@@ -575,35 +935,165 @@ static void update(unsigned held, unsigned pressed, int ms) {
       }
     }
   }
-  if (busy && !moving) {
-    busy = 0;
-    if (mission_in_combat(&mission) && !combat_note) {
-      combat_note = 1;
-      ui_toast("Wr\363g was zauwa\277y\263! Walka nie jest jeszcze przeniesiona \200 Esc: wycofanie.", PAL_BAD);
-    }
+}
+
+static void explore_to(Pos target) {
+  static ExploreResult r;
+  Actor *sel = mission.pcs[leader];
+  int i;
+  if (sel->state != AST_UP) return;
+  mission_explore_move(&mission, sel, target, 1, &r);
+  if (!r.ok) {
+    app_sfx("error", 128, 256);
+    return;
   }
-  /* kamera za liderem */
+  for (i = 0; i < r.n; i++) start_walk(unit_of(r.paths[i].actor), r.paths[i].path, r.paths[i].n);
+  update_fog();
+}
+
+static void next_combat_turn(void) {
+  /* kolejna tura albo koniec walki (runCombat) */
+  if (!mission_in_combat(&mission) || !mission.combat.active) {
+    int i, all_dead = 1;
+    for (i = 0; i < mission.n_enemies; i++) if (mission.enemies[i]->state != AST_DEAD) all_dead = 0;
+    show_banner(all_dead ? "TEREN CZYSTY" : "WALKA ZAKO\321CZONA", NULL, PAL_GOOD);
+    mode = M_EXPLORE;
+    turn = NULL;
+    turn_banner_enemy = 0;
+    for (i = 0; i < mission.n_pcs; i++)
+      if (mission.pcs[i]->state == AST_UP) {
+        leader = i;
+        break;
+      }
+    update_fog();
+    return;
+  }
+  turn = combat_next_turn(&mission.combat);
+  update_fog();
+  if (!turn) {
+    if (++stall > 5) {
+      mode = M_EXPLORE;
+      stall = 0;
+    }
+    return;
+  }
+  stall = 0;
+  if (turn->actor->side == SIDE_PC) {
+    int i;
+    mode = M_PLAYER;
+    for (i = 0; i < mission.n_pcs; i++) if (mission.pcs[i] == turn->actor) leader = i;
+    cursor = apos(turn->actor);
+    reach_ok = 0;
+  } else {
+    UnitV *u = unit_of(turn->actor);
+    mode = M_AI;
+    ai_actor = turn->actor;
+    wait_ms = u && unit_visible(u) ? 320 : 120;
+  }
+}
+
+static void update(unsigned held, unsigned pressed, int ms) {
+  int i;
+  ui_toast_update(ms);
+  clock_advance(&clock, ms, 10);
+  for (i = 0; i < GRID_N; i++)
+    if (cell_state[i] && cell_reveal[i] < 255) cell_reveal[i] = (uint8_t)(cell_reveal[i] + ms * 255 / 250 > 255 ? 255 : cell_reveal[i] + ms * 255 / 250);
+  update_units(ms);
+  for (i = 0; i < n_floats; i++)
+    if ((floats[i].ms -= ms) <= 0) {
+      floats[i--] = floats[--n_floats];
+    }
+  if (banner_ms > 0) banner_ms -= ms;
+  if (wait_ms > 0) wait_ms -= ms;
+  if (pending_ms > 0 && (pending_ms -= ms) <= 0) show_events(&pending_hit);
+
+  /* kamera: za postacią w turze albo liderem */
   {
-    UnitV *u = unit_of(mission.pcs[leader]);
+    UnitV *u = unit_of(mode == M_AI && ai_actor ? ai_actor : mission.pcs[leader]);
     float k = ms / 250.0f > 1 ? 1 : ms / 250.0f;
-    if (u) {
+    if (u && (mode != M_AI || unit_visible(u))) {
       cam_x += (u->x - cam_x) * k;
       cam_y += (u->y - 20 - cam_y) * k;
     }
   }
+
+  /* kolejka sygnałów: po kolei, kolejny po zakończeniu animacji poprzedniego */
+  if (wait_ms <= 0 && pending_ms <= 0 && !any_walking() && q_n) {
+    Sig *s = &queue[q_head];
+    q_head = (q_head + 1) % QUEUE_MAX;
+    q_n--;
+    play(s);
+    if (s->kind == SIG_STRIKE) {
+      pending_hit = *s;
+      pending_ms = s->ranged ? 150 : 120;
+      wait_ms = 450;
+    }
+    if (s->kind == SIG_MOVE || s->kind == SIG_STRIKE || s->kind == SIG_STATE) update_fog();
+    return;
+  }
+  if (wait_ms > 0 || pending_ms > 0 || any_walking() || q_n) return;
+  update_fog();
+
+  if (mode == M_OVER) {
+    if ((over_ms -= ms) <= 0 && !app_leaving()) {
+      DebriefSummary sum;
+      Rng r;
+      game_rng(&r);
+      apply_mission_result(&g_camp, &mission.result, g_job, &r, &sum);
+      snprintf(g_notice, sizeof g_notice, "Misja zako\361czona: +%d Z\263omu, +%d PD.", sum.scrap, sum.xp);
+      app_switch(SCR_HUB, 600, 500);
+    }
+    return;
+  }
+  if (mode == M_EXPLORE && mission_in_combat(&mission)) {
+    mode = M_COMBAT;
+    return;
+  }
+  if (mode == M_COMBAT) {
+    next_combat_turn();
+    return;
+  }
+  if (mode == M_AI) {
+    AiAction act;
+    UnitV *u = unit_of(ai_actor);
+    if (!mission.combat.turn || mission.combat.turn->actor != ai_actor || !ai_step(&mission.combat, ai_actor, &act)) {
+      if (mission.combat.turn && mission.combat.turn->actor == ai_actor) mission.combat.turn->actions = 0;
+      mode = M_COMBAT;
+    } else wait_ms = u && unit_visible(u) ? 160 : 40;
+    return;
+  }
+  if (mode == M_PLAYER && (!mission.combat.active || mission.combat.turn != turn || turn->actions <= 0 || turn->actor->state != AST_UP)) {
+    mode = M_COMBAT;
+    wait_ms = 300;
+    return;
+  }
+  if (mode == M_PLAYER && !reach_ok) refresh_reach();
+
   if (app_leaving()) return;
   if (dlg.open) {
     int r = ui_dialog_input(&dlg, pressed);
-    if (r == 1) {
+    if (r < 0) return;
+    if (dlg_kind == D_TURN && r == 1 && mode == M_PLAYER) {
+      mode = M_COMBAT;
+      reach_ok = 0;
+    } else if ((dlg_kind == D_TURN && r == 2) || (dlg_kind == D_RETREAT && r == 1)) {
       snprintf(g_notice, sizeof g_notice, "Dru\277yna wycofa\263a si\352 z misji.");
       app_switch(SCR_HUB, 500, 500);
     }
     return;
   }
   if (pressed & IN_BACK) {
-    static const char *const B[2] = {"ZOSTA\321", "WYCOFAJ SI\312"};
-    static const int K[2] = {BTN_PLAIN, BTN_DANGER};
-    ui_dialog_open(&dlg, "WYCOFA\306 SI\312?", "Dru\277yna wr\363ci do Przystani bez wykonania zlecenia.", 2, B, K, 0);
+    if (mode == M_PLAYER) {
+      static const char *const B[3] = {"ANULUJ", "ZAKO\321CZ TUR\312", "WYCOFAJ SI\312"};
+      static const int K[3] = {BTN_PLAIN, BTN_PRIMARY, BTN_DANGER};
+      ui_dialog_open(&dlg, "TURA", "Zako\361czy\346 tur\352 tej postaci? Niewykorzystane akcje przepadn\261.", 3, B, K, 1);
+      dlg_kind = D_TURN;
+    } else {
+      static const char *const B[2] = {"ZOSTA\321", "WYCOFAJ SI\312"};
+      static const int K[2] = {BTN_PLAIN, BTN_DANGER};
+      ui_dialog_open(&dlg, "WYCOFA\306 SI\312?", "Dru\277yna wr\363ci do Przystani bez wykonania zlecenia.", 2, B, K, 0);
+      dlg_kind = D_RETREAT;
+    }
     return;
   }
   /* kursor: kierunki ekranu -> siatka (prawo = +gx -gy, dół = +gx +gy), powtarzanie przy trzymaniu */
@@ -623,56 +1113,151 @@ static void update(unsigned held, unsigned pressed, int ms) {
     if (step) {
       int sx = (dirs & IN_RIGHT ? 1 : 0) - (dirs & IN_LEFT ? 1 : 0), sy = (dirs & IN_DOWN ? 1 : 0) - (dirs & IN_UP ? 1 : 0);
       int dgx = sx + sy, dgy = sy - sx;
-      if (dgx > 1) dgx = 1;
-      if (dgx < -1) dgx = -1;
-      if (dgy > 1) dgy = 1;
-      if (dgy < -1) dgy = -1;
+      dgx = dgx > 1 ? 1 : dgx < -1 ? -1 : dgx;
+      dgy = dgy > 1 ? 1 : dgy < -1 ? -1 : dgy;
       if (in_bounds(cursor.gx + dgx, cursor.gy + dgy)) {
         cursor.gx = (int8_t)(cursor.gx + dgx);
         cursor.gy = (int8_t)(cursor.gy + dgy);
       }
     }
   }
-  if (pressed & IN_OK && !mission_in_combat(&mission)) explore_to(cursor);
+  if (g_debug_cmd == 1) {
+    /* testy: kursor na najbliższego żywego wroga */
+    int best = 1 << 30;
+    Pos me = apos(mission.pcs[leader]);
+    g_debug_cmd = 0;
+    for (i = 0; i < mission.n_enemies; i++) {
+      Actor *e = mission.enemies[i];
+      int d = cheb(me, apos(e));
+      if (e->state != AST_DEAD && d < best) {
+        best = d;
+        cursor = apos(e);
+      }
+    }
+  }
+  if (pressed & IN_OK) {
+    if (mode == M_EXPLORE) explore_to(cursor);
+    else if (mode == M_PLAYER) player_ok();
+  }
 }
 
 /* ------------------------------------------------------------------ rysowanie */
 static void draw_unit(const UnitV *u) {
   const AtlasImg *im;
-  int flip = 0;
+  int flip = 0, back = u->dir >= 5 || u->dir == 0, a = 255;
+  uint32_t tint = 0xffffff;
   if (!u->a->ch) return;
-  if (u->pc) im = u->walking && u->has_walk ? &u->walk[u->dir][u->step % 8] : &u->idle[u->dir][UNIT_IDLE[u->step % UNIT_IDLE_STEPS].frame];
-  else {
-    int back = u->dir >= 5 || u->dir == 0;   /* N, NE, E: tył */
-    flip = u->dir >= 3 && u->dir <= 6;        /* w lewo: lustro */
+  flip = u->dir >= 3 && u->dir <= 6;
+  if (u->a->state != AST_UP) {
+    int f = u->pose_k == P_DIE ? u->pose_f : u->a->state == AST_DEAD ? FRAME_CORPSE : FRAME_DOWN;
+    im = &u->pose[back][P_DIE][f];
+    tint = u->a->state == AST_DEAD ? 0xa09090 : 0x9a7a7a;
+  } else if (u->pose_k) {
+    im = &u->pose[back][u->pose_k][u->pose_f];
+  } else if (u->pc) {
+    im = u->walking && u->has_walk ? &u->walk[u->dir][u->step % 8] : &u->idle[u->dir][UNIT_IDLE[u->step % UNIT_IDLE_STEPS].frame];
+    flip = 0;
+  } else
     im = u->walking && u->has_walk ? &u->walk[back][u->step % 4] : &u->idle[back][UNIT_IDLE[u->step % UNIT_IDLE_STEPS].frame];
-  }
+  if (!im->w) im = u->pc ? &u->idle[u->dir][0] : &u->idle[back][0];
   if (!im->w) return;
-  atlas_draw(&atlas, im, u->x - im->w * 0.5f, u->y - im->h * 0.875f, flip, 0xffffff, 255);
+  if (u->hurt_ms > 0) tint = 0xff6a5a;
+  atlas_draw(&atlas, im, u->x - im->w * 0.5f, u->y - im->h * 0.875f, flip, tint, a);
 }
 
-static int unit_shown(const UnitV *u) {
-  Pos p = mkpos((int)u->a->gx, (int)u->a->gy);
-  if (u->a->side == SIDE_PC) return 1;
-  if (u->a->side == SIDE_NEUTRAL) return mission_is_visible(&mission, p) || u->a->following;
-  return u->a->state == AST_DEAD ? mission.explored[gidx(p.gx, p.gy)] : mission_is_visible(&mission, p);
+/* romb pola (dwa trójkąty) */
+static void diamond(int gx, int gy, uint32_t col, int a) {
+  float x = iso_x(gx, gy), y = iso_y(gx, gy);
+  r2d_tri(x, y, x + 16, y + 8, x, y + 16, col, a);
+  r2d_tri(x, y, x, y + 16, x - 16, y + 8, col, a);
+}
+
+static void draw_overlay(void) {
+  int i;
+  if (mode == M_PLAYER && reach_ok && turn) {
+    static const uint32_t COL[4] = {0, 0x468cff, 0xf0c832, 0xf07828};
+    static const int AL[4] = {0, 77, 66, 61};
+    for (i = 0; i < GRID_N; i++) {
+      int n;
+      if (!cell_state[i] || reach.cost[i] >= UNREACHABLE || reach.cost[i] <= 0) continue;
+      n = stride_actions(reach.cost[i], reach_sp);
+      if (n < 1 || n > turn->actions || n > 3) continue;
+      diamond(i % MAP_W, i / MAP_W, COL[n], AL[n]);
+    }
+  }
+  atlas_draw(&atlas, &img_cursor, iso_x(cursor.gx, cursor.gy) - img_cursor.w / 2.0f, iso_y(cursor.gx, cursor.gy), 0, 0xffffff, 255);
+}
+
+static void draw_hud(void) {
+  char buf[160];
+  int i;
+  float x;
+  r2d_rect(0, 0, V_W, 13, PAL_PANEL, 230);
+  r2d_rect(0, 13, V_W, 1, PAL_EDGE, 255);
+  if (mode == M_PLAYER || mode == M_AI || mode == M_COMBAT) snprintf(buf, sizeof buf, "WALKA \205 runda %d", mission.combat.round);
+  else snprintf(buf, sizeof buf, "%s", g_camp.contracts[g_job].title);
+  font_draw(6, 3, buf, mode == M_EXPLORE ? PAL_AMBER : PAL_BAD, 255, FONT_OUTLINE, 0, 1);
+  x = V_W - 6;
+  for (i = mission.n_pcs - 1; i >= 0; i--) {
+    const Actor *a = mission.pcs[i];
+    char nm[32];
+    short_name(a->ch, nm, sizeof nm);
+    snprintf(buf, sizeof buf, "%s %d/%d", nm, a->ch->hp > 0 ? a->ch->hp : 0, a->ch->max_hp);
+    x -= font_measure(buf, 0);
+    font_draw(x, 3, buf, a->state != AST_UP ? PAL_BAD : i == leader ? PAL_AMBER : PAL_TEXT, 255, FONT_OUTLINE, 0, 1);
+    x -= 12;
+  }
+  /* akcje tury i podpowiedź celu */
+  if (mode == M_PLAYER && turn) {
+    char nm[32];
+    Actor *who = visible_actor_at(cursor);
+    short_name(turn->actor->ch, nm, sizeof nm);
+    r2d_rect(6, 18, 150, 24, PAL_PANEL, 220);
+    r2d_frame(6, 18, 150, 24, PAL_EDGE, 255);
+    font_draw(10, 21, nm, PAL_AMBER, 255, FONT_OUTLINE, 0, 1);
+    for (i = 0; i < turn->full; i++) {
+      /* ◆ dostępna akcja, ◇ zużyta */
+      font_draw(10 + font_measure(nm, 0) + 6 + i * 9, 21, i < turn->actions ? "\212" : "\213", i < turn->actions ? PAL_AMBER : PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+    }
+    if (who && who->side == SIDE_ENEMY) {
+      StrikeInfo si;
+      NormWeapon w[2];
+      get_weapons(turn->actor->ch, w);
+      combat_strike_info(&mission.combat, turn->actor, who, &w[0], apos(turn->actor), &si);
+      if (si.ok) snprintf(buf, sizeof buf, "%s: trafienie %d%%, krytyk %d%%", w[0].name, (int)(si.hit * 100 + 0.5), (int)(si.crit * 100 + 0.5));
+      else if (si.melee) snprintf(buf, sizeof buf, "%s: podejd\274 i zaatakuj", w[0].name);
+      else snprintf(buf, sizeof buf, "%s: poza zasi\352giem / brak linii strza\263u", w[0].name);
+      font_draw(10, 31, buf, si.ok ? PAL_GOOD : PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+    } else font_draw(10, 31, "fire: ruch / atak \205 Esc: menu tury", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+  }
+  /* dziennik */
+  for (i = 0; i < n_log; i++) {
+    float y = V_H - 12 - (n_log - 1 - i) * 9;
+    r2d_rect(4, y - 1, (float)font_measure(log_line[i], 0) + 4, 9, 0, 140);
+    font_draw(6, y, log_line[i], log_col[i], 255, FONT_OUTLINE, 0, 1);
+  }
+  if (banner_ms > 0) {
+    int a = banner_ms > 1100 ? (1400 - banner_ms) * 255 / 300 : banner_ms < 300 ? banner_ms * 255 / 300 : 255;
+    int w = font_measure(banner, 1) * 2 + 24;
+    r2d_rect(V_W / 2.0f - w / 2.0f, 60, (float)w, 26, 0, a * 3 / 4);
+    font_draw_at(V_W / 2.0f, 73, 0.5f, 0.5f, banner, banner_col, a, FONT_OUTLINE, 1, 2);
+  }
+  if (mode == M_EXPLORE) font_draw_at(V_W - 6, V_H - 4, 1, 1, "Strza\263ki: kursor \205 fire: id\274 \205 Esc: wycofanie", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
 }
 
 static void draw(void) {
   int i, j, order[MAX_UNITS], n = 0;
   int32_t ud[MAX_UNITS];
-  char buf[96];
   r2d_rect(0, 0, V_W, V_H, BIOME_BG[biome], 255);
   if (!loaded) {
     font_draw_at(V_W / 2, V_H / 2, 0.5f, 0.5f, "Brak plik\363w grafiki misji (katalog gfx/)", PAL_BAD, 255, FONT_OUTLINE, 0, 1);
     return;
   }
-  r2d_offset(V_W / 2.0f - cam_x, V_H / 2.0f - cam_y);
-  /* postacie w kolejności głębi */
+  r2d_offset((float)(int)(V_W / 2.0f - cam_x), (float)(int)(V_H / 2.0f - cam_y));
   for (i = 0; i < n_units; i++) {
     const UnitV *u = &units[i];
     int gx = (int)floor((u->x / 16 + (u->y - 8) / 8) / 2 + 0.5f), gy = (int)floor(((u->y - 8) / 8 - u->x / 16) / 2 + 0.5f);
-    if (!unit_shown(u)) continue;
+    if (!unit_visible(u)) continue;
     ud[i] = obj_depth(gx, gy, L_UNIT);
     for (j = n; j > 0 && ud[order[j - 1]] > ud[i]; j--) order[j] = order[j - 1];
     order[j] = i;
@@ -683,15 +1268,14 @@ static void draw(void) {
     int overlay = 0;
     for (i = 0; i <= n_spr; i++) {
       const Spr *s = i < n_spr ? &spr[i] : NULL;
-      int st, a;
-      /* kursor i cienie postaci po podłodze i okluzji (D_AO), przed obiektami */
+      int st;
       if (!overlay && (!s || s->depth > D_AO)) {
         int k;
         overlay = 1;
-        atlas_draw(&atlas, &img_cursor, iso_x(cursor.gx, cursor.gy) - img_cursor.w / 2.0f, iso_y(cursor.gx, cursor.gy), 0, 0xffffff, 255);
+        draw_overlay();
         for (k = 0; k < n; k++) {
           const UnitV *u = &units[order[k]];
-          atlas_draw(&atlas, &img_shadow, u->x - img_shadow.w / 2.0f, u->y - img_shadow.h / 2.0f, 0, 0xffffff, 255);
+          if (u->a->state == AST_UP) atlas_draw(&atlas, &img_shadow, u->x - img_shadow.w / 2.0f, u->y - img_shadow.h / 2.0f, 0, 0xffffff, 255);
         }
       }
       if (!s) break;
@@ -702,33 +1286,17 @@ static void draw(void) {
       }
       st = cell_state[s->cell];
       if (!st) continue;
-      a = cell_reveal[s->cell];
-      atlas_draw(&atlas, &s->img, s->x, s->y, s->flip, st == 2 ? 0xffffff : memory_tint, a);
+      atlas_draw(&atlas, &s->img, s->x, s->y, s->flip, st == 2 ? 0xffffff : memory_tint, cell_reveal[s->cell]);
     }
   }
   while (j < n) draw_unit(&units[order[j++]]);
-  r2d_offset(0, 0);
-  /* pasek drużyny (tymczasowy HUD) */
-  r2d_rect(0, 0, V_W, 13, PAL_PANEL, 230);
-  r2d_rect(0, 13, V_W, 1, PAL_EDGE, 255);
-  snprintf(buf, sizeof buf, "%s", g_camp.contracts[g_job].title);
-  font_draw(6, 3, buf, PAL_AMBER, 255, FONT_OUTLINE, 0, 1);
-  {
-    float x = V_W - 6;
-    for (i = mission.n_pcs - 1; i >= 0; i--) {
-      const Character *ch = mission.pcs[i]->ch;
-      char nm[48];
-      int k = 0;
-      const char *s = ch->name;
-      while (*s && *s != ' ' && k < 30) nm[k++] = *s++;
-      nm[k] = 0;
-      snprintf(buf, sizeof buf, "%s %d/%d", nm, ch->hp, ch->max_hp);
-      x -= font_measure(buf, 0);
-      font_draw(x, 3, buf, i == leader ? PAL_AMBER : PAL_TEXT, 255, FONT_OUTLINE, 0, 1);
-      x -= 12;
-    }
+  for (i = 0; i < n_floats; i++) {
+    const Float *f = &floats[i];
+    int a = f->ms < 300 ? f->ms * 255 / 300 : 255;
+    font_draw_at(f->x, f->y - (1000 - f->ms) * 16 / 1000.0f, 0.5f, 0.5f, f->text, f->col, a, FONT_OUTLINE, 1, 1);
   }
-  font_draw_at(V_W - 6, V_H - 4, 1, 1, "Strza\263ki: kursor \205 fire: id\274 \205 Esc: wycofanie", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+  r2d_offset(0, 0);
+  draw_hud();
   ui_dialog_draw(&dlg);
   ui_toast_draw();
 }

@@ -434,7 +434,7 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), 
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż, misja (etap 1: świat, mgła, ruch w eksploracji); ⏳ walka, akcje i HUD misji, rozliczenie, zapis z menu, opcje, mapa
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż, misja (etap 1: świat, mgła, ruch; etap 2: walka turowa); ⏳ zdolności / przedmioty / interakcje i pełny HUD misji, rozliczenie, zapis z menu, opcje, mapa
    regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
@@ -522,3 +522,13 @@ wszystkich kombinacji (podłogi, przejścia, okluzja, kalkomanie, budynki - ziar
 256x256 (`Atlas` w `img.c`). Mgła wojny z `mission.vis / explored`, kursor pola joystickiem (kierunki ekranu, z
 powtarzaniem), ruch drużyny `mission_explore_move` z animacją kroku 130 ms. Walka, akcje, interakcje, światła,
 odsłanianie wysokich obiektów i HUD - kolejne etapy. Testy: `gl_host ... "0:job=N 30:shot"`.
+
+Misja, etap 2 (walka): sygnały logiki (`combat_on`, `mission_on`) są kopiowane do kolejki (bufory wyników logiki są ważne
+tylko do następnej akcji) i odgrywane po kolei jak `flush()` / `play()` w WorldScene: baner walki / zasadzki, tury
+(„TURA: …”, „TURA WROGA”), ruch, atak (poza strzału / ciosu, wynik nad celem po animacji), trafienia, pudła, stany
+(powalony, zabity - klatki `die`), podniesienie Złomu. Przebieg jak `runCombat`: `combat_next_turn`, tura gracza
+(zasięg ruchu z `combat_reach_for` w kolorach 1 / 2 / 3 akcji, szansa trafienia z `combat_strike_info` pod kursorem,
+fire: ruch `combat_stride` albo atak `combat_attack_target`, Esc: menu tury - zakończ turę / wycofanie), tura wroga
+`ai_step` co 160 ms. Koniec misji (`MSIG_FINISH`) - `apply_mission_result` i powrót do Przystani z komunikatem
+(ekran rozliczenia - kolejny etap). Dziennik: rzuty ataku (k20, modyfikator, KP, stopień). Test:
+`gl_host ... "40:enemy 42:OK ..."` (`enemy` = kursor na najbliższego wroga).

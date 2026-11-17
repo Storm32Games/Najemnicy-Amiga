@@ -8,6 +8,7 @@ uint32_t g_entropy = 0x2545f491u;
 int g_job = -1;
 char g_notice[128];
 int g_force_event = -1;
+int g_debug_cmd;
 
 void game_rng(Rng *r) {
   g_entropy = g_entropy * 1664525u + 1013904223u;
