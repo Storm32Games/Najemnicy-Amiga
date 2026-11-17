@@ -11,6 +11,7 @@
 #endif
 
 static char err[192];
+static uint32_t be32(const uint8_t *p);
 const char *img_error(void) { return err; }
 
 static uint8_t *read_file(const char *path, long *len) {
@@ -29,38 +30,28 @@ static uint8_t *read_file(const char *path, long *len) {
   return buf;
 }
 
-int img_load(Img *im, const char *name) {
-  char path[96];
-  long len, p;
-  uint8_t *f, *rgba, *tilebuf;
-  int w, h, n, i, ok = 0;
-  long px = 0, total;
-  memset(im, 0, sizeof *im);
-  snprintf(path, sizeof path, GFX_DIR "%s.ntx", name);
-  f = read_file(path, &len);
-  if (!f) {
-    snprintf(err, sizeof err, "brak pliku %s", path);
-    return 0;
-  }
+/* Dekoduje obraz .ntx z pamięci do nowego bufora RGBA (malloc). NULL = błąd (opis w err). */
+uint8_t *ntx_decode(const uint8_t *f, long len, int *w_out, int *h_out) {
+  int w, h, n;
+  long p, px = 0, total;
+  uint8_t *rgba;
   if (len < 10 || (memcmp(f, "NTX1", 4) && memcmp(f, "NTX2", 4))) {
-    snprintf(err, sizeof err, "zly format %s", path);
-    free(f);
-    return 0;
+    snprintf(err, sizeof err, "zly format obrazu");
+    return NULL;
   }
   w = f[4] << 8 | f[5];
   h = f[6] << 8 | f[7];
   n = f[8] << 8 | f[9];
   total = (long)w * h;
-  rgba = (uint8_t *)malloc((size_t)total * 4);
-  tilebuf = (uint8_t *)malloc(256 * 256 * 4);
-  if (!rgba || !tilebuf) {
-    snprintf(err, sizeof err, "brak pamieci na %s", name);
-    goto out;
+  rgba = (uint8_t *)malloc((size_t)total * 4 + 4);
+  if (!rgba) {
+    snprintf(err, sizeof err, "brak pamieci");
+    return NULL;
   }
   p = 10 + (long)n * 4;
   if (f[3] == '2') {
-    /* LZ: kopie z odległości wstecz w obrębie obrazu (indeksy w rgba jako bajty, potem rozwinięcie przez paletę) */
-    uint8_t *idx = rgba + total * 3;   /* ostatnia ćwiartka bufora RGBA */
+    /* LZ: indeksy w ostatniej ćwiartce bufora, potem rozwinięcie przez paletę od początku */
+    uint8_t *idx = rgba + total * 3;
     while (px < total && p < len) {
       int c = f[p++];
       if (c < 128) {
@@ -76,51 +67,80 @@ int img_load(Img *im, const char *name) {
         }
       }
     }
-    if (px < total) {
-      snprintf(err, sizeof err, "uciety plik %s", path);
-      goto out;
+    if (px == total)
+      for (px = 0; px < total; px++) memcpy(rgba + px * 4, f + 10 + idx[px] * 4, 4);
+  } else
+    while (px < total && p < len) {
+      int c = f[p++];
+      if (c < 128) {
+        int k = c + 1;
+        while (k-- && px < total && p < len) memcpy(rgba + px++ * 4, f + 10 + f[p++] * 4, 4);
+      } else {
+        int k = c - 125;
+        const uint8_t *col = f + 10 + f[p++] * 4;
+        while (k-- && px < total) memcpy(rgba + px++ * 4, col, 4);
+      }
     }
-    for (px = 0; px < total; px++) memcpy(rgba + px * 4, f + 10 + idx[px] * 4, 4);   /* idx za rgba[px*4]: bezpieczne */
-  }
-  /* RLE indeksów palety -> RGBA */
-  while (f[3] == '1' && px < total && p < len) {
-    int c = f[p++];
-    if (c < 128) {
-      int k = c + 1;
-      while (k-- && px < total && p < len) memcpy(rgba + px++ * 4, f + 10 + f[p++] * 4, 4);
-    } else {
-      int k = c - 125;
-      const uint8_t *col = f + 10 + f[p++] * 4;
-      while (k-- && px < total) memcpy(rgba + px++ * 4, col, 4);
-    }
-  }
   if (px < total) {
-    snprintf(err, sizeof err, "uciety plik %s", path);
-    goto out;
+    free(rgba);
+    snprintf(err, sizeof err, "uciety obraz");
+    return NULL;
   }
+  *w_out = w;
+  *h_out = h;
+  return rgba;
+}
+
+int img_from_rgba(Img *im, const uint8_t *rgba, int w, int h) {
+  uint8_t *tilebuf;
+  int i;
+  memset(im, 0, sizeof *im);
   im->w = w;
   im->h = h;
   im->n = pot_tiles(w, h, 256, im->tile, IMG_MAX_TILES);
   if (im->n > IMG_MAX_TILES) {
     im->n = 0;
-    snprintf(err, sizeof err, "za duzy obraz %s", name);
-    goto out;
+    snprintf(err, sizeof err, "za duzy obraz");
+    return 0;
   }
+  tilebuf = (uint8_t *)malloc(256 * 256 * 4);
+  if (!tilebuf) return 0;
   for (i = 0; i < im->n; i++) {
     const TexTile *t = &im->tile[i];
     int y;
     for (y = 0; y < t->h; y++) memcpy(tilebuf + (long)y * t->w * 4, rgba + ((long)(t->y + y) * w + t->x) * 4, (size_t)t->w * 4);
     if (!r2d_tex_create(&im->tex[i], t->w, t->h, tilebuf)) {
-      snprintf(err, sizeof err, "brak pamieci tekstur (%s)", name);
-      goto out;
+      snprintf(err, sizeof err, "brak pamieci tekstur");
+      free(tilebuf);
+      img_free(im);
+      return 0;
     }
   }
-  ok = 1;
-out:
-  free(f);
-  free(rgba);
   free(tilebuf);
-  if (!ok) img_free(im);
+  return 1;
+}
+
+int img_load(Img *im, const char *name) {
+  char path[96];
+  long len;
+  uint8_t *f, *rgba;
+  int w, h, ok;
+  memset(im, 0, sizeof *im);
+  snprintf(path, sizeof path, GFX_DIR "%s.ntx", name);
+  f = read_file(path, &len);
+  if (!f) {
+    snprintf(err, sizeof err, "brak pliku %s", path);
+    return 0;
+  }
+  rgba = ntx_decode(f, len, &w, &h);
+  free(f);
+  if (!rgba) {
+    snprintf(err + strlen(err), sizeof err - strlen(err), " (%s)", name);
+    return 0;
+  }
+  ok = img_from_rgba(im, rgba, w, h);
+  free(rgba);
+  if (!ok) snprintf(err + strlen(err), sizeof err - strlen(err), " (%s)", name);
   return ok;
 }
 
@@ -158,7 +178,8 @@ void img_draw_part(const Img *im, int sx, int sy, int sw, int sh, float x, float
 }
 
 /* ------------------------------------------------------------------ animacja .nta */
-static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
+static uint32_t be32(const uint8_t *p) {
+  return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 
 int anim_load(Anim *a, const char *name) {
   char path[96];
@@ -264,4 +285,123 @@ void anim_seek(Anim *a, int f) {
     }
     r2d_tex_update(&a->img.tex[i], 0, 0, t->w, t->h, a->rgba);
   }
+}
+
+/* ------------------------------------------------------------------ biblioteki .ntl i atlasy składane w locie */
+int lib_load(Lib *l, const char *name) {
+  char path[96];
+  long len, p = 6;
+  int i;
+  memset(l, 0, sizeof *l);
+  snprintf(path, sizeof path, GFX_DIR "%s.ntl", name);
+  l->data = read_file(path, &len);
+  if (!l->data) {
+    snprintf(err, sizeof err, "brak pliku %s", path);
+    return 0;
+  }
+  l->len = len;
+  if (len < 6 || memcmp(l->data, "NTL1", 4)) goto bad;
+  l->n = l->data[4] << 8 | l->data[5];
+  l->e = (LibEntry *)calloc((size_t)l->n, sizeof(LibEntry));
+  if (!l->e) goto bad;
+  for (i = 0; i < l->n; i++) {
+    LibEntry *e = &l->e[i];
+    int kl;
+    const uint8_t *q;
+    if (p >= len) goto bad;
+    kl = l->data[p++];
+    if (kl > (int)sizeof e->key - 1 || p + kl + 16 > len) goto bad;
+    memcpy(e->key, l->data + p, (size_t)kl);
+    e->key[kl] = 0;
+    p += kl;
+    q = l->data + p;
+    e->w = q[0] << 8 | q[1];
+    e->h = q[2] << 8 | q[3];
+    e->ax = (int16_t)(q[4] << 8 | q[5]);
+    e->ay = (int16_t)(q[6] << 8 | q[7]);
+    e->off = be32(q + 8);
+    e->size = be32(q + 12);
+    p += 16;
+  }
+  return 1;
+bad:
+  snprintf(err, sizeof err, "zly format %s", path);
+  lib_free(l);
+  return 0;
+}
+
+void lib_free(Lib *l) {
+  free(l->data);
+  free(l->e);
+  memset(l, 0, sizeof *l);
+}
+
+const LibEntry *lib_find(const Lib *l, const char *key) {
+  int lo = 0, hi = l->n - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) / 2, c = strcmp(l->e[mid].key, key);
+    if (!c) return &l->e[mid];
+    if (c < 0) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return NULL;
+}
+
+uint8_t *lib_decode(const Lib *l, const LibEntry *e) {
+  int w, h;
+  if (e->off + e->size > (uint32_t)l->len) return NULL;
+  return ntx_decode(l->data + e->off, (long)e->size, &w, &h);
+}
+
+void atlas_init(Atlas *a) { memset(a, 0, sizeof *a); }
+
+int atlas_add(Atlas *a, const uint8_t *rgba, int w, int h, AtlasImg *out) {
+  int y;
+  if (w > 256 || h > 256) return 0;
+  if (!a->n || a->x + w > 256) {
+    a->x = 0;
+    a->y += a->shelf;
+    a->shelf = 0;
+  }
+  if (!a->n || a->y + h > 256) {
+    if (a->n >= ATLAS_MAX) return 0;
+    a->buf[a->n] = (uint8_t *)calloc(256 * 256, 4);
+    if (!a->buf[a->n]) return 0;
+    a->n++;
+    a->x = a->y = a->shelf = 0;
+  }
+  for (y = 0; y < h; y++) memcpy(a->buf[a->n - 1] + ((long)(a->y + y) * 256 + a->x) * 4, rgba + (long)y * w * 4, (size_t)w * 4);
+  out->tex = (uint8_t)(a->n - 1);
+  out->sx = (uint8_t)a->x;
+  out->sy = (uint8_t)a->y;
+  out->w = (uint8_t)(w > 255 ? 255 : w);
+  out->h = (uint16_t)h;
+  a->x += w;
+  if (h > a->shelf) a->shelf = h;
+  return 1;
+}
+
+int atlas_finish(Atlas *a) {
+  int i, ok = 1;
+  for (i = 0; i < a->n; i++) {
+    if (!r2d_tex_create(&a->tex[i], 256, 256, a->buf[i])) ok = 0;
+    free(a->buf[i]);
+    a->buf[i] = NULL;
+  }
+  return ok;
+}
+
+void atlas_free(Atlas *a) {
+  int i;
+  for (i = 0; i < ATLAS_MAX; i++) {
+    r2d_tex_free(&a->tex[i]);
+    free(a->buf[i]);
+  }
+  memset(a, 0, sizeof *a);
+}
+
+void atlas_draw(const Atlas *a, const AtlasImg *im, float x, float y, int flip, uint32_t tint, int alpha) {
+  const RTex *t = &a->tex[im->tex];
+  if (flip) r2d_image(t, x, y, im->w, im->h, (float)(im->sx + im->w), im->sy, -(float)im->w, im->h, tint, alpha);
+  else r2d_image(t, x, y, im->w, im->h, im->sx, im->sy, im->w, im->h, tint, alpha);
 }

@@ -94,12 +94,35 @@ def to_indexed(im):
     return cols, bytes(pal[p] for p in px)
 
 
-def write_ntx(name, im):
+def ntx_bytes(im):
     pal, idx = to_indexed(im)
     head = struct.pack('>HHH', im.width, im.height, len(pal)) + b''.join(bytes(c) for c in pal)
     a, b = rle(idx), lz_frame(b'', idx)
     # NTX1 = RLE, NTX2 = LZ (jak klatki .nta, bez poprzedniej klatki) - mniejszy wygrywa
-    data = (b'NTX1' + head + a) if len(a) <= len(b) else (b'NTX2' + head + b)
+    return ((b'NTX1' + head + a) if len(a) <= len(b) else (b'NTX2' + head + b)), pal
+
+
+def write_library(name, entries):
+    """Biblioteka .ntl: "NTL1", u16 n, n * (u8 długość klucza, klucz, u16 w, h, i16 ax, ay, u32 offset, u32 rozmiar),
+    potem obrazy jako pliki .ntx (offset od początku pliku). Klucze posortowane (wyszukiwanie binarne w C)."""
+    entries = sorted(entries, key=lambda e: e[0])
+    blobs = [ntx_bytes(im)[0] for _, im, _, _ in entries]
+    head_len = 6 + sum(1 + len(k.encode()) + 16 for k, _, _, _ in entries)
+    out = bytearray(b'NTL1' + struct.pack('>H', len(entries)))
+    off = head_len
+    for (k, im, ax, ay), blob in zip(entries, blobs):
+        kb = k.encode()
+        out += bytes([len(kb)]) + kb + struct.pack('>HHhhII', im.width, im.height, ax, ay, off, len(blob))
+        off += len(blob)
+    for blob in blobs:
+        out += blob
+    with open(os.path.join(OUT, name + '.ntl'), 'wb') as f:
+        f.write(out)
+    print(f'  {name}.ntl {len(entries)} obrazków, {len(out)} B')
+
+
+def write_ntx(name, im):
+    data, pal = ntx_bytes(im)
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, name + '.ntx'), 'wb') as f:
         f.write(data)
@@ -453,6 +476,32 @@ def build():
                 fx, fy, fw, fh = fr[f'd_{dn}_walk{f}']
                 sh.paste(src.crop((fx, fy, fx + fw, fy + fh)), (f * 32, (d // 7) * 256 + (d % 7) * 36))
         write_ntx('walk_' + k, sh)
+
+    print('misja (biblioteka):')
+    lib = json.load(open(os.path.join(BAKE, 'tiles', 'library.json')))
+    groups = {}
+    import base64
+    for e in lib:
+        im = Image.frombytes('RGBA', (e['w'], e['h']), base64.b64decode(e['data']))
+        groups.setdefault(e['group'], []).append((e['key'], im, e['ax'], e['ay']))
+    for g, ents in groups.items():
+        write_library('lib_' + g, ents)
+    T['lib_frames'] = scene_objs('tiles')['extra']['frames']
+    # arkusze postaci jako biblioteki klatek (klucz = nazwa klatki z ArtBook / SpriteUnits): drużyna (z hub),
+    # wrogowie (tiles); ekran misji wczytuje tylko potrzebne animacje do atlasu
+    def unit_lib(target, key, name):
+        man = json.load(open(os.path.join(BAKE, target, 'manifest.json')))
+        sheet = load(target, key)
+        ents = []
+        for fn, (x, y, w, h) in man[key]['frames'].items():
+            ents.append((fn, sheet.crop((x, y, x + w, y + h)), 0, 0))
+        write_library(name, ents)
+    for k in RECRUIT_KEYS:
+        unit_lib('hub', 'unit_pc_' + k, 'unit_' + k)
+    tman = json.load(open(os.path.join(BAKE, 'tiles', 'manifest.json')))
+    for k in tman:
+        if k.startswith('unit_en_'):
+            unit_lib('tiles', k, k)
 
     print('intro:')
     layers = {

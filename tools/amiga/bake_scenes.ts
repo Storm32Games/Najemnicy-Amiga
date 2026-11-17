@@ -35,6 +35,61 @@ const TRAVEL_PREP = `
   window.__bakeExtra = { blocks: (sc.blocks || []).map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, box: b.box, depth: b.depth })), fires: RA.regionFires(), beacon: RA.beaconPos(), fauna };
 `;
 
+// Biblioteka grafik misji: wszystkie kombinacje parametrów malarzy z iso/IsoArt.ts używane w WorldScene.buildWorld
+// (klucze jak w ArtBook; budynki: ziarno komórki zredukowane do 3 odmian). Wynik w window.__lib, pobierany partiami.
+const LIB_PREP = `
+  const A = await import('/src/scenes/iso/IsoArt.ts');
+  const lib = [];
+  const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+  const put = (group, key, r) => {
+    const pc = r.pc || r;
+    lib.push({ group, key, w: pc.w, h: pc.h, ax: r.ax || 0, ay: r.ay || 0, data: b64(pc.data) });
+  };
+  const FLOORS = ['sand', 'asphalt', 'asphalt_cracked', 'rubble', 'concrete', 'dirt', 'toxic', 'grass_dead', 'metal', 'tiles'];
+  const BIOMES = ['ruins', 'wastes', 'industrial', 'bunker'];
+  for (const t of FLOORS) for (let v = 0; v < (t === 'metal' ? 4 : 3); v++) put('common', 'floor_' + t + '_' + v, A.paintFloor(t, v));
+  for (const t of ['sand', 'grass_dead', 'dirt', 'rubble']) for (let e = 1; e < 16; e++) for (let bv = 0; bv < 2; bv++) put('common', 'blend_' + t + '_' + e + '_' + bv, A.paintBlend(t, e, bv * 13 + e));
+  for (let m = 1; m < 32; m++) put('common', 'ao_' + m, A.paintAO(m));
+  for (const t of ['scorch', 'oil', 'stain', 'sand', 'blood', 'moss']) for (let v = 0; v < 5; v++) put('common', 'decal_' + t + '_' + v, A.paintDecal(t, v * 97 + t.length));
+  put('common', 'loot_crate', A.paintLootCrate());
+  put('common', 'loot_crate_open', A.paintLootCrateOpen());
+  put('common', 'objective', A.paintObjective());
+  put('common', 'extract_post', A.paintExtractPost());
+  for (let v = 0; v < 3; v++) put('common', 'mission_nest_' + v, A.paintNest(v + 1));
+  put('common', 'fx_shadow', A.paintBlobShadow());
+  put('common', 'fx_glow', A.paintGlow(96, 48));
+  put('common', 'fx_halo', A.paintGlow(20, 20));
+  put('common', 'fx_cursor', A.paintCursor());
+  put('common', 'fx_dot', A.paintPathDot());
+  put('common', 'txt_EWAKUACJA', A.paintText('EWAKUACJA'));
+  { const f = A.paintFlames(); put('common', 'fx_flames', f.pc); window.__libFrames = { flames: f.frames }; const sp = A.paintSparkle(); put('common', 'fx_sparkle', sp.pc); window.__libFrames.sparkle = sp.frames; }
+  const PROPS = ['car', 'bus', 'barrel', 'barrel_toxic', 'crate', 'debris', 'sandbags', 'container', 'fence', 'generator', 'pillar', 'terminal', 'tent', 'tank_trap', 'scrap_pile',
+    'lamp', 'sign', 'antenna', 'tree_dead', 'skeleton', 'campfire', 'door', 'flora_saguaro', 'flora_pear', 'flora_deadbush', 'flora_shrooms', 'flora_flower', 'flora_reeds',
+    'flora_grass', 'flora_vine', 'flora_pod', 'flora_fern', 'flora_crystal'];
+  for (const b of BIOMES) {
+    const st = A.BIOME_STYLE[b];
+    put(b, 'edge_l_' + b, A.paintEdge('l', b));
+    put(b, 'edge_r_' + b, A.paintEdge('r', b));
+    st.facade.forEach((color, ci) => { for (let h = 1; h <= 3; h++) for (let o = 0; o < 16; o++) for (let v = 0; v < 3; v++) put(b, 'bld_' + h + '_' + o + '_' + ci + '_' + v, A.paintBlock('building', h, o, color, v * 3331 + 17)); });
+    for (let o = 0; o < 4; o++) for (let v = 0; v < 4; v++) put(b, 'bunker_' + o + '_' + v, A.paintBlock('bunker', 0, o, st.wall, v * 977 + 5));
+    for (let br = 0; br < 2; br++) for (let v = 0; v < 3; v++) {
+      for (let c = 1; c < 16; c++) put(b, 'wall_' + c + '_' + c + '_' + br + '_' + v, A.paintWall(c, !!br, st.wall, b, v * 71 + c));
+      for (const sh of [3, 12]) put(b, 'wall_0_' + sh + '_' + br + '_' + v, A.paintWall(sh, !!br, st.wall, b, v * 71));
+    }
+    for (const t of PROPS) for (let r = 0; r < 2; r++) for (let v = 0; v < (t === 'car' || t === 'scrap_pile' ? 7 : 3); v++) put(b, 'prop_' + t + '_' + r + '_' + v, A.paintProp(t, r, v * 1009 + 1, b));
+  }
+  // wrogowie: arkusze postaci wg szablonu (PixelLab albo malowane; bestie - CreatureArt)
+  const UL = await import('/src/scenes/iso/UnitLooks.ts');
+  const EN = await import('/src/core/data/enemies.ts');
+  for (const tid of Object.keys(EN.ENEMIES)) {
+    const el = UL.enemyUnitLook(tid, EN.ENEMIES[tid].look);
+    if (UL.isCreatureLook(el)) UL.ensureUnit(sc, 'en_' + tid, el, () => UL.enemySheet(tid, EN.ENEMIES[tid].look));
+    else UL.ensureUnit(sc, 'en_' + tid, el);
+  }
+  window.__lib = lib;
+  window.__bakeExtra = { libCount: lib.length, frames: window.__libFrames, facades: Object.fromEntries(BIOMES.map((b) => [b, A.BIOME_STYLE[b]])) };
+`;
+
 // Przystań: drużyna może być dowolną czwórką, więc postacie, portrety i ikony wszystkich rekrutów / przedmiotów / zdolności
 const HUB_PREP = `
   const W = await import('/src/scenes/ui/Widgets.ts');
@@ -56,6 +111,7 @@ const HUB_PREP = `
 `;
 const TARGETS: Target[] = [
   { name: 'title', scene: 'TitleScene', prefix: ['title', 'rec_', 'unit_rec'] },
+  { name: 'tiles', scene: 'TitleScene', prefix: ['unit_en_'], prep: LIB_PREP },
   { name: 'travel', scene: 'TravelScene', prefix: ['travel', 'bk_'], prep: TRAVEL_PREP },
   { name: 'hub', scene: 'HubScene', prefix: ['hub', 'unit_pc_', 'unit_npc_', 'pc_', 'npc_', 'bk_'], prep: HUB_PREP },
   // werbunek: tło + portrety 30 px (karty); portrety 26 px (plac) są tylko u wybranych - 4 przebiegi po 4 rekrutów
@@ -200,6 +256,16 @@ async function main(): Promise<void> {
         mkdirSync(join(dir, 'frames'), { recursive: true });
         all.frames.forEach((f, i) => writeFileSync(join(dir, 'frames', `${String(i).padStart(3, '0')}.png`), Buffer.from(f.png.split(',')[1], 'base64')));
         writeFileSync(join(dir, 'frames', 'index.json'), JSON.stringify(all.frames.map((f) => f.t)) + '\n');
+      }
+      const lc = (all as unknown as { extra?: { libCount?: number } }).extra?.libCount;
+      if (lc) {
+        const parts: unknown[] = [];
+        for (let i = 0; i < lc; i += 150) {
+          const q = (await cdp.send('Runtime.evaluate', { expression: `JSON.stringify(window.__lib.slice(${i}, ${i + 150}))`, returnByValue: true })) as { result?: { value?: string } };
+          parts.push(...(JSON.parse(q.result?.value ?? '[]') as unknown[]));
+        }
+        writeFileSync(join(dir, 'library.json'), JSON.stringify(parts));
+        console.log(`${t.name}: biblioteka ${parts.length} obrazków`);
       }
       writeFileSync(join(dir, 'scene.json'), JSON.stringify({ objects: all.objects, anims: all.anims, extra: (all as unknown as { extra?: unknown }).extra ?? null }, null, 1) + '\n');
       console.log(`${t.name}: ${Object.keys(tex).length} tekstur -> amiga/data/bake/${t.name}/ (${Object.entries(manifest).map(([k, v]) => `${k} ${v.w}x${v.h}`).join(', ')})`);

@@ -91,7 +91,12 @@ int main(int argc, char **argv) {
       if (f == i) {
         if (!strcmp(tok, "shot")) do_shot = 1;
         else if (!strncmp(tok, "event=", 6)) g_force_event = atoi(tok + 6);
-        else if (!strncmp(tok, "goto=", 5)) app_goto(!strcmp(tok + 5, "intro") ? SCR_INTRO : !strcmp(tok + 5, "title") ? SCR_TITLE : !strcmp(tok + 5, "recruit") ? SCR_RECRUIT : !strcmp(tok + 5, "hub") ? (quick_party(), SCR_HUB) : !strcmp(tok + 5, "hub3") ? (party_n = 3, quick_party(), SCR_HUB) : !strcmp(tok + 5, "travel") ? (quick_party(), g_job = 0, SCR_TRAVEL) : SCR_LOGO);
+        else if (!strncmp(tok, "job=", 4)) {
+          quick_party();
+          g_job = atoi(tok + 4);
+          app_goto(SCR_MISSION);
+        }
+        else if (!strncmp(tok, "goto=", 5)) app_goto(!strcmp(tok + 5, "intro") ? SCR_INTRO : !strcmp(tok + 5, "title") ? SCR_TITLE : !strcmp(tok + 5, "recruit") ? SCR_RECRUIT : !strcmp(tok + 5, "hub") ? (quick_party(), SCR_HUB) : !strcmp(tok + 5, "hub3") ? (party_n = 3, quick_party(), SCR_HUB) : !strcmp(tok + 5, "travel") ? (quick_party(), g_job = 0, SCR_TRAVEL) : !strcmp(tok + 5, "mission") ? (quick_party(), g_job = 0, SCR_MISSION) : SCR_LOGO);
         else pressed |= key_of(tok);
       }
       p = e ? e + 1 : p + strlen(p);

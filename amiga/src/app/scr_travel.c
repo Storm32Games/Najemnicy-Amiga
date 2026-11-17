@@ -717,8 +717,7 @@ static void update(unsigned held, unsigned pressed, int ms) {
       for (i = 0; i < n_walk; i++) walkers[i].walk = 0;
       msg("Jeste\266cie na miejscu.", PAL_GOOD);
       app_sfx("door", 256, 256);
-      snprintf(g_notice, sizeof g_notice, "Misje taktyczne nie s\261 jeszcze przeniesione na Amig\352.");
-      app_switch(SCR_HUB, 600, 500);
+      app_switch(SCR_MISSION, 600, 500);
     }
   }
 camera:
