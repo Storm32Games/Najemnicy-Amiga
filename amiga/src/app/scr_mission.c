@@ -519,6 +519,9 @@ typedef struct {
 #define QUEUE_MAX 96
 static Sig queue[QUEUE_MAX];
 static int q_head, q_n;
+static Img img_portraits;
+static int dice_ms;
+static Sig dice_sig;
 
 /* ---- przebieg */
 enum { M_EXPLORE, M_COMBAT, M_PLAYER, M_AI, M_OVER };
@@ -843,6 +846,7 @@ static void enter(void) {
   }
   for (i = 0; i < mission.n_actors; i++) make_unit(mission.actors[i]);
   atlas_finish(&atlas);
+  if (!img_load(&img_portraits, "portraits")) fprintf(stderr, "Najemnicy: %s\n", img_error());
   lib_free(&lib_common);
   lib_free(&lib_biome);
   memory_tint = MEMORY[biome];
@@ -860,6 +864,7 @@ static void enter(void) {
 
 static void leave(void) {
   g_save_mission = NULL;
+  img_free(&img_portraits);
   atlas_free(&atlas);
   n_units = 0;
 }
@@ -968,6 +973,10 @@ static void play(const Sig *s) {
       }
       app_sfx(s->ranged ? "shot_rifle" : "melee", 256, 256);
       wait_ms = 200;
+      if (s->has_d20 && s->a && (s->a->side == SIDE_PC || (ua && unit_visible(ua)))) {
+        dice_sig = *s;
+        dice_ms = 1100;
+      }
       break;
     case SIG_ABILITY: case SIG_ITEM:
       if (s->a) {
@@ -1687,6 +1696,7 @@ static void update(unsigned held, unsigned pressed, int ms) {
       floats[i--] = floats[--n_floats];
     }
   if (banner_ms > 0) banner_ms -= ms;
+  if (dice_ms > 0) dice_ms -= ms;
   if (wait_ms > 0) wait_ms -= ms;
   if (pending_ms > 0 && (pending_ms -= ms) <= 0) show_events(&pending_hit);
 
@@ -1937,37 +1947,172 @@ static void draw_overlay(void) {
   atlas_draw(&atlas, &img_cursor, iso_x(cursor.gx, cursor.gy) - img_cursor.w / 2.0f, iso_y(cursor.gx, cursor.gy), 0, 0xffffff, 255);
 }
 
+/* ---- HUD jak UIScene: karty drużyny, faza, zlecenie z celami, tura, rzut k20, dziennik */
+
+static int objective_lines(char out[][80], uint8_t *done, uint8_t *dim) {
+  const Mission *m = &mission;
+  int n = 0, alive = 0, tot = m->n_enemies, i, crates = 0, opened = 0;
+#define LINE(d, dm, ...) do { snprintf(out[n], 80, __VA_ARGS__); done[n] = (uint8_t)(d); dim[n] = (uint8_t)(dm); n++; } while (0)
+  for (i = 0; i < m->n_enemies; i++) alive += m->enemies[i]->state != AST_DEAD;
+  switch (m->obj_type) {
+    case OBJ_ELIMINATE: LINE(alive == 0, 0, "Wyeliminuj wszystkich wrog\363w (%d/%d)", tot - alive, tot); break;
+    case OBJ_HUNT: case OBJ_BOSS:
+      LINE(m->target && m->target->state == AST_DEAD, 0, "Zabij cel: %s", m->target ? m->target->ch->name : "cel");
+      LINE(0, 1, "Eskorta wrog\363w: %d", alive);
+      break;
+    case OBJ_HACK: {
+      const MissionThing *d = m->obj_device >= 0 ? &m->things[m->obj_device] : NULL;
+      LINE(d && d->done, 0, "W\263am si\352 do serwera (%d/%d)", d && d->has_lock ? d->lock.progress : 0, d && d->has_lock ? d->lock.needed : 3);
+      LINE(0, 0, "Wr\363\346 z danymi do strefy ewakuacji");
+      break;
+    }
+    case OBJ_LIBERATE: {
+      int fr = 0;
+      for (i = 0; i < m->n_settlers; i++) fr += m->things[m->settlers[i]].freed;
+      LINE(fr == m->n_settlers, 0, "Uwolnij osadnik\363w (%d/%d)", fr, m->n_settlers);
+      LINE(alive == 0, 0, "Pokonaj szabrownik\363w (%d/%d)", tot - alive, tot);
+      break;
+    }
+    case OBJ_PURGE: {
+      int dn = 0;
+      for (i = 0; i < m->n_nests; i++) dn += m->things[m->nests[i]].done;
+      LINE(dn == m->n_nests, 0, "Zniszcz gniazda (%d/%d)", dn, m->n_nests);
+      LINE(alive == 0, 0, "Wybij faun\352 (%d/%d)", tot - alive, tot);
+      break;
+    }
+    case OBJ_DEFEND: {
+      int cl = 0, k;
+      for (i = 0; i < m->n_groups; i++) {
+        int all = 1;
+        for (k = 0; k < m->groups[i]->n; k++) all &= m->groups[i]->actors[k]->state == AST_DEAD;
+        cl += all;
+      }
+      LINE(alive == 0, 0, "Odeprzyj fale napastnik\363w (%d/%d)", cl, m->n_groups);
+      break;
+    }
+    case OBJ_RETRIEVE:
+      LINE(m->stage >= 1, 0, "Odzyskaj: %s", m->item_thing >= 0 ? ITEM_DEFS[m->things[m->item_thing].item].name : "cel");
+      LINE(0, 0, "Wr\363\346 do strefy ewakuacji");
+      break;
+    default:
+      LINE(m->stage >= 1, 0, "Znajd\274 i uwolnij je\361ca");
+      LINE(0, 0, "Doprowad\274 go do strefy ewakuacji");
+      break;
+  }
+  if (m->stage >= 1 && !mission_needs_extraction(m)) LINE(0, 0, "Cel wykonany: przeszukaj teren lub wr\363\346 do ewakuacji");
+  for (i = 0; i < m->n_things; i++)
+    if (m->things[i].kind == TH_CRATE) {
+      crates++;
+      opened += m->things[i].done;
+    }
+  LINE(0, 1, "Skrzynie: %d/%d", opened, crates);
+#undef LINE
+  return n;
+}
+
+static void draw_party(void) {
+  int i;
+  char nm[32], buf[64];
+  for (i = 0; i < mission.n_pcs; i++) {
+    const Actor *a = mission.pcs[i];
+    const Character *c = a->ch;
+    int x = 6 + i * 40, y = 4, cur = (mode == M_PLAYER && turn && turn->actor == a) || (mode == M_EXPLORE && i == leader);
+    int hp = c->hp > 0 ? c->hp : 0, q = c->max_hp > 0 ? hp * 4096 / c->max_hp : 0;
+    r2d_rect((float)x, (float)y, 38, 46, PAL_PANEL, 235);
+    r2d_frame((float)x, (float)y, 38, 46, cur ? PAL_AMBER : a->state != AST_UP ? PAL_BAD : PAL_EDGE, 255);
+    if (c->recruit < RECRUIT_COUNT)
+      img_draw_part(&img_portraits, (c->recruit % 8) * 30, 120 + (c->recruit / 8) * 30, 30, 30, x + 4.0f, y + 2.0f, 1, 0, a->state == AST_DEAD ? 0x806060 : a->state == AST_DOWN ? 0xa08080 : 0xffffff, 255);
+    short_name(c, nm, sizeof nm);
+    font_draw(x + 3.0f, y + 26.0f, nm, cur ? PAL_AMBER : PAL_TEXT, 255, FONT_OUTLINE, 0, 0.75f);
+    ui_bar(x + 3, y + 34, 32, 9, q, q * 100 < 34 * 4096 ? PAL_BAD : 0x3f8a3a, 0x3a1410);
+    snprintf(buf, sizeof buf, "%d/%d", hp, c->max_hp);
+    font_draw_at(x + 19.0f, y + 35.0f, 0.5f, 0, buf, 0xffffff, 255, FONT_OUTLINE, 0, 0.75f);
+  }
+  {
+    float x = 6;
+    if (mode == M_EXPLORE) {
+      short_name(mission.pcs[leader]->ch, nm, sizeof nm);
+      snprintf(buf, sizeof buf, "EKSPLORACJA \205 LIDER: %s", nm);
+    } else snprintf(buf, sizeof buf, "WALKA \205 RUNDA %d", mission.combat.round);
+    latin2_upper(buf);
+    font_draw(x, 53, buf, mode == M_EXPLORE ? PAL_AMBER : PAL_BAD, 255, FONT_OUTLINE, 0, 1);
+  }
+}
+
+static void draw_objectives(void) {
+  char lines[10][80], buf[96];
+  uint8_t done[10], dim[10];
+  int n = objective_lines(lines, done, dim), i, w = 170, h, x, y = 4, yy;
+  h = 26;
+  for (i = 0; i < n; i++) h += ui_text_h(lines[i], w - 22, 0) + 2;
+  x = V_W - w - 6;
+  r2d_rect((float)x, (float)y, (float)w, (float)h, PAL_PANEL, 225);
+  r2d_frame((float)x, (float)y, (float)w, (float)h, PAL_EDGE, 255);
+  font_draw((float)(x + 4), (float)(y + 3), "ZLECENIE", PAL_AMBER, 255, FONT_OUTLINE, 0, 1);
+  snprintf(buf, sizeof buf, "%s", g_camp.contracts[g_job].title);
+  latin2_upper(buf);
+  font_draw((float)(x + 4), (float)(y + 13), buf, PAL_AMBER, 255, FONT_OUTLINE, 0, 0.85f);
+  yy = y + 25;
+  for (i = 0; i < n; i++) {
+    uint32_t col = done[i] ? PAL_GOOD : dim[i] ? PAL_DIM : PAL_TEXT;
+    font_draw((float)(x + 4), (float)yy, done[i] ? "\212" : "\213", col, 255, FONT_OUTLINE, 0, 1);
+    yy += ui_text(x + 14, yy, lines[i], col, w - 22, 0, 0) + 2;
+  }
+}
+
+/* rzut k20 (hud.showRoll): kość, modyfikator, wynik vs ST / KP, stopień */
+static void draw_dice(void) {
+  int a = dice_ms > 900 ? (1100 - dice_ms) * 255 / 200 : dice_ms < 200 ? dice_ms * 255 / 200 : 255, deg = dice_sig.d20.degree;
+  float cx = V_W / 2.0f, cy = 122;
+  char buf[96];
+  int spin = dice_ms > 600, shown = spin ? 1 + (int)(hash2(dice_ms / 55, 3, 7) * 20) : dice_sig.d20.d20;
+  uint32_t col = deg == 3 ? 0xffe060 : deg == 2 ? PAL_GOOD : deg == 1 ? PAL_DIM : PAL_BAD;
+  if (dice_ms <= 0) return;
+  r2d_alpha(a);
+  r2d_rect(cx - 90, cy - 22, 180, 44, 0x120e0a, 235);
+  r2d_frame(cx - 90, cy - 22, 180, 44, dice_sig.a && dice_sig.a->side == SIDE_PC ? 0x3f8a3a : PAL_BLOOD, 255);
+  font_draw_at(cx, cy - 19, 0.5f, 0, dice_sig.label, PAL_DIM, 255, FONT_OUTLINE, 0, 0.85f);
+  {
+    /* sześciokąt kości, obracany w trakcie losowania */
+    static const int8_t P[6][2] = {{0, -10}, {9, -5}, {9, 5}, {0, 10}, {-9, 5}, {-9, -5}};
+    int32_t ang = spin ? dice_ms * 37 * 4096 / 3600 : 0;
+    int i, cs = icos_q14((int)(ang >> 4)), sn = isin_q14((int)(ang >> 4));
+    float px[6], py[6], dx = cx - 60, dy = cy + 6;
+    for (i = 0; i < 6; i++) {
+      px[i] = dx + (P[i][0] * cs - P[i][1] * sn) / 16384.0f;
+      py[i] = dy + (P[i][0] * sn + P[i][1] * cs) / 16384.0f;
+    }
+    for (i = 1; i < 5; i++) r2d_tri(px[0], py[0], px[i], py[i], px[i + 1], py[i + 1], 0x5a4630, 255);
+    snprintf(buf, sizeof buf, "%d", shown);
+    font_draw_at(dx, dy - 4, 0.5f, 0, buf, spin ? PAL_AMBER : shown == 20 ? PAL_GOOD : shown == 1 ? PAL_BAD : PAL_AMBER, 255, FONT_OUTLINE, 1, 1);
+  }
+  if (!spin) {
+    snprintf(buf, sizeof buf, "%d %s%d = %d vs %d", dice_sig.d20.d20, dice_sig.d20.mod >= 0 ? "+" : "", dice_sig.d20.mod, dice_sig.d20.total, dice_sig.d20.dc);
+    font_draw(cx - 42, cy - 6, buf, PAL_TEXT, 255, FONT_OUTLINE, 0, 1);
+    font_draw(cx - 42, cy + 5, DEGREE_NAMES[deg], col, 255, FONT_OUTLINE, 0, 1);
+    if (dice_sig.dmg > 0 && deg >= 2) {
+      snprintf(buf, sizeof buf, "Obra\277enia: %d", dice_sig.dmg);
+      font_draw_at(cx + 84, cy + 5, 1, 0, buf, 0xff8a60, 255, FONT_OUTLINE, 0, 0.85f);
+    }
+  }
+  r2d_alpha(255);
+}
+
 static void draw_hud(void) {
   char buf[160];
   int i;
-  float x;
-  r2d_rect(0, 0, V_W, 13, PAL_PANEL, 230);
-  r2d_rect(0, 13, V_W, 1, PAL_EDGE, 255);
-  if (mode == M_PLAYER || mode == M_AI || mode == M_COMBAT) snprintf(buf, sizeof buf, "WALKA \205 runda %d", mission.combat.round);
-  else snprintf(buf, sizeof buf, "%s", g_camp.contracts[g_job].title);
-  font_draw(6, 3, buf, mode == M_EXPLORE ? PAL_AMBER : PAL_BAD, 255, FONT_OUTLINE, 0, 1);
-  x = V_W - 6;
-  for (i = mission.n_pcs - 1; i >= 0; i--) {
-    const Actor *a = mission.pcs[i];
-    char nm[32];
-    short_name(a->ch, nm, sizeof nm);
-    snprintf(buf, sizeof buf, "%s %d/%d", nm, a->ch->hp > 0 ? a->ch->hp : 0, a->ch->max_hp);
-    x -= font_measure(buf, 0);
-    font_draw(x, 3, buf, a->state != AST_UP ? PAL_BAD : i == leader ? PAL_AMBER : PAL_TEXT, 255, FONT_OUTLINE, 0, 1);
-    x -= 12;
-  }
+  draw_party();
+  draw_objectives();
   /* akcje tury i podpowiedź celu */
   if (mode == M_PLAYER && turn) {
     char nm[32];
     Actor *who = visible_actor_at(cursor);
     short_name(turn->actor->ch, nm, sizeof nm);
-    r2d_rect(6, 18, 150, 24, PAL_PANEL, 220);
-    r2d_frame(6, 18, 150, 24, PAL_EDGE, 255);
-    font_draw(10, 21, nm, PAL_AMBER, 255, FONT_OUTLINE, 0, 1);
-    for (i = 0; i < turn->full; i++) {
-      /* ◆ dostępna akcja, ◇ zużyta */
-      font_draw(10 + font_measure(nm, 0) + 6 + i * 9, 21, i < turn->actions ? "\212" : "\213", i < turn->actions ? PAL_AMBER : PAL_DIM, 255, FONT_OUTLINE, 0, 1);
-    }
+    r2d_rect(6, 63, 160, 24, PAL_PANEL, 220);
+    r2d_frame(6, 63, 160, 24, PAL_EDGE, 255);
+    font_draw(10, 66, nm, PAL_AMBER, 255, FONT_OUTLINE, 0, 1);
+    for (i = 0; i < turn->full; i++)
+      font_draw(10 + font_measure(nm, 0) + 6 + i * 9, 66, i < turn->actions ? "\212" : "\213", i < turn->actions ? PAL_AMBER : PAL_DIM, 255, FONT_OUTLINE, 0, 1);
     if (who && who->side == SIDE_ENEMY) {
       StrikeInfo si;
       NormWeapon w[2];
@@ -1976,8 +2121,8 @@ static void draw_hud(void) {
       if (si.ok) snprintf(buf, sizeof buf, "%s: trafienie %d%%, krytyk %d%%", w[0].name, (int)(si.hit * 100 + 0.5), (int)(si.crit * 100 + 0.5));
       else if (si.melee) snprintf(buf, sizeof buf, "%s: podejd\274 i zaatakuj", w[0].name);
       else snprintf(buf, sizeof buf, "%s: poza zasi\352giem / brak linii strza\263u", w[0].name);
-      font_draw(10, 31, buf, si.ok ? PAL_GOOD : PAL_DIM, 255, FONT_OUTLINE, 0, 1);
-    } else font_draw(10, 31, tmode != MD_NONE ? tmode_hint : "fire: ruch / atak \205 Esc: akcje", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+      font_draw(10, 76, buf, si.ok ? PAL_GOOD : PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+    } else font_draw(10, 76, tmode != MD_NONE ? tmode_hint : "fire: ruch / atak \205 Esc: akcje", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
   }
   /* dziennik */
   for (i = 0; i < n_log; i++) {
@@ -1991,10 +2136,10 @@ static void draw_hud(void) {
     r2d_rect(V_W / 2.0f - w / 2.0f, 60, (float)w, 26, 0, a * 3 / 4);
     font_draw_at(V_W / 2.0f, 73, 0.5f, 0.5f, banner, banner_col, a, FONT_OUTLINE, 1, 2);
   }
+  draw_dice();
   if (mode == M_EXPLORE) font_draw_at(V_W - 6, V_H - 4, 1, 1, tmode != MD_NONE ? tmode_hint : "Strza\263ki: kursor \205 fire: id\274 / obiekt \205 Esc: akcje", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
 }
 
-/* światła (updateLights), płomienie i błyski: mieszanie addytywne */
 static void draw_fx(const Spr *s, int st) {
   const RTex *tex = &atlas.tex[s->img.tex];
   float vis = (st == 2 ? 1 : 0.12f) * cell_reveal[s->cell] / 255.0f;
@@ -2103,7 +2248,7 @@ static void draw(void) {
   }
   r2d_offset(0, 0);
   draw_hud();
-  ui_menu_draw(&menu, 6, V_H - 2 - 6 * 9);
+  ui_menu_draw(&menu, 6, V_H - 2 - 6 * 9);   /* nad dziennikiem */
   ui_choice_draw(&choice);
   saveui_draw();
   ui_toast_draw();

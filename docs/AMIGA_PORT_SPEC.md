@@ -555,3 +555,8 @@ indeks zlecenia, `mission_save` i kampania z chwili wejścia na teren. Autozapis
 jak `openSaveSlots` (data, dzień, poziom / misja w toku, drużyna, potwierdzenie nadpisania). Wczytanie misji w toku:
 `mission_load` z mapą z generatora. Menu tytułowe: Kontynuuj / Wczytaj grę; Przystań: Zapisz / Wczytaj / Zapisz i wyjdź;
 misja (eksploracja): Zapisz grę; koniec drogi: Wczytaj ostatni zapis.
+
+Misja - oprawa: poświaty jak `addLight`/`updateLights` (ADD, stałe/migotanie/pulsowanie/miganie), płomienie ognisk i błyski
+skrzyń, przezroczystość wysokich obiektów przed postacią (`updateCutaway`, 0.38). HUD jak UIScene: karty drużyny z
+portretem i PŻ, faza (eksploracja / walka, runda), panel zlecenia z celami (`objectives()`), panel tury (akcje ◆, szansa
+trafienia), rzut k20 (wirująca kość, wynik vs ST/KP, stopień, obrażenia), dziennik.
