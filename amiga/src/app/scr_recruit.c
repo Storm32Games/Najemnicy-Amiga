@@ -11,7 +11,7 @@
 #include "../gfx/img.h"
 #include "../core/frontend.h"
 #include "../core/character.h"
-#include "../core/campaign.h"
+#include "game.h"
 #include "../data/gamedata.h"
 #include "../data/assets.h"
 
@@ -52,7 +52,6 @@ static float fig_x[RECRUIT_COUNT], fig_a[RECRUIT_COUNT];
 static int fig_on[RECRUIT_COUNT];
 static Rng rng;
 static uint32_t entropy;
-static CampaignState camp;
 static int32_t w_pan;
 
 /* ------------------------------------------------------------------ dane */
@@ -167,10 +166,11 @@ static void begin(void) {
   int i;
   if (n_picks != MAX_PARTY) return;
   for (i = 0; i < MAX_PARTY; i++) p[i] = (uint8_t)picks[i];
-  rng_seed(&rng, entropy);
-  start_campaign(&camp, p, MAX_PARTY, &rng);
-  for (i = 0; i < MAX_PARTY; i++) camp.party[i].name_color = name_col[picks[i]];
-  ui_toast("Dru\277yna zebrana. Przysta\361 nie jest jeszcze przeniesiona na Amig\352.", PAL_AMBER);
+  rng_seed(&rng, entropy ^ g_entropy);
+  start_campaign(&g_camp, p, MAX_PARTY, &rng);
+  for (i = 0; i < MAX_PARTY; i++) g_camp.party[i].name_color = name_col[picks[i]];
+  app_sfx("door", 256, 256);
+  app_switch(SCR_HUB, 400, 500);
 }
 
 static void press_button(int b) {

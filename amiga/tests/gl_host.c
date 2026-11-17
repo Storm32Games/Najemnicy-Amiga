@@ -9,6 +9,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../src/app/app.h"
+#include "../src/app/game.h"
+
+/* quickParty: pierwsi 4 rekruci (do testów Przystani) */
+static int party_n = 4;
+static void quick_party(void) {
+  static const uint8_t p[4] = {0, 1, 2, 3};
+  Rng r;
+  rng_seed(&r, 7);
+  start_campaign(&g_camp, p, party_n, &r);
+  g_camp.scrap = 500;   /* na zatrudnienie w karczmie */
+}
 #include "../src/gfx/r2d.h"
 
 static void shot(const char *prefix, int frame, int vw, int vh) {
@@ -79,7 +90,7 @@ int main(int argc, char **argv) {
       tok[n] = 0;
       if (f == i) {
         if (!strcmp(tok, "shot")) do_shot = 1;
-        else if (!strncmp(tok, "goto=", 5)) app_goto(!strcmp(tok + 5, "intro") ? SCR_INTRO : !strcmp(tok + 5, "title") ? SCR_TITLE : !strcmp(tok + 5, "recruit") ? SCR_RECRUIT : SCR_LOGO);
+        else if (!strncmp(tok, "goto=", 5)) app_goto(!strcmp(tok + 5, "intro") ? SCR_INTRO : !strcmp(tok + 5, "title") ? SCR_TITLE : !strcmp(tok + 5, "recruit") ? SCR_RECRUIT : !strcmp(tok + 5, "hub") ? (quick_party(), SCR_HUB) : !strcmp(tok + 5, "hub3") ? (party_n = 3, quick_party(), SCR_HUB) : SCR_LOGO);
         else pressed |= key_of(tok);
       }
       p = e ? e + 1 : p + strlen(p);

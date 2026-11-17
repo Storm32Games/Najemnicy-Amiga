@@ -1,8 +1,9 @@
 /* Maszyna ekranów i przejścia. */
 #include "app.h"
 #include "../gfx/r2d.h"
+#include "game.h"
 
-static const Screen *const SCREENS[4] = {&SCREEN_LOGO, &SCREEN_INTRO, &SCREEN_TITLE, &SCREEN_RECRUIT};
+static const Screen *const SCREENS[5] = {&SCREEN_LOGO, &SCREEN_INTRO, &SCREEN_TITLE, &SCREEN_RECRUIT, &SCREEN_HUB};
 static ScreenId cur = SCR_LOGO, next_scr;
 static int fade_ms, fade_total, fading_out, out_ms, in_ms, started;
 
@@ -41,6 +42,7 @@ int app_frame(unsigned held, unsigned pressed, int ms) {
   const Screen *s;
   int a = 0;
   if (cur == SCR_QUIT) return 0;
+  g_entropy = g_entropy * 1664525u + 1013904223u + (uint32_t)ms * 2654435761u + held;   /* ziarno losowań */
   s = SCREENS[cur];
   if (fading_out) {
     held = pressed = 0;     /* scene.input.enabled = false */

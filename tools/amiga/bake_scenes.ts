@@ -14,9 +14,31 @@ const VITE_PORT = 5199, CDP_PORT = 9333;
 
 /** Klatki tekstury płótna animowanej kodem (np. NukeBlast): updatery sceny wołane dla czasu planszy t (s) od `from` do `to`. */
 interface Frames { tex: string; from: number; to: number; step: number }
-interface Target { name: string; scene: string; extra?: string; prefix: string[]; waitMs?: number; frames?: Frames }
+/** prep: kod JS (async, w stronie; dostępne g = gra, sc = scena) dorabiający tekstury przed zbieraniem - moduły gry przez import(). */
+interface Target { name: string; scene: string; extra?: string; prefix: string[]; waitMs?: number; frames?: Frames; prep?: string }
+
+// Przystań: drużyna może być dowolną czwórką, więc postacie, portrety i ikony wszystkich rekrutów / przedmiotów / zdolności
+const HUB_PREP = `
+  const W = await import('/src/scenes/ui/Widgets.ts');
+  const U = await import('/src/scenes/iso/UnitLooks.ts');
+  const H = await import('/src/scenes/iso/HiRes.ts');
+  const I = await import('/src/scenes/legacy/icons.ts');
+  const R = await import('/src/core/data/recruits.ts');
+  const S = await import('/src/core/campaign/session.ts');
+  const IT = await import('/src/core/data/items.ts');
+  const AB = await import('/src/core/data/abilities.ts');
+  const copy = (from, to) => { const c = g.textures.get(from).getSourceImage(); const d = document.createElement('canvas'); d.width = c.width; d.height = c.height; d.getContext('2d').drawImage(c, 0, 0); g.textures.addCanvas(to, d); };
+  for (const r of R.RECRUITS) {
+    const ch = S.recruitCharacter(r);
+    U.ensureUnit(sc, 'pc_' + r.id, U.unitLookOf(ch));
+    for (const size of [29, 30, 40]) copy(W.portraitKey(sc, ch, size), 'bk_p' + size + '_' + r.id);
+  }
+  for (const [id, def] of Object.entries(IT.ITEMS)) for (const size of [10, 11]) g.textures.addCanvas('bk_i' + size + '_' + id, H.hiResCanvas(I.itemIcon(def, 32), { w: size, h: size }));
+  for (const [id, def] of Object.entries(AB.ABILITIES)) g.textures.addCanvas('bk_a7_' + id, H.hiResCanvas(I.abilityIcon({ icon: def.icon, id, name: def.name, fx: def.fx }, 24), { w: 7, h: 7 }));
+`;
 const TARGETS: Target[] = [
   { name: 'title', scene: 'TitleScene', prefix: ['title', 'rec_', 'unit_rec'] },
+  { name: 'hub', scene: 'HubScene', prefix: ['hub', 'unit_pc_', 'unit_npc_', 'pc_', 'npc_', 'bk_'], prep: HUB_PREP },
   // werbunek: tło + portrety 30 px (karty); portrety 26 px (plac) są tylko u wybranych - 4 przebiegi po 4 rekrutów
   ...[0, 1, 2, 3].map((k): Target => ({ name: `recruit${k + 1}`, scene: 'RecruitScene', extra: `&pick=${[0, 1, 2, 3].map((i) => k * 4 + i).join(',')}`, prefix: k ? ['porpl_'] : ['recruit', 'porpl_'] })),
   ...[1, 2, 3, 4, 5, 6].map((n): Target => ({
@@ -62,11 +84,12 @@ class Cdp {
   }
 }
 
-const COLLECT = (scene: string, prefixes: string[], waitMs: number, frames?: Frames): string => `(async () => {
+const COLLECT = (scene: string, prefixes: string[], waitMs: number, frames?: Frames, prep = ''): string => `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   for (let i = 0; i < 200 && !(window.__game && window.__game.scene.isActive(${JSON.stringify(scene)})); i++) await sleep(100);
   await sleep(${waitMs});
   const g = window.__game, pre = ${JSON.stringify(prefixes)}, want = (k) => pre.some((p) => k.startsWith(p));
+  { const sc = g.scene.getScene(${JSON.stringify(scene)}); ${prep} }
   const out = { textures: {}, objects: [], anims: [] };
   for (const [k, t] of Object.entries(g.textures.list)) {
     if (!want(k)) continue;
@@ -138,7 +161,7 @@ async function main(): Promise<void> {
     for (const t of TARGETS) {
       if (only.length && !only.includes(t.name)) continue;
       await cdp.send('Page.navigate', { url: `http://localhost:${VITE_PORT}/?scene=${t.scene}${t.extra ?? ''}&bake=1&res=fhd` });
-      const r = (await cdp.send('Runtime.evaluate', { expression: COLLECT(t.scene, t.prefix, t.waitMs ?? 2500, t.frames), awaitPromise: true, returnByValue: true })) as {
+      const r = (await cdp.send('Runtime.evaluate', { expression: COLLECT(t.scene, t.prefix, t.waitMs ?? 2500, t.frames, t.prep), awaitPromise: true, returnByValue: true })) as {
         result?: { value?: string }; exceptionDetails?: unknown;
       };
       if (!r.result?.value) throw new Error(`${t.name}: brak wyniku ${JSON.stringify(r.exceptionDetails ?? r).slice(0, 400)}`);

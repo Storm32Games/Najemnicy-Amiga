@@ -434,7 +434,7 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), 
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek; ⏳ Przystań, mapa
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań; ⏳ podróż, misja, rozliczenie, zapis z menu, opcje, mapa
    regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
@@ -486,9 +486,19 @@ Esc = wyjście z potwierdzeniem. Mysz: jeszcze nie (klawiatura i joystick).
 Werbunek (`scr_recruit.c`): portrety 30 / 26 px wypieczone z gry (4 przebiegi `recruit1..4` z `?pick=`), całe postacie
 w 8 kierunkach prosto z `src/assets/units/<id>/*.png` (`spr_<id>.ntx`, ładowane przy zmianie pokazanego). Fokus
 joystickiem po siatce 4 x 4 i przyciskach (fokus = pokazany najemnik, obrót karty skalą `r2d_scale`), fire = wybierz.
-„Rozpocznij” woła `start_campaign` (Przystań jeszcze nie przeniesiona - komunikat). Bez „Zmień imię” (brak wpisywania
+„Rozpocznij” woła `start_campaign` i przechodzi do Przystani. Bez „Zmień imię” (brak wpisywania
 tekstu) i bez podpowiedzi do zdolności; kursywa opisu jako zwykły tekst.
 
 Sprawdzanie bez Amigi: `make -C amiga build/gl_host` (OpenGL na Macu, ten sam kod ekranów), np.
 `cd amiga && ./build/gl_host 1280x720 400 build/shots/t "0:goto=title 100:DOWN 120:shot"` -> zrzuty PPM
 (`tools/amiga/ppm2png.py`). Plik wykonywalny: `make -C amiga amiga-app` -> `build/Najemnicy` (+ katalog `gfx/` obok).
+
+Przystań (`scr_hub.c`): tablica zleceń (szczegóły, zwiad, nagroda, przyjęcie z ostrzeżeniem o rannych), handlarz (kupno /
+sprzedaż ze skrytki i plecaków), lecznica (leczenie, odpoczynek = następny dzień), drużyna (cechy, obrona, umiejętności,
+gniazda ekwipunku z oknem wyboru, zdolności, plecak - użyj / do skrytki, skrytka), karczma (zatrudnianie), menu główne.
+Wszystko na `core/campaign` i `core/rules`. Sterowanie: strefa treści i menu po prawej, podpowiedzi przedmiotów i zdolności
+po 350 ms fokusu (zamiast najechania myszą). Grafiki: tło 'hub', mieszkańcy, wszyscy rekruci przy ognisku, portrety
+29 / 30 / 40 px i ikony przedmiotów (10 / 11 px) i zdolności (7 px) wypieczone z gry (cel `hub` z `prep` - kod w stronie
+woła moduły gry przez `import()`), w atlasach `portraits.ntx`, `icons.ntx`, `hub_party.ntx`.
+Napisy w nowych plikach ekranów piszemy w UTF-8; `python3 tools/amiga/latin2_literals.py <plik.c>` przekodowuje literały
+na kody portu (komentarze zostają w UTF-8). Gdy brak ekranu docelowego (podróż i misja, zapis, opcje) - komunikat.

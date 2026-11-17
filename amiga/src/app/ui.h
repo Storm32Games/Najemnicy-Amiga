@@ -31,4 +31,30 @@ void ui_toast(const char *msg, uint32_t tone);
 void ui_toast_update(int ms);
 void ui_toast_draw(void);
 
+/* pasek postępu (bar): tło back, wypełnienie ratio (Q12) */
+void ui_bar(int x, int y, int w, int h, int ratio_q12, uint32_t col, uint32_t back);
+/* pasek przewijania listy (ScrollList): 3 px z prawej, gdy total > visible */
+void ui_scrollbar(int x, int y, int w, int h, int total, int visible, int offset);
+/* przesunięcie listy tak, by wiersz `focus` był widoczny */
+int ui_scroll_follow(int offset, int focus, int total, int visible);
+/* toUpperCase dla ISO-8859-2 (w miejscu) */
+void latin2_upper(char *s);
+/* okno modalne (openWindow): przyciemnienie, panel na środku, tytuł; zwraca lewy górny róg */
+void ui_window(int w, int h, const char *title, int *x, int *y);
+/* podpowiedź (Tip): ramka z tekstem przy punkcie (x, y) - nad nim, gdy brak miejsca pod */
+void ui_tip(int x, int y, const char *text);
+
+/* dialog(): tekst i przyciski od prawej; Esc = pierwszy przycisk */
+#define UI_DLG_MAX 3
+typedef struct {
+  int open, focus, n;
+  char title[48], body[256];
+  const char *btn[UI_DLG_MAX];
+  int kind[UI_DLG_MAX];
+} UiDialog;
+void ui_dialog_open(UiDialog *d, const char *title, const char *body, int n, const char *const *btn, const int *kind, int focus);
+/* -1 = nic, inaczej wybrany przycisk (okno się zamyka) */
+int ui_dialog_input(UiDialog *d, unsigned pressed);
+void ui_dialog_draw(const UiDialog *d);
+
 #endif

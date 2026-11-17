@@ -11,6 +11,7 @@ do poprzedniej klatki (bufor poprzedniej + bieżącej), więc niezmienione pikse
 Uruchom: python3 tools/amiga/pack_scenes.py
 """
 import json
+import re
 import math
 import os
 import struct
@@ -64,6 +65,16 @@ def to_indexed(im):
     count = {}
     for p in px:
         count[p] = count.get(p, 0) + 1
+    if len(count) > 320:
+        # dużo kolorów (arkusze postaci): kwantyzacja median cut po RGB; alfa zostaje (zwykle 0 albo 255), półprzezroczyste
+        # piksele dostają kolor z palety najbliższy ich RGB
+        rgb = im.convert('RGB').quantize(255, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+        pal_rgb = rgb.getpalette()[:255 * 3]
+        q = rgb.tobytes()
+        px = [(0, 0, 0, 0) if p[3] == 0 else (pal_rgb[q[i] * 3], pal_rgb[q[i] * 3 + 1], pal_rgb[q[i] * 3 + 2], p[3]) for i, p in enumerate(px)]
+        count = {}
+        for p in px:
+            count[p] = count.get(p, 0) + 1
     remap = {}
     # > 256 kolorów: najrzadszy kolor -> najbliższy z pozostałych (zwykle kilka kolorów z winiety / poświaty)
     while len(count) > 256:
@@ -93,7 +104,8 @@ def write_ntx(name, im):
 
 
 def load(target, key):
-    return Image.open(os.path.join(BAKE, target, key + '.png')).convert('RGBA')
+    # nazwy plików jak w bake_scenes.ts: znaki spoza [a-zA-Z0-9_@.-] -> '_'
+    return Image.open(os.path.join(BAKE, target, re.sub(r'[^a-zA-Z0-9_@.-]', '_', key) + '.png')).convert('RGBA')
 
 
 # ------------------------------------------------------------------ lcg z fx/Painter.ts
@@ -333,6 +345,50 @@ def build():
         for d, name in enumerate(dirs):
             sheet.paste(Image.open(os.path.join(ROOT, 'src', 'assets', 'units', key, name + '.png')).convert('RGBA'), ((d % 4) * 64, (d // 4) * 64))
         write_ntx('spr_' + key, sheet)
+
+    print('hub:')
+    for k in ['hub_sky', 'hub_clouds', 'hub_far', 'hub_mid', 'hub_ground']:
+        write_ntx(k, load('hub', k))
+    T['bg']['HUB'] = dict(win=windows(bg_spots('hub', 'hub_mid'), 2 + 9), bird=birds(5, (0, 40, 480, 60), 2 + 4),
+                          ray=rays(9, -math.pi * 0.95, -math.pi * 0.05, 360, 2), ox=430, oy=190, rc=0xffc070, ra=35,
+                          bc=0x1a0c12, bd=1, bx=0, bw=480)
+    man = json.load(open(os.path.join(BAKE, 'hub', 'manifest.json')))
+    def frames5(key, fw, fh, dst, x0, y0):
+        src = load('hub', key)
+        for f in range(5):
+            x, y, w, h = man[key]['frames'][f'f_idle{f}']
+            dst.paste(src.crop((x, y, x + w, y + h)), (x0 + f * fw, y0))
+    # mieszkańcy (24x32): Lecznica, Tablica zleceń, Handlarz Nomadów, Mechanik, Wartownik
+    npc = Image.new('RGBA', (120, 160))
+    for i, k in enumerate(['Lecznica', 'Tablica zleceń', 'Handlarz Nomadów', 'Mechanik', 'Wartownik']):
+        frames5('unit_npc_' + k, 24, 32, npc, 0, i * 32)
+    write_ntx('hub_npc', npc)
+    # drużyna: wszyscy rekruci (32x36), 7 w bloku 256 px: y = (i / 7) * 256 + (i % 7) * 36
+    party = Image.new('RGBA', (160, 256 * 2 + 2 * 36))
+    for i, k in enumerate(RECRUIT_KEYS):
+        frames5('unit_pc_' + k, 32, 36, party, 0, (i // 7) * 256 + (i % 7) * 36)
+    write_ntx('hub_party', party)
+    # portrety: 40 px po 6 w wierszu od y 0, 30 px po 8 od y 120, 29 px po 8 od y 180
+    por = Image.new('RGBA', (256, 256))
+    for i, k in enumerate(RECRUIT_KEYS):
+        for size, per, y0 in ((40, 6, 0), (30, 8, 120), (29, 8, 180)):
+            por.paste(load('hub', f'bk_p{size}_{k}'), ((i % per) * size, y0 + (i // per) * size))
+    write_ntx('portraits', por)
+    # ikony (kolejność ITEM_DEFS / ABILITY_DEFS): przedmioty 10 px po 25 w wierszu od y 0, 11 px po 23 od y 30,
+    # zdolności 7 px po 36 od y 63
+    c = open(os.path.join(SRC, 'gamedata.c')).read()
+    def keys(table):
+        a = c.index(table)
+        return re.findall(r'^\s*\{"([a-z0-9_]+)", "', c[a:c.index('};', a)], re.M)
+    icons = Image.new('RGBA', (256, 128))
+    for i, k in enumerate(keys('const ItemDef ITEM_DEFS')):
+        for size, per, y0 in ((10, 25, 0), (11, 23, 30)):
+            f = os.path.join(BAKE, 'hub', f'bk_i{size}_{k}.png')
+            if os.path.exists(f):
+                icons.paste(Image.open(f).convert('RGBA'), ((i % per) * size, y0 + (i // per) * size))
+    for i, k in enumerate(keys('const AbilityDef ABILITY_DEFS')):
+        icons.paste(load('hub', f'bk_a7_{k}'), ((i % 36) * 7, 63 + (i // 36) * 7))
+    write_ntx('icons', icons)
 
     print('intro:')
     layers = {
