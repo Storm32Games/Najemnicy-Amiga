@@ -105,7 +105,7 @@ int flame_k_q12(int32_t tq8, int i);
 int flame_sway_q8(int32_t tq8, int i);
 int glow_alpha_q8(int32_t tq8);
 
-#define MOTES_MAX 96
+#define MOTES_MAX 160
 typedef struct {
   int n;
   int32_t x[MOTES_MAX], y[MOTES_MAX], vx[MOTES_MAX], vy[MOTES_MAX];

@@ -22,6 +22,7 @@ import { UNARMED } from '../../src/core/data/items.ts';
 import { CONTRACT_TYPES, GIVERS, SIDE_TYPES, STORY_BUDGET, STORY_NEED } from '../../src/core/campaign/contracts.ts';
 import { FAUNA_CHANCE, FAUNA_KINDS, faunaAttackEvent } from '../../src/core/campaign/events.ts';
 import { EASE_OUT3_LUT, SIN_LUT } from '../../src/core/frontend/fixed.ts';
+import { cLiteral } from './charmap.ts';
 import { ANC as NAME_ANC, CALL as NAME_CALL, FEM as NAME_FEM, FIRST as NAME_FIRST, MASC as NAME_MASC, NICK as NAME_NICK, SURNAMES as NAME_SURNAMES, TITLE_HUMAN as NAME_TITLE_HUMAN } from '../../src/core/data/names.ts';
 import { AVENUE_Z, CITY, CRATER, GATE, HALLS, HMAP, HOME, RING_N, RING_S, SECTORS, WQ, heightGrid } from '../../src/core/campaign/region.ts';
 
@@ -38,27 +39,10 @@ const fail = (msg: string): never => {
 const up = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 const keys = (o: object): string[] => Object.keys(o);
 
-/** ISO-8859-2: polskie litery; reszta spoza ASCII zamieniana. */
-const LATIN2: Record<string, number> = {
-  'Ą': 0xa1, 'Ć': 0xc6, 'Ę': 0xca, 'Ł': 0xa3, 'Ń': 0xd1, 'Ó': 0xd3, 'Ś': 0xa6, 'Ź': 0xac, 'Ż': 0xaf,
-  'ą': 0xb1, 'ć': 0xe6, 'ę': 0xea, 'ł': 0xb3, 'ń': 0xf1, 'ó': 0xf3, 'ś': 0xb6, 'ź': 0xbc, 'ż': 0xbf, '×': 0xd7,
-};
-const ASCII_SUB: Record<string, string> = {
-  '—': '-', '–': '-', '−': '-', '„': '"', '”': '"', '“': '"', '’': "'", '…': '...', '·': '-', '½': '1/2', '→': '->', '←': '<-', '▶': '>', '◀': '<',
-};
+/** Teksty: ISO-8859-2 + znaki czcionki spoza Latin-2 na 0x80..0x9F (tools/amiga/charmap.ts). */
 function cstr(s: string | null | undefined): string {
   if (s === null || s === undefined) return 'NULL';
-  let out = '"';
-  for (const ch of s) {
-    const c = ch.codePointAt(0)!;
-    if (ch === '"' || ch === '\\') out += '\\' + ch;
-    else if (ch === '\n') out += '\\n';
-    else if (c >= 32 && c < 127) out += ch;
-    else if (LATIN2[ch] !== undefined) out += '\\' + LATIN2[ch].toString(8).padStart(3, '0');
-    else if (ASCII_SUB[ch] !== undefined) out += ASCII_SUB[ch].replace(/["\\]/g, (m) => '\\' + m);
-    else fail(`Znak spoza ISO-8859-2 bez zamiennika: "${ch}" (U+${c.toString(16)}) w: ${s}`);
-  }
-  return out + '"';
+  return cLiteral(s, (ch) => fail(`Znak bez kodu w czcionce: "${ch}" (U+${ch.codePointAt(0)!.toString(16)}) w: ${s}`));
 }
 
 function dice(expr: string | number | undefined | null): string {

@@ -4,14 +4,14 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CELL_H, LINE_H, SPACING, TOP, glyph } from '../../src/scenes/ui/FontGlyphs.ts';
+import { SPECIALS, charOf } from './charmap.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = join(ROOT, 'amiga', 'src', 'data');
-const dec = new TextDecoder('iso-8859-2');
 const ROWS = CELL_H - TOP; // wiersze od TOP (-1) do 7
 
 function glyphRow(code: number, bold: boolean): string {
-  const ch = code < 32 || (code >= 127 && code < 160) ? '?' : dec.decode(new Uint8Array([code]));
+  const ch = code < 32 || code === 127 ? '?' : charOf(code);
   const g = glyph(ch, bold);
   const rows = new Array<number>(ROWS).fill(0);
   for (const [x, y] of g.px) {
@@ -31,7 +31,8 @@ writeFileSync(join(OUT, 'assets.h'), `/* Wygenerowane przez tools/amiga/gen_asse
 #define ASSETS_H
 #include <stdint.h>
 
-/* Czcionka "PYŁ 6x8": wiersz 0 = y ${TOP} (akcenty wielkich liter), bit x = piksel w kolumnie x. Indeks = bajt ISO-8859-2. */
+/* Czcionka "PYŁ 6x8": wiersz 0 = y ${TOP} (akcenty wielkich liter), bit x = piksel w kolumnie x.
+ * Indeks = bajt: ISO-8859-2, a 0x80..0x9F = znaki spoza Latin-2 (tools/amiga/charmap.ts): ${SPECIALS.map((c, i) => `${(0x80 + i).toString(16)}=${c}`).join(' ')} */
 #define FONT_CELL_H ${CELL_H}
 #define FONT_LINE_H ${LINE_H}
 #define FONT_SPACING ${SPACING}

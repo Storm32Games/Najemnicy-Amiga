@@ -30,11 +30,13 @@ export let CANVAS_H = resPreset(RES).h;
  * kod czytający ZOOM / SX0 / SY0 przy każdym użyciu widzi nową wartość.
  */
 export let ZOOM = Math.min(CANVAS_W / BASE_W, CANVAS_H / BASE_H);
+/** `?bake=1` (narzędzie tools/amiga/bake_scenes.ts): tekstury w rozdzielczości projektowej, bez skalera pixel artu - do wypieczenia teł dla portu na Amigę. */
+const BAKE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bake');
 /**
  * Gęstość nowych tekstur: teksele na piksel projektowy (= ZOOM, czyli 1 teksel = 1 piksel płótna; patrz iso/HiRes.ts).
  * Idzie za ZOOM; tekstury zbudowane wcześniej zostają w starej gęstości (wymiary projektowe się nie zmieniają).
  */
-export let ART = ZOOM;
+export let ART = BAKE ? 1 : ZOOM;
 /** Lewy górny róg obszaru gry (BASE * ZOOM) na płótnie - niezerowy tylko przy pasach (640x480). */
 export let VX = Math.round((CANVAS_W - BASE_W * ZOOM) / 2);
 export let VY = Math.round((CANVAS_H - BASE_H * ZOOM) / 2);
@@ -51,7 +53,7 @@ function setRes(id: ResSetting): void {
   CANVAS_W = resPreset(id).w;
   CANVAS_H = resPreset(id).h;
   ZOOM = Math.min(CANVAS_W / BASE_W, CANVAS_H / BASE_H);
-  ART = ZOOM;
+  ART = BAKE ? 1 : ZOOM;
   VX = Math.round((CANVAS_W - BASE_W * ZOOM) / 2);
   VY = Math.round((CANVAS_H - BASE_H * ZOOM) / 2);
   VW = CANVAS_W - 2 * VX;

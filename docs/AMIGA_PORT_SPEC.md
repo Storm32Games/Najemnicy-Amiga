@@ -418,7 +418,11 @@ amiga/src/data/   gamedata.h/.c (generowane: tabele, teksty ISO-8859-2, region, 
 amiga/src/core/   rng dice character stats rules abilities   (zasady, §4–13)
                   tactical.h grid mapgen combat.h combat ai mission   (taktyka, §10, §14–17)
                   campaign region names save   (kampania, §18–19)
-amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS)
+amiga/src/gfx/    r2d (renderer 2D na GL / MiniGL, czcionka), img (obrazy .ntx w kaflach <= 256, animacje .nta)
+amiga/src/app/    app (maszyna ekranów, przejścia), scr_logo scr_intro scr_title, scenefx (tła, ognisko, postacie), ui
+amiga/src/plat/   plat_amiga.c (ekran RTG 32 bit, MiniGL, klawiatura / joystick / mysz, timer)
+amiga/gfx/        grafiki ekranów (.ntx, .nta) - kopiowane obok pliku wykonywalnego (PROGDIR:gfx/)
+amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), gl_host.c (ekrany na Macu, zrzuty)
 ```
 
 1. ✅ Generator nagłówków (`tools/amiga/gen_headers.ts`).
@@ -430,7 +434,8 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS)
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. ⏳ Ekrany i grafika miniGL, sterowanie, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe; ⏳ werbunek, Przystań, mapa
+   regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
 
@@ -452,3 +457,32 @@ Rozmiar (68020, `-O2 -msoft-float`): kod logiki ok. 250 KB, dane statyczne (BSS)
 
 Testy jednostkowe: `test_gamedata` (86), `test_dice` (536), `test_character` (4876), `test_save` (130: zapis → odczyt →
 zapis daje te same bajty, a odczytana kopia gra dalej identycznie). Czułość śladów sprawdzana celowo wprowadzanymi błędami.
+
+## 25. Ekrany (miniGL)
+
+Wirtualny ekran 480x270 (siatka projektowa gry), skalowany do trybu RTG z czarnymi pasami. Renderer `r2d` używa tylko
+podzbioru GL sprawdzonego na A1200 w Cube Rally: `glBegin(GL_QUADS)` w paczkach (`MGLBATCH`, domyślnie 8), tekstury RGBA8
+o bokach potęgi dwójki <= 256, `GL_NEAREST`, mieszanie src-alpha (promienie światła: addytywne), `glColor4ub`.
+
+**Grafiki z gry, nie przerysowane.** Tła są malowane kodem na płótnie w przeglądarce; zamiast przepisywać malarzy
+(`fx/Painter.ts`, `NukeArt.ts`) do C, wypiekamy je z prawdziwej gry:
+
+1. `node tools/amiga/bake_scenes.ts [title intro1 ... intro6]` - Vite + Chrome bez okna (DevTools Protocol), scena z
+   `?bake=1` (`Kit.ts`: tekstury w rozdzielczości projektowej, bez skalera pixel artu). Zapisuje tekstury płócien,
+   ramki arkuszy postaci, obiekty sceny (pozycje, głębie) i animacje do `amiga/data/bake/<cel>/` (poza repozytorium).
+   Dla wybuchu atomowego (NukeBlast liczy każdy piksel co klatkę) - klatki co 100 ms przez 7 s.
+2. `python3 tools/amiga/pack_scenes.py` - `.ntx` (paleta <= 256 + RLE) i `.nta` (animacja: wspólna paleta, LZ względem
+   poprzedniej klatki; wybuch 73 klatki = 1,5 MB) w `amiga/gfx/`, oraz `amiga/src/data/scenes.{h,c}`: migające okna,
+   ptaki i promienie (`Windows`, `Birds`, `LightRays` - te same ziarna lcg co w grze), rozstawienie postaci, oczy w ruinach.
+
+Ruch odtwarzany w C (`scenefx.c`, `scr_*.c`) z liczb całkowitych `core/frontend` (fazy `wave_q14`, `TickClock`, `MoteField`,
+`campfire`): paralaksa, dryf chmur / mgły / dymu, ognisko, pył i iskry, postacie z animacją idle (klatka = 100 ms +
+`duration`, start `|x| % 4` jak `addUnit`), flaga szabrowników, karawana nomadów, reflektory, rakiety, wstrząs kamery.
+Teksty: ISO-8859-2 + 32 znaki czcionki spoza Latin-2 na kodach 0x80..0x9F (`tools/amiga/charmap.ts`: —, ▶, ◆, „ ” ...).
+
+Menu tytułowe na Amidze: zapisy jeszcze nie działają (`title_menu(0, 0)`), „Nowa gra” i „Opcje” pokazują komunikat,
+Esc = wyjście z potwierdzeniem. Mysz: jeszcze nie (klawiatura i joystick).
+
+Sprawdzanie bez Amigi: `make -C amiga build/gl_host` (OpenGL na Macu, ten sam kod ekranów), np.
+`cd amiga && ./build/gl_host 1280x720 400 build/shots/t "0:goto=title 100:DOWN 120:shot"` -> zrzuty PPM
+(`tools/amiga/ppm2png.py`). Plik wykonywalny: `make -C amiga amiga-app` -> `build/Najemnicy` (+ katalog `gfx/` obok).

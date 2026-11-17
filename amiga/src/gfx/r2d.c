@@ -19,6 +19,7 @@ static struct {
   int view_w, view_h, vx, vy, vw, vh, batch;
   int open, nq;
   unsigned cur_tex;            /* 0 = bez tekstury */
+  float ox, oy;                /* przesunięcie (wstrząs kamery) */
 } G;
 
 /* ------------------------------------------------------------------ paczki quadów */
@@ -85,15 +86,69 @@ void r2d_frame_begin(uint32_t rgb) {
 
 void r2d_frame_end(void) { flush(); }
 
+void r2d_offset(float dx, float dy) {
+  G.ox = dx;
+  G.oy = dy;
+}
+
 void r2d_rect(float x, float y, float w, float h, uint32_t rgb, int a) {
   if (a <= 0 || w <= 0 || h <= 0) return;
   use_tex(0);
   begin_quad();
   glColor4ub((GLubyte)(rgb >> 16), (GLubyte)(rgb >> 8), (GLubyte)rgb, (GLubyte)(a > 255 ? 255 : a));
+  x += G.ox;
+  y += G.oy;
   glVertex2f(x, y);
   glVertex2f(x + w, y);
   glVertex2f(x + w, y + h);
   glVertex2f(x, y + h);
+}
+
+void r2d_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint32_t rgb, int a) {
+  if (a <= 0) return;
+  use_tex(0);
+  begin_quad();
+  glColor4ub((GLubyte)(rgb >> 16), (GLubyte)(rgb >> 8), (GLubyte)rgb, (GLubyte)(a > 255 ? 255 : a));
+  glVertex2f(x0 + G.ox, y0 + G.oy);
+  glVertex2f(x1 + G.ox, y1 + G.oy);
+  glVertex2f(x2 + G.ox, y2 + G.oy);
+  glVertex2f(x2 + G.ox, y2 + G.oy);
+}
+
+void r2d_frame(float x, float y, float w, float h, uint32_t rgb, int a) {
+  r2d_rect(x, y, w, 1, rgb, a);
+  r2d_rect(x, y + h - 1, w, 1, rgb, a);
+  r2d_rect(x, y + 1, 1, h - 2, rgb, a);
+  r2d_rect(x + w - 1, y + 1, 1, h - 2, rgb, a);
+}
+
+static int isqrt(int v) {
+  int r = 0, b = 1 << 30;
+  while (b > v) b >>= 2;
+  while (b) {
+    if (v >= r + b) {
+      v -= r + b;
+      r = (r >> 1) + b;
+    } else r >>= 1;
+    b >>= 2;
+  }
+  return r;
+}
+
+void r2d_ellipse(float cx, float cy, float rx, float ry, uint32_t rgb, int a) {
+  int iry = (int)(ry + 0.5f), irx = (int)(rx * 16 + 0.5f), y;
+  if (iry < 1 || a <= 0) return;
+  for (y = -iry; y < iry; y++) {
+    /* półszerokość paska w 1/16 px: rx * sqrt(1 - (y + 0.5)^2 / ry^2) */
+    int yy = 2 * y + 1, k = isqrt((4 * iry * iry - yy * yy) * 64);   /* sqrt(...)*16 / (2*ry) */
+    float hw = (float)irx * k / (16.0f * 16 * iry);
+    if (hw > 0) r2d_rect(cx - hw, cy + y, 2 * hw, 1, rgb, a);
+  }
+}
+
+void r2d_blend_add(int on) {
+  flush();
+  glBlendFunc(GL_SRC_ALPHA, on ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA);
 }
 
 /* ------------------------------------------------------------------ tekstury */
@@ -143,6 +198,8 @@ void r2d_tex_free(RTex *t) {
 void r2d_image(const RTex *t, float x, float y, float w, float h, float sx, float sy, float sw, float sh, uint32_t tint, int a) {
   float u0, v0, u1, v1;
   if (a <= 0 || !t->id) return;
+  x += G.ox;
+  y += G.oy;
   u0 = sx / t->tw;
   v0 = sy / t->th;
   u1 = (sx + sw) / t->tw;
@@ -157,21 +214,22 @@ void r2d_image(const RTex *t, float x, float y, float w, float h, float sx, floa
 }
 
 /* ------------------------------------------------------------------ czcionka */
-/* Dwa atlasy 256x256, w każdym 3 zestawy (styl x grubość); komórka 9 x 11 px (glif <= 7 px + obrys 1 px z każdej strony),
- * 28 komórek w wierszu, 192 znaki (32..126, 160..255) = 7 wierszy = 77 px na zestaw. */
+/* Trzy atlasy 256x256, w każdym 2 zestawy (styl x grubość); komórka 9 x 11 px (glif <= 7 px + obrys 1 px z każdej strony),
+ * 28 komórek w wierszu, 223 znaki (32..126, 128..255: Latin-2 + znaki specjalne 0x80..0x9F) = 8 wierszy = 88 px na zestaw. */
 #define CELL_W 9
 #define CELL_HH (FONT_ROWS + 2)
 #define PER_ROW 28
-#define SET_H (7 * CELL_HH)
-static RTex font_tex[2];
+#define SET_H (8 * CELL_HH)
+#define SETS_PER_TEX 2
+static RTex font_tex[3];
 static uint8_t font_atlas[256 * 256 * 4];
 
 static int glyph_cell(int set, int code, int *cx, int *cy) {
   int i;
-  if (code < 32 || (code >= 127 && code < 160)) return 0;
-  i = code < 128 ? code - 32 : code - 160 + 95;
+  if (code < 32 || code == 127) return 0;
+  i = code < 127 ? code - 32 : code - 33;
   *cx = (i % PER_ROW) * CELL_W;
-  *cy = (set % 3) * SET_H + (i / PER_ROW) * CELL_HH;
+  *cy = (set % SETS_PER_TEX) * SET_H + (i / PER_ROW) * CELL_HH;
   return 1;
 }
 
@@ -185,9 +243,9 @@ static void put_px(int x, int y, int white) {
 
 void font_init(void) {
   int tex, set, code;
-  for (tex = 0; tex < 2; tex++) {
+  for (tex = 0; tex < 3; tex++) {
     memset(font_atlas, 0, sizeof font_atlas);
-    for (set = tex * 3; set < tex * 3 + 3; set++) {
+    for (set = tex * SETS_PER_TEX; set < tex * SETS_PER_TEX + SETS_PER_TEX; set++) {
       int style = set >> 1, bold = set & 1;
       const FontGlyph *tab = bold ? FONT_BOLD : FONT_REGULAR;
       for (code = 32; code < 256; code++) {
@@ -222,7 +280,7 @@ void font_draw(float x, float y, const char *s, uint32_t rgb, int a, int style, 
   const FontGlyph *tab = bold ? FONT_BOLD : FONT_REGULAR;
   const unsigned char *p = (const unsigned char *)s;
   int set = style * 2 + bold;
-  const RTex *t = &font_tex[set / 3];
+  const RTex *t = &font_tex[set / SETS_PER_TEX];
   float cx = x;
   for (; *p; p++) {
     int gx, gy;
@@ -238,6 +296,36 @@ void font_draw(float x, float y, const char *s, uint32_t rgb, int a, int style, 
     }
     cx += tab[*p].adv * scale;
   }
+}
+
+int font_wrap(const char *s, int bold, int wrap, char *buf, int cap) {
+  const FontGlyph *tab = bold ? FONT_BOLD : FONT_REGULAR;
+  const unsigned char *p = (const unsigned char *)s;
+  int n = 0, lines = 1, x = 0;
+  while (*p && n < cap - 1) {
+    /* następne słowo (ze spacjami przed nim) */
+    const unsigned char *q = p;
+    int ww = 0, sp = 0;
+    while (*q == ' ') { sp += tab[' '].adv; q++; }
+    if (*q == '\n') {
+      buf[n++] = '\n';
+      lines++;
+      x = 0;
+      p = q + 1;
+      continue;
+    }
+    while (*q && *q != ' ' && *q != '\n') ww += tab[*q++].adv;
+    if (x > 0 && x + sp + ww - FONT_SPACING > wrap) {
+      buf[n++] = '\n';
+      lines++;
+      x = 0;
+      while (*p == ' ') p++;
+    } else x += sp;
+    while (p < q && n < cap - 1) buf[n++] = (char)*p++;
+    x += ww;
+  }
+  buf[n] = 0;
+  return lines;
 }
 
 void font_draw_at(float x, float y, float ox, float oy, const char *s, uint32_t rgb, int a, int style, int bold, float scale) {

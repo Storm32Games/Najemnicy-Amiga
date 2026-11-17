@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# wypiekane tekstury z przeglądarki (tools/amiga/bake_scenes.ts) - pośrednie, wynik w amiga/gfx/
+amiga/data/bake/*/

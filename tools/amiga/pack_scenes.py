@@ -1,0 +1,397 @@
+#!/usr/bin/env python3
+"""Pakuje wypieczone tekstury (amiga/data/bake/<cel>/, z tools/amiga/bake_scenes.ts) do plików .ntx dla portu na Amigę
+i generuje tablice animacji tła (okna, ptaki, promienie) w amiga/src/data/scenes.{h,c}.
+
+Format .ntx (big-endian, jak na 68k): "NTX1", u16 w, u16 h, u16 n (kolory palety, <= 256), n * RGBA,
+potem indeksy pikseli w RLE: bajt c < 128 -> c + 1 bajtów dosłownie; c >= 128 -> powtórz następny bajt (c - 125) razy.
+Format .nta (animacja, np. wybuch z fx/NukeArt.ts): "NTA1", u16 w, h, n (klatki), ms (na klatkę), t0 (ms planszy
+pierwszej klatki), u16 kolory, paleta RGBA (wspólna), potem n * (u32 długość, strumień LZ indeksów). LZ: bajt c < 128 ->
+c + 1 bajtów dosłownie; c >= 128 -> kopia (c - 125) bajtów z odległości u24 (big-endian) wstecz - odległość może sięgać
+do poprzedniej klatki (bufor poprzedniej + bieżącej), więc niezmienione piksele kosztują 4 bajty na 130.
+Uruchom: python3 tools/amiga/pack_scenes.py
+"""
+import json
+import math
+import os
+import struct
+import sys
+
+from PIL import Image
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+BAKE = os.path.join(ROOT, 'amiga', 'data', 'bake')
+OUT = os.path.join(ROOT, 'amiga', 'gfx')
+SRC = os.path.join(ROOT, 'amiga', 'src', 'data')
+
+
+def js_round(x):
+    return math.floor(x + 0.5)
+
+
+def rle(idx):
+    out = bytearray()
+    i, n = 0, len(idx)
+    lit = bytearray()
+
+    def flush():
+        nonlocal lit
+        while lit:
+            chunk = lit[:128]
+            out.append(len(chunk) - 1)
+            out.extend(chunk)
+            lit = lit[128:]
+
+    while i < n:
+        j = i
+        while j < n and j - i < 130 and idx[j] == idx[i]:
+            j += 1
+        if j - i >= 3:
+            flush()
+            out.append(j - i + 125)
+            out.append(idx[i])
+            i = j
+        else:
+            lit.append(idx[i])
+            i += 1
+    flush()
+    return bytes(out)
+
+
+def to_indexed(im):
+    """RGBA -> (paleta, indeksy). Przezroczyste piksele -> jeden kolor (0,0,0,0). > 256 kolorów: kwantyzacja."""
+    im = im.convert('RGBA')
+    px = [p if p[3] else (0, 0, 0, 0) for p in im.get_flattened_data()]
+    count = {}
+    for p in px:
+        count[p] = count.get(p, 0) + 1
+    remap = {}
+    # > 256 kolorów: najrzadszy kolor -> najbliższy z pozostałych (zwykle kilka kolorów z winiety / poświaty)
+    while len(count) > 256:
+        rare = min(count, key=lambda c: (count[c], c))
+        n = count.pop(rare)
+        near = min(count, key=lambda c: sum((a - b) ** 2 for a, b in zip(c, rare)))
+        count[near] += n
+        for k, v in list(remap.items()):
+            if v == rare:
+                remap[k] = near
+        remap[rare] = near
+    if remap:
+        px = [remap.get(p, p) for p in px]
+    cols = sorted(set(px))
+    pal = {c: i for i, c in enumerate(cols)}
+    return cols, bytes(pal[p] for p in px)
+
+
+def write_ntx(name, im):
+    pal, idx = to_indexed(im)
+    data = b'NTX1' + struct.pack('>HHH', im.width, im.height, len(pal))
+    data += b''.join(bytes(c) for c in pal) + rle(idx)
+    os.makedirs(OUT, exist_ok=True)
+    with open(os.path.join(OUT, name + '.ntx'), 'wb') as f:
+        f.write(data)
+    print(f'  {name}.ntx {im.width}x{im.height} {len(pal)} kolorów, {len(data)} B')
+
+
+def load(target, key):
+    return Image.open(os.path.join(BAKE, target, key + '.png')).convert('RGBA')
+
+
+# ------------------------------------------------------------------ lcg z fx/Painter.ts
+def lcg(seed):
+    s = max(1, math.floor(seed)) % 2147483647
+
+    def r():
+        nonlocal s
+        s = (s * 16807) % 2147483647
+        return s / 2147483647
+    return r
+
+
+TICK_HZ = 50
+
+
+def ang_q8(rad_per_sec):
+    return js_round(((rad_per_sec * 256) / (2 * math.pi) / TICK_HZ) * 256)
+
+
+def ang(rad):
+    return js_round((rad * 256) / (2 * math.pi)) & 255
+
+
+
+# ------------------------------------------------------------------ animacja .nta
+def lz_frame(prev, cur):
+    """Strumień LZ klatki `cur` (bytes) względem `prev` (bytes tej samej długości albo b'')."""
+    n = len(cur)
+    buf = prev + cur
+    base = len(prev)
+    out = bytearray()
+    lit = bytearray()
+    last = {}
+
+    def flush():
+        nonlocal lit
+        while lit:
+            chunk = lit[:128]
+            out.append(len(chunk) - 1)
+            out.extend(chunk)
+            lit = lit[128:]
+
+    i = 0
+    while i < n:
+        p = base + i
+        best_len, best_off = 0, 0
+        cands = []
+        if prev:
+            cands.append(p - n)          # ten sam piksel w poprzedniej klatce
+        key = buf[p:p + 4]
+        if len(key) == 4 and key in last:
+            cands.append(last[key])
+        if p > 0:
+            cands.append(p - 1)
+        for c in cands:
+            if c < 0 or c >= p:
+                continue
+            ln = 0
+            while ln < 130 and i + ln < n and buf[c + ln] == buf[p + ln]:
+                ln += 1
+            if ln > best_len:
+                best_len, best_off = ln, p - c
+        if len(key) == 4:
+            last[key] = p
+        if best_len >= 4:
+            flush()
+            out.append(best_len + 125)
+            out += struct.pack('>I', best_off)[1:]
+            for k in range(1, best_len):
+                kk = buf[p + k:p + k + 4]
+                if len(kk) == 4:
+                    last[kk] = p + k
+            i += best_len
+        else:
+            lit.append(cur[i])
+            i += 1
+    flush()
+    return bytes(out)
+
+
+def write_nta(name, frames, ms, t0):
+    w, h = frames[0].size
+    mont = Image.new('RGB', (w, h * len(frames)))
+    for i, f in enumerate(frames):
+        mont.paste(f.convert('RGB'), (0, i * h))
+    q = mont.quantize(256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    pal = q.getpalette()[:256 * 3]
+    data = bytearray(b'NTA1' + struct.pack('>HHHHHH', w, h, len(frames), ms, t0, 256))
+    for i in range(256):
+        data += bytes(pal[i * 3:i * 3 + 3]) + b'\xff'
+    prev = b''
+    raw = q.tobytes()
+    for i in range(len(frames)):
+        cur = raw[i * w * h:(i + 1) * w * h]
+        z = lz_frame(prev, cur)
+        data += struct.pack('>I', len(z)) + z
+        prev = cur
+    with open(os.path.join(OUT, name + '.nta'), 'wb') as f:
+        f.write(data)
+    print(f'  {name}.nta {w}x{h} x {len(frames)} klatek, {len(data)} B')
+
+
+# ------------------------------------------------------------------ efekty tła (fx/Painter.ts) liczone na hoście
+def windows(spots, seed):
+    r = lcg(seed)
+    out = []
+    for x, y in spots:
+        ph = r() * 100
+        sp = 0.2 + r() * 0.6
+        out.append((x, y, ang_q8(sp), ang_q8(sp * 3.1), ang(ph), ang(ph * 2)))
+    return out
+
+
+def birds(n, box, seed, d=1):
+    r = lcg(seed)
+    bx, by, bw, bh = box
+    lx, ly = bx + r() * bw * 0.6, by + r() * bh * 0.5
+    out = []
+    for i in range(n):
+        x = lx - i * (6 + r() * 6) * d
+        y = ly + (1 if i % 2 else -1) * i * (2 + r() * 2)
+        v = 9 + r() * 3
+        ph = r() * 6.28
+        s = 2 if r() < 0.3 else 1
+        # x Q8, v w px/s Q8, faza skrzydeł t*7+ph w Q8, faza falowania
+        out.append((js_round(x * 256), js_round(y), js_round(v * 256), js_round(ph * 256), ang(ph), s))
+    return out
+
+
+def rays(n, a0, a1, ln, seed):
+    r = lcg(seed)
+    out = []
+    for i in range(n):
+        a = a0 + ((a1 - a0) * (i + r() * 0.6)) / n
+        w = 0.02 + r() * 0.05
+        L = ln * (0.6 + r() * 0.4)
+        ph = r() * 6.28
+        pts = []
+        for e in (a - w, a + w):
+            # koniec promienia i przesunięcie przy kołysaniu (0.02 rad * sin = 1) w 1/16 px
+            pts += [js_round(math.cos(e) * L * 16), js_round(math.sin(e) * L * 16),
+                    js_round(-math.sin(e) * L * 0.02 * 16), js_round(math.cos(e) * L * 0.02 * 16)]
+        out.append(tuple(pts) + (ang(ph),))
+    return out
+
+
+def bg_spots(target, layer):
+    """Migające okna (Windows) z obiektów sceny: prostokąty 1x2 koloru lit, x względem spoczynku warstwy `layer`."""
+    objs = json.load(open(os.path.join(BAKE, target, 'scene.json')))['objects']
+    dx = next(o['x'] for o in objs if o.get('tex') == layer) + 24
+    return [(round(o['x'] - dx), round(o['y'])) for o in objs
+            if o['type'] == 'Rectangle' and o.get('fill') == 0xffbe5a and o['w'] == 1 and o['h'] == 2]
+
+
+def scene_objs(target):
+    return json.load(open(os.path.join(BAKE, target, 'scene.json')))
+
+
+def idle_seq(target, key):
+    a = next(a for a in scene_objs(target)['anims'] if a['key'] == key)
+    return [(int(f[6:]), d) for f, d in a['frames']]
+
+
+def unit_sheet(name, target, keys):
+    """Klatki f_idle0..4 kolejnych postaci w wierszach jednego arkusza."""
+    man = json.load(open(os.path.join(BAKE, target, 'manifest.json')))
+    fw, fh = man[keys[0]]['frames']['f_idle0'][2:]
+    sheet = Image.new('RGBA', (fw * 5, fh * len(keys)))
+    for row, key in enumerate(keys):
+        src = load(target, key)
+        for f in range(5):
+            x, y, w, h = man[key]['frames'][f'f_idle{f}']
+            sheet.paste(src.crop((x, y, x + w, y + h)), (f * fw, row * fh))
+    write_ntx(name, sheet)
+    return fw, fh
+
+
+def sprites(target, prefix):
+    """Postacie (Sprite) z obiektów sceny: (wiersz arkusza, x, y, flip, głębia), klucze tekstur w kolejności wierszy."""
+    keys, out = [], []
+    for o in scene_objs(target)['objects']:
+        if o['type'] != 'Sprite' or not o['tex'].startswith(prefix):
+            continue
+        if o['tex'] not in keys:
+            keys.append(o['tex'])
+        out.append((keys.index(o['tex']), round(o['x']), round(o['y']), 1 if o.get('flip') else 0, o['d']))
+    return keys, out
+
+
+def build():
+    T = {}
+    print('title:')
+    for k in ['title_sky', 'title_clouds', 'title_far', 'title_mid', 'title_ground', 'title_logo', 'title_sub']:
+        write_ntx(k, load('title', k))
+    unit_sheet('title_units', 'title', ['unit_rec_sowa', 'unit_rec_hak'])
+    T['idle'] = idle_seq('title', 'rec_sowa_f_idle')
+    # backdrop 'title': seed 5, orb (196, 150)
+    T['bg'] = {
+        'TITLE': dict(win=windows(bg_spots('title', 'title_mid'), 5 + 9), bird=birds(5, (0, 40, 480, 60), 5 + 4),
+                      ray=rays(9, -math.pi * 0.95, -math.pi * 0.05, 360, 5), ox=196, oy=150, rc=0xffc070, ra=35,
+                      bc=0x1a0c12, bd=1, bx=0, bw=480),
+        'CREW': dict(win=windows(bg_spots('intro6', 'intro_crew_mid'), 40 + 9), bird=birds(5, (0, 40, 480, 60), 40 + 4),
+                     ray=rays(9, -math.pi * 0.95, -math.pi * 0.05, 360, 40), ox=240, oy=148, rc=0xffc070, ra=35,
+                     bc=0x1a0c12, bd=1, bx=0, bw=480),
+        'NOMADS': dict(win=[], bird=[], ray=rays(10, -math.pi * 0.98, -math.pi * 0.02, 380, 4), ox=150, oy=128,
+                       rc=0xffd090, ra=32, bc=0, bd=1, bx=0, bw=480),
+        'RUINS': dict(win=[], bird=birds(4, (0, 30, 480, 40), 7, -1), ray=[], ox=0, oy=0, rc=0, ra=0,
+                      bc=0x0a100c, bd=-1, bx=0, bw=480),
+    }
+
+    print('intro:')
+    layers = {
+        'intro1': ['intro_bomb_pall'],
+        'intro2': ['intro_ruins', 'intro_ruins_fog1', 'intro_ruins_fog2'],
+        'intro3': ['intro_raiders_sky', 'intro_raiders_smoke', 'intro_raiders_far', 'intro_raiders_camp', 'intro_raiders_glow'],
+        'intro4': ['intro_nomads_sky', 'intro_nomads_clouds', 'intro_nomads_far', 'intro_nomads_dunes', 'intro_nomads_near'],
+        'intro5': ['intro_haven_sky', 'intro_haven_clouds', 'intro_haven_far', 'intro_haven_fort'],
+        'intro6': ['intro_crew_sky', 'intro_crew_clouds', 'intro_crew_far', 'intro_crew_mid', 'intro_crew_ground'],
+    }
+    for t, ks in layers.items():
+        for k in ks:
+            write_ntx(k, load(t, k))
+    T['units'] = {}
+    for t, name, prefix in [('intro3', 'intro_raiders_units', 'unit_intro_raider'), ('intro5', 'intro_haven_units', 'unit_intro_haven'),
+                            ('intro6', 'intro_crew_units', 'unit_rec_')]:
+        keys, sp = sprites(t, prefix)
+        order = sorted(keys)
+        sp = [(order.index(keys[r]), x, y, fl, d) for r, x, y, fl, d in sp]
+        fw, fh = unit_sheet(name, t, order)
+        T['units'][name.upper()] = (fw, fh, sorted(sp, key=lambda u: (u[4], u[0])))
+        for k in order:
+            assert idle_seq(t, k[5:] + '_f_idle') == T['idle'], k
+    # oczy w ruinach: pary 1x1 (zielone / czerwone) - lewe x, prawe x, y, kolor
+    objs = scene_objs('intro2')['objects']
+    dots = [o for o in objs if o['type'] == 'Rectangle' and o['w'] == 1 and o['h'] == 1 and o['fill'] in (0xb8ff40, 0xff3a20)]
+    T['eyes'] = [(js_round(dots[i]['x'] - 0.5), js_round(dots[i + 1]['x'] - 0.5), js_round(dots[i]['y'] - 0.5), dots[i]['fill'])
+                 for i in range(0, len(dots), 2)]
+    # wybuch: klatki co 100 ms od t = 2.5 s planszy
+    fdir = os.path.join(BAKE, 'intro1', 'frames')
+    ts = json.load(open(os.path.join(fdir, 'index.json')))
+    if '--no-anim' not in sys.argv:
+        write_nta('intro_bomb', [Image.open(os.path.join(fdir, '%03d.png' % i)) for i in range(len(ts))], 100, js_round(ts[0] * 1000))
+    return T
+
+
+def gen_c(T):
+    h = ["""/* Wygenerowane przez tools/amiga/pack_scenes.py - nie edytować. Efekty tła (fx/Painter.ts) i rozstawienie postaci. */
+#ifndef SCENES_H
+#define SCENES_H
+#include <stdint.h>
+
+typedef struct { int16_t x, y; int16_t w1, w2; uint8_t ph1, ph2; } BgWindow;   /* migające okno (Windows) */
+typedef struct { int32_t x_q8; int16_t y; int16_t v_q8; int16_t ph_q8; uint8_t ph; uint8_t s; } BgBird;
+/* promień: dwa końce (x, y, dx, dy w 1/16 px; d* = przesunięcie przy kołysaniu sin = 1), faza pulsowania */
+typedef struct { int16_t e[8]; uint8_t ph; } BgRay;
+typedef struct {
+  const BgWindow *win; int nwin;
+  const BgBird *bird; int nbird;
+  const BgRay *ray; int nray;
+  int16_t orb_x, orb_y; uint32_t ray_col; int16_t ray_milli;   /* krycie promieni w 1/1000 */
+  uint32_t bird_col; int8_t bird_dir; int16_t bird_x, bird_w;
+} BgFx;
+typedef struct { uint8_t frame; uint16_t ms; } AnimStep;
+/* postać: wiersz arkusza, stopy (x, y), lustro, głębia (kolejność rysowania; ułamki z gry x10) */
+typedef struct { uint8_t row; int16_t x, y; uint8_t flip; uint8_t depth10; } UnitPlace;
+typedef struct { int fw, fh, n; const UnitPlace *u; } UnitSet;
+typedef struct { int16_t xa, xb, y; uint32_t col; } EyePair;
+
+#define W_RAY_SWAY %d
+#define W_RAY_PULSE %d
+#define W_BIRD %d
+#define UNIT_IDLE_STEPS %d
+extern const AnimStep UNIT_IDLE[UNIT_IDLE_STEPS];
+""" % (ang_q8(0.15), ang_q8(0.6), ang_q8(0.8), len(T['idle']))]
+    c = ['/* Wygenerowane przez tools/amiga/pack_scenes.py - nie edytować. */\n#include "scenes.h"\n\n']
+    c.append('const AnimStep UNIT_IDLE[UNIT_IDLE_STEPS] = {' + ', '.join('{%d, %d}' % s for s in T['idle']) + '};\n')
+    for name, b in T['bg'].items():
+        h.append('extern const BgFx BG_%s;\n' % name)
+        if b['win']:
+            c.append('static const BgWindow %s_WIN[] = {\n' % name + ''.join('  {%d, %d, %d, %d, %d, %d},\n' % w for w in b['win']) + '};\n')
+        if b['bird']:
+            c.append('static const BgBird %s_BIRD[] = {\n' % name + ''.join('  {%d, %d, %d, %d, %d, %d},\n' % x for x in b['bird']) + '};\n')
+        if b['ray']:
+            c.append('static const BgRay %s_RAY[] = {\n' % name + ''.join('  {{%s}, %d},\n' % (', '.join(map(str, r[:8])), r[8]) for r in b['ray']) + '};\n')
+        ref = lambda k, s: ('%s_%s, %d' % (name, s, len(b[k]))) if b[k] else '0, 0'
+        c.append('const BgFx BG_%s = {%s, %s, %s, %d, %d, 0x%06x, %d, 0x%06x, %d, %d, %d};\n\n' % (
+            name, ref('win', 'WIN'), ref('bird', 'BIRD'), ref('ray', 'RAY'), b['ox'], b['oy'], b['rc'], b['ra'], b['bc'], b['bd'], b['bx'], b['bw']))
+    for name, (fw, fh, sp) in T['units'].items():
+        h.append('extern const UnitSet %s;\n' % name)
+        c.append('static const UnitPlace %s_U[] = {%s};\n' % (name, ', '.join('{%d, %d, %d, %d, %d}' % (r, x, y, fl, round(d * 10)) for r, x, y, fl, d in sp)))
+        c.append('const UnitSet %s = {%d, %d, %d, %s_U};\n' % (name, fw, fh, len(sp), name))
+    h.append('#define RUIN_EYES %d\nextern const EyePair RUIN_EYE[RUIN_EYES];\n\n#endif\n' % len(T['eyes']))
+    c.append('const EyePair RUIN_EYE[RUIN_EYES] = {%s};\n' % ', '.join('{%d, %d, %d, 0x%06x}' % e for e in T['eyes']))
+    open(os.path.join(SRC, 'scenes.h'), 'w').write(''.join(h))
+    open(os.path.join(SRC, 'scenes.c'), 'w').write(''.join(c))
+    print('OK: amiga/src/data/scenes.{h,c}')
+
+
+if __name__ == '__main__':
+    gen_c(build())
