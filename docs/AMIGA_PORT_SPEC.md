@@ -434,7 +434,7 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), 
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż, misja (etap 1: świat, mgła, ruch; etap 2: walka turowa); ⏳ zdolności / przedmioty / interakcje i pełny HUD misji, rozliczenie, zapis z menu, opcje, mapa
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż, misja (etap 1: świat, mgła, ruch; etap 2: walka turowa; etap 3: menu akcji, zdolności, przedmioty, interakcje, ewakuacja); ⏳ HUD misji (karta postaci, kości), rozliczenie, rozliczenie, zapis z menu, opcje, mapa
    regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
@@ -532,3 +532,11 @@ fire: ruch `combat_stride` albo atak `combat_attack_target`, Esc: menu tury - za
 `ai_step` co 160 ms. Koniec misji (`MSIG_FINISH`) - `apply_mission_result` i powrót do Przystani z komunikatem
 (ekran rozliczenia - kolejny etap). Dziennik: rzuty ataku (k20, modyfikator, KP, stopień). Test:
 `gl_host ... "40:enemy 42:OK ..."` (`enemy` = kursor na najbliższego wroga).
+
+Misja, etap 3: menu akcji pod Esc (port `refreshActions`): w walce Marsz / Krok / Atak (z karą PWA), zdolności z kosztem
+w akcjach i liczbą użyć, Przedmioty (podmenu), interakcja z obiektem obok, Odłóż turę, Koniec tury, Odwrót; w eksploracji
+zdolności dozwolone poza walką, przedmioty, interakcja, Następny najemnik, Odwrót. Tryby celowania (Krok, Atak,
+zdolność na wroga / sojusznika / obszar, przedmiot) z podpowiedzią; fire na obiekcie = podejście i interakcja, dla skrzyń,
+drzwi i urządzeń okno wyboru umiejętności z szansą (`hit_chances`) jak `pickThingSkill`. Sygnały misji: skrzynia (rzut,
+pułapka, otwarte wieko), zamek / hakowanie, interakcja (cel zabrany, gniazdo zniszczone), cel wykonany, ewakuacja
+(`mission_can_extract`), odwrót (`mission_retreat`), pozostałości na terenie jak `leftovers()`.

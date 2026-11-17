@@ -57,4 +57,33 @@ void ui_dialog_open(UiDialog *d, const char *title, const char *body, int n, con
 int ui_dialog_input(UiDialog *d, unsigned pressed);
 void ui_dialog_draw(const UiDialog *d);
 
+/* okno wyboru z listą przycisków pod tekstem (hud.ask z wieloma opcjami); Esc = opcja 0 */
+#define UI_CHOICE_MAX 8
+typedef struct {
+  int open, focus, n, w;
+  char title[48], body[400];
+  char label[UI_CHOICE_MAX][64];
+  int kind[UI_CHOICE_MAX];
+} UiChoice;
+void ui_choice_open(UiChoice *c, const char *title, const char *body, int w);
+void ui_choice_add(UiChoice *c, const char *label, int kind);
+int ui_choice_input(UiChoice *c, unsigned pressed);   /* -1 albo wybrana opcja */
+void ui_choice_draw(const UiChoice *c);
+
+/* menu listy (pasek akcji): pozycje z kosztem; rysowane w (x, y) od dołu w górę */
+#define UI_MENU_MAX 24
+typedef struct {
+  int open, focus, n;
+  char title[48];
+  char label[UI_MENU_MAX][48];
+  int8_t cost[UI_MENU_MAX];   /* -1 brak, -2 reakcja */
+  uint8_t enabled[UI_MENU_MAX], active[UI_MENU_MAX];
+  int id[UI_MENU_MAX];
+  char tip[UI_MENU_MAX][160];
+} UiMenu;
+void ui_menu_clear(UiMenu *m, const char *title);
+void ui_menu_add(UiMenu *m, int id, const char *label, int cost, int enabled, int active, const char *tip);
+int ui_menu_input(UiMenu *m, unsigned pressed);   /* id wybranej pozycji, -1 nic, -2 zamknięte (Esc) */
+void ui_menu_draw(const UiMenu *m, int x, int y_bottom);
+
 #endif

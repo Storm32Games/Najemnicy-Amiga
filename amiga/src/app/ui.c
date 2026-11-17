@@ -224,3 +224,110 @@ void ui_dialog_draw(const UiDialog *d) {
     bx -= 6;
   }
 }
+
+/* ------------------------------------------------------------------ okno wyboru */
+void ui_choice_open(UiChoice *c, const char *title, const char *body, int w) {
+  memset(c, 0, sizeof *c);
+  c->open = 1;
+  c->w = w;
+  snprintf(c->title, sizeof c->title, "%s", title);
+  snprintf(c->body, sizeof c->body, "%s", body);
+}
+
+void ui_choice_add(UiChoice *c, const char *label, int kind) {
+  if (c->n >= UI_CHOICE_MAX) return;
+  snprintf(c->label[c->n], sizeof c->label[0], "%s", label);
+  latin2_upper(c->label[c->n]);
+  c->kind[c->n] = kind;
+  if (kind == BTN_PRIMARY) c->focus = c->n;
+  c->n++;
+}
+
+int ui_choice_input(UiChoice *c, unsigned pressed) {
+  if (!c->open) return -1;
+  if (pressed & IN_UP && c->focus > 0) c->focus--;
+  if (pressed & IN_DOWN && c->focus < c->n - 1) c->focus++;
+  if (pressed & IN_BACK) {
+    c->open = 0;
+    return 0;
+  }
+  if (pressed & IN_OK) {
+    c->open = 0;
+    return c->focus;
+  }
+  return -1;
+}
+
+void ui_choice_draw(const UiChoice *c) {
+  int bh, h, x, y, i;
+  if (!c->open) return;
+  bh = ui_text_h(c->body, c->w - 20, 2);
+  h = 26 + bh + 8 + c->n * 19 + 4;
+  ui_window(c->w, h, c->title, &x, &y);
+  ui_text(x + 10, y + 22, c->body, PAL_TEXT, c->w - 20, 2, 0);
+  for (i = 0; i < c->n; i++) ui_button(x + 10, y + 26 + bh + 8 + i * 19, c->w - 20, 15, c->label[i], c->kind[i], c->focus == i, 1);
+}
+
+/* ------------------------------------------------------------------ menu akcji */
+void ui_menu_clear(UiMenu *m, const char *title) {
+  int open = m->open, focus = m->focus;
+  memset(m, 0, sizeof *m);
+  m->open = open;
+  m->focus = focus;
+  snprintf(m->title, sizeof m->title, "%s", title);
+}
+
+void ui_menu_add(UiMenu *m, int id, const char *label, int cost, int enabled, int active, const char *tip) {
+  if (m->n >= UI_MENU_MAX) return;
+  m->id[m->n] = id;
+  snprintf(m->label[m->n], sizeof m->label[0], "%s", label);
+  m->cost[m->n] = (int8_t)cost;
+  m->enabled[m->n] = (uint8_t)enabled;
+  m->active[m->n] = (uint8_t)active;
+  snprintf(m->tip[m->n], sizeof m->tip[0], "%s", tip ? tip : "");
+  m->n++;
+}
+
+int ui_menu_input(UiMenu *m, unsigned pressed) {
+  if (!m->open || !m->n) return -1;
+  if (m->focus >= m->n) m->focus = m->n - 1;
+  if (pressed & IN_UP && m->focus > 0) m->focus--;
+  if (pressed & IN_DOWN && m->focus < m->n - 1) m->focus++;
+  if (pressed & IN_BACK) {
+    m->open = 0;
+    return -2;
+  }
+  if (pressed & IN_OK) {
+    if (!m->enabled[m->focus]) {
+      app_sfx("error", 128, 256);
+      return -1;
+    }
+    return m->id[m->focus];
+  }
+  return -1;
+}
+
+void ui_menu_draw(const UiMenu *m, int x, int yb) {
+  const int W = 150, RH = 12;
+  int h = 14 + m->n * RH + 4, y = yb - h, i;
+  if (!m->open) return;
+  ui_panel(x, y, W, h, PAL_EDGE_HI);
+  font_draw((float)(x + 5), (float)(y + 3), m->title, PAL_AMBER, 255, FONT_OUTLINE, 0, 1);
+  for (i = 0; i < m->n; i++) {
+    int ry = y + 14 + i * RH, foc = i == m->focus, a = m->enabled[i] ? 255 : 110;
+    char c[8] = "";
+    if (foc) {
+      r2d_rect((float)(x + 2), (float)ry, W - 4, RH - 1, 0x3a2c1e, 255);
+      r2d_frame((float)(x + 2), (float)ry, W - 4, RH - 1, PAL_EDGE_HI, 255);
+    }
+    font_draw((float)(x + 6), (float)(ry + 2), m->label[i], m->active[i] ? PAL_AMBER : foc ? 0xffffff : PAL_TEXT, a, FONT_OUTLINE, 0, 1);
+    if (m->cost[i] >= 0) {
+      int k;
+      for (k = 0; k < m->cost[i] && k < 3; k++) c[k] = (char)0x8a;   /* ◆ za akcję */
+      c[k] = 0;
+      if (!m->cost[i]) snprintf(c, sizeof c, "0");
+    } else if (m->cost[i] == -2) snprintf(c, sizeof c, "R");
+    font_draw_at((float)(x + W - 6), (float)(ry + 2), 1, 0, c, PAL_AMBER, a, FONT_OUTLINE, 0, 1);
+  }
+  if (m->focus < m->n && m->tip[m->focus][0]) ui_tip(x + W, y + 14 + m->focus * RH - 12, m->tip[m->focus]);
+}

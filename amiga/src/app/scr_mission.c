@@ -15,6 +15,8 @@
 #include "../gfx/img.h"
 #include "../core/frontend.h"
 #include "../core/combat.h"
+#include "../core/rules.h"
+#include "../core/character.h"
 #include "../data/gamedata.h"
 #include "../data/assets.h"
 
@@ -64,7 +66,8 @@ static uint8_t biome;
 static const char *const BIOME_KEYS[4] = {"ruins", "wastes", "industrial", "bunker"};
 static const uint32_t BIOME_BG[4] = {0x141217, 0x141316, 0x121416, 0x0a0b0d};
 
-typedef struct { AtlasImg img; int16_t x, y; int32_t depth; int16_t cell; uint8_t flip, flat; } Spr;
+typedef struct { AtlasImg img; int16_t x, y; int32_t depth; int16_t cell; uint8_t flip, flat, tag, hidden; } Spr;
+enum { TAG_NONE, TAG_CRATE, TAG_OBJECTIVE, TAG_NEST };
 static Spr spr[MAX_SPR];
 static int n_spr;
 static uint8_t cell_state[GRID_N];   /* 0 nieodkryte, 1 zapamiętane, 2 widoczne */
@@ -130,6 +133,8 @@ static Spr *place(int gx, int gy, const char *key, int32_t depth, int dx, int dy
   s->cell = (int16_t)gidx(gx, gy);
   s->flip = 0;
   s->flat = 0;
+  s->tag = TAG_NONE;
+  s->hidden = 0;
   n_spr++;
   return s;
 }
@@ -283,15 +288,23 @@ static void build_world(void) {
     }
   }
   /* skrzynie, cel "odzyskaj", obiekty celów */
-  for (i = 0; i < m->n_crates; i++) place(m->crates[i].gx, m->crates[i].gy, "loot_crate", obj_depth(m->crates[i].gx, m->crates[i].gy, L_PROP), 0, 0);
-  if (m->has_obj && mission.item_thing >= 0 && !mission.things[mission.item_thing].done)
-    place(m->obj.gx, m->obj.gy, "objective", obj_depth(m->obj.gx, m->obj.gy, L_PROP), 0, 0);
+  for (i = 0; i < m->n_crates; i++) {
+    Spr *c = place(m->crates[i].gx, m->crates[i].gy, "loot_crate", obj_depth(m->crates[i].gx, m->crates[i].gy, L_PROP), 0, 0);
+    if (c) c->tag = TAG_CRATE;
+  }
+  if (m->has_obj && mission.item_thing >= 0 && !mission.things[mission.item_thing].done) {
+    Spr *o = place(m->obj.gx, m->obj.gy, "objective", obj_depth(m->obj.gx, m->obj.gy, L_PROP), 0, 0);
+    if (o) o->tag = TAG_OBJECTIVE;
+  }
   for (i = 0; i < mission.n_things; i++) {
     const MissionThing *th = &mission.things[i];
     if (!th->objective || (th->kind != TH_DEVICE && th->kind != TH_NEST) || (th->kind == TH_NEST && th->done)) continue;
     if (th->kind == TH_DEVICE) snprintf(k, sizeof k, "prop_terminal_0_0");
     else snprintf(k, sizeof k, "mission_nest_%d", (th->gx * 7 + th->gy * 13) % 3);
-    place(th->gx, th->gy, k, obj_depth(th->gx, th->gy, L_PROP), 0, 0);
+    {
+      Spr *n = place(th->gx, th->gy, k, obj_depth(th->gx, th->gy, L_PROP), 0, 0);
+      if (n && th->kind == TH_NEST) n->tag = TAG_NEST;
+    }
   }
   /* strefa ewakuacji: słupki w rogach (lekko na zewnątrz) */
   {
@@ -352,15 +365,21 @@ typedef struct {
 } UnitV;
 static UnitV units[MAX_UNITS];
 static int n_units;
-static AtlasImg img_shadow, img_cursor;
+static AtlasImg img_shadow, img_cursor, img_crate_open;
+static int crate_open_ax, crate_open_ay;
+
+/* obraz obiektu na polu (tag) - podmiana / ukrycie po interakcji */
+static Spr *spr_at(Pos p, int tag) {
+  int i;
+  for (i = 0; i < n_spr; i++) if (spr[i].tag == tag && spr[i].cell == gidx(p.gx, p.gy)) return &spr[i];
+  return NULL;
+}
 static int leader;
 static Pos cursor;
 static float cam_x, cam_y;
 static int rep_ms;
 static TickClock clock;
 static UiDialog dlg;
-enum { D_RETREAT, D_TURN };
-static int dlg_kind;
 
 /* ---- kolejka sygnałów (dane kopiowane: bufory logiki są ważne tylko do następnej akcji) */
 #define EV_MAX 8
@@ -389,6 +408,19 @@ static Actor *ai_actor;
 static int turn_banner_enemy;
 static Search reach;
 static int reach_sp, reach_ok;
+
+/* ---- menu akcji, celowanie, interakcje, pytania */
+static UiMenu menu;
+static UiChoice choice;
+enum { MD_NONE, MD_STEP, MD_STRIKE, MD_ABILITY, MD_ITEM };
+static int tmode, tmode_arg, sub_items;
+static char tmode_hint[120];
+enum { CH_SKILL, CH_AFTER, CH_EXTRACT, CH_RETREAT };
+static int choice_kind;
+static uint8_t choice_skill[UI_CHOICE_MAX];
+static MissionThing *pending_th, *choice_th;
+static int complete_ask, extract_asked, after_explore;
+enum { A_STRIDE = 1, A_STEP, A_STRIKE, A_ITEMS, A_BACK, A_INTERACT, A_DELAY, A_END, A_RETREAT, A_LEADER, A_ABIL = 100, A_ITEM = 200 };
 
 /* ---- napisy nad postaciami, baner, dziennik */
 typedef struct { float x, y; char text[24]; uint32_t col; int ms; } Float;
@@ -606,11 +638,26 @@ static void on_combat(void *ctx, const CombatSignal *cs) {
 static void on_mission(void *ctx, const MissionSignal *ms) {
   Sig *s;
   (void)ctx;
-  if (ms->kind != MSIG_SPOTTED && ms->kind != MSIG_FINISH && ms->kind != MSIG_PICKUP) return;
+  if (ms->kind == MSIG_VISIBILITY || ms->kind == MSIG_OBJECTIVE) return;
   s = push_sig(100 + ms->kind);
   if (!s) return;
   s->a = ms->by;
-  s->dmg = ms->scrap;
+  s->dmg = ms->kind == MSIG_CRATE ? ms->trap_damage : ms->scrap;
+  if (ms->roll) {
+    s->has_d20 = 1;
+    s->d20 = *ms->roll;
+  }
+  if (ms->attempt) {
+    s->has_d20 = 1;
+    s->d20 = ms->attempt->roll;
+    s->from = ms->attempt->opened;
+    s->to = ms->attempt->alarm;
+  }
+  if (ms->thing) {
+    s->path[0] = mkpos(ms->thing->gx, ms->thing->gy);
+    s->ambush = ms->thing->kind;
+    s->ranged = ms->thing->done;
+  }
 }
 
 /* ------------------------------------------------------------------ wejście / wyjście */
@@ -627,6 +674,10 @@ static void enter(void) {
   wait_ms = banner_ms = 0;
   turn = NULL;
   dlg.open = 0;
+  menu.open = choice.open = 0;
+  tmode = MD_NONE;
+  sub_items = complete_ask = extract_asked = after_explore = 0;
+  pending_th = choice_th = NULL;
   if (g_job < 0 || g_job >= g_camp.n_contracts) return;
   c = &g_camp.contracts[g_job];
   biome = c->biome;
@@ -659,6 +710,7 @@ static void enter(void) {
     int ax, ay;
     art("fx_shadow", &img_shadow, &ax, &ay);
     art("fx_cursor", &img_cursor, &ax, &ay);
+    art("loot_crate_open", &img_crate_open, &crate_open_ax, &crate_open_ay);
   }
   for (i = 0; i < mission.n_actors; i++) make_unit(mission.actors[i]);
   atlas_finish(&atlas);
@@ -825,6 +877,62 @@ static void play(const Sig *s) {
         app_sfx("coin", 256, 256);
       }
       break;
+    case 100 + MSIG_DISCOVER:
+      if (s->a) float_above(s->a, "!", 0xffd040);
+      app_sfx("pickup", 128, 256);
+      break;
+    case 100 + MSIG_CRATE:
+      if (s->a && s->has_d20) {
+        short_name(s->a->ch, an, sizeof an);
+        snprintf(buf, sizeof buf, "%s: skrzynia \200 k20 %d%s%d = %d vs KT %d \200 %s", an, s->d20.d20, s->d20.mod >= 0 ? "+" : "", s->d20.mod, s->d20.total, s->d20.dc, DEGREE_NAMES[s->d20.degree]);
+        push_log(buf, s->d20.degree >= 2 ? PAL_GOOD : PAL_BAD);
+        if (s->d20.degree == 0) {
+          snprintf(buf, sizeof buf, "-%d", s->dmg);
+          float_above(s->a, buf, 0xff5040);
+          pose(ua, P_HURT);
+          app_sfx("explosion", 256, 256);
+        } else if (s->d20.degree == 1) float_above(s->a, s->ranged ? "ZACI\312TA" : "ZAMKNI\312TA", 0xbbbbbb);
+        else {
+          float_above(s->a, "\243up!", 0xffd040);
+          app_sfx("coin", 256, 256);
+        }
+      }
+      if (s->ranged && (!s->has_d20 || s->d20.degree != 1)) {
+        Spr *c = spr_at(s->path[0], TAG_CRATE);
+        if (c) {
+          c->img = img_crate_open;
+          c->x = (int16_t)(iso_x(s->path[0].gx, s->path[0].gy) - crate_open_ax);
+          c->y = (int16_t)(iso_y(s->path[0].gx, s->path[0].gy) - crate_open_ay);
+        }
+      }
+      wait_ms = 500;
+      break;
+    case 100 + MSIG_LOCK:
+      if (s->a && s->has_d20) {
+        short_name(s->a->ch, an, sizeof an);
+        snprintf(buf, sizeof buf, "%s: %s \200 k20 %d%s%d = %d vs ST %d \200 %s", an, s->ambush == TH_DEVICE ? "hakowanie" : "zamek", s->d20.d20, s->d20.mod >= 0 ? "+" : "", s->d20.mod,
+                 s->d20.total, s->d20.dc, DEGREE_NAMES[s->d20.degree]);
+        push_log(buf, s->d20.degree >= 2 ? PAL_GOOD : PAL_BAD);
+        float_above(s->a, s->from ? "OTWARTE" : s->to ? "ALARM!" : s->d20.degree >= 2 ? "POST\312P" : "NIEUDANE", s->from ? PAL_GOOD : s->to ? 0xff5040 : 0xbbbbbb);
+      }
+      wait_ms = 500;
+      break;
+    case 100 + MSIG_INTERACT:
+      if (s->a) {
+        static const char *const WHAT[6] = {"Skrzynia", "Cel zabrany!", "Uwolniony!", "Drzwi", "Urz\261dzenie", "Gniazdo zniszczone!"};
+        float_above(s->a, WHAT[s->ambush < 6 ? s->ambush : 0], 0xffd040);
+        if (s->ambush == TH_ITEM && spr_at(s->path[0], TAG_OBJECTIVE)) spr_at(s->path[0], TAG_OBJECTIVE)->hidden = 1;
+        if (s->ambush == TH_NEST && s->ranged && spr_at(s->path[0], TAG_NEST)) spr_at(s->path[0], TAG_NEST)->hidden = 1;
+        app_sfx("pickup", 256, 256);
+      }
+      wait_ms = 300;
+      break;
+    case 100 + MSIG_COMPLETE:
+      complete_ask = 1;
+      if (!mission_needs_extraction(&mission)) show_banner("CEL WYKONANY", NULL, PAL_GOOD);
+      push_log("Cel zlecenia wykonany.", PAL_GOOD);
+      app_sfx("radio", 179, 256);
+      break;
     case 100 + MSIG_FINISH:
       mode = M_OVER;
       over_ms = 2500;
@@ -832,6 +940,12 @@ static void play(const Sig *s) {
       break;
   }
 }
+
+
+static void set_mode(int m, int arg, const char *hint);
+static void use_ability_at(Actor *a, int id, Pos cell, Actor *who);
+static void use_item_at(Actor *a, int inv, Pos cell, Actor *who);
+static void interact_with(Actor *a, MissionThing *th);
 
 /* drugi etap ataku: wynik nad celem po animacji */
 static Sig pending_hit;
@@ -871,6 +985,30 @@ static void after_action(const ActionOutcome *o) {
 static void player_ok(void) {
   Actor *a = turn->actor, *who = visible_actor_at(cursor);
   ActionOutcome o;
+  MissionThing *th;
+  if (tmode == MD_STEP) {
+    o = combat_step(&mission.combat, a, cursor);
+    set_mode(MD_NONE, 0, NULL);
+    after_action(&o);
+    return;
+  }
+  if (tmode == MD_ABILITY) {
+    use_ability_at(a, tmode_arg, cursor, who);
+    return;
+  }
+  if (tmode == MD_ITEM) {
+    use_item_at(a, tmode_arg, cursor, who);
+    return;
+  }
+  if (tmode == MD_STRIKE && !(who && who->side == SIDE_ENEMY)) {
+    push_log("Wska\277 wroga.", PAL_DIM);
+    return;
+  }
+  th = mission_thing_at(&mission, cursor.gx, cursor.gy);
+  if (!who && th && !th->done) {
+    interact_with(a, th);
+    return;
+  }
   if (who && who->side == SIDE_ENEMY) {
     NormWeapon w[2];
     if (turn->actions < 1) {
@@ -879,9 +1017,406 @@ static void player_ok(void) {
     }
     get_weapons(a->ch, w);
     o = combat_attack_target(&mission.combat, a, who, &w[0]);
+    set_mode(MD_NONE, 0, NULL);
   } else if (who) return;
   else o = combat_stride(&mission.combat, a, cursor);
   after_action(&o);
+}
+
+/* ------------------------------------------------------------------ menu akcji (refreshActions) */
+static Actor *actor_now(void) {
+  if (mode == M_PLAYER && turn) return turn->actor;
+  if (mode == M_EXPLORE && mission.pcs[leader]->state == AST_UP) return mission.pcs[leader];
+  return NULL;
+}
+
+static MissionThing *thing_near(const Actor *a) {
+  int i;
+  for (i = 0; i < mission.n_things; i++) {
+    MissionThing *th = &mission.things[i];
+    if (!th->done && cheb(apos(a), mkpos(th->gx, th->gy)) <= 1) return th;
+  }
+  return NULL;
+}
+
+static int consumable_ok(const Actor *a, int inv, int free_) {
+  const ItemDef *d = &ITEM_DEFS[a->ch->inv[inv].id];
+  (void)free_;
+  return d->type == ITYPE_CONSUMABLE && d->consumable;
+}
+
+static const char *const INTERACT_NAME[6] = {"Otw\363rz skrzyni\352", "Zabierz cel", "Uwolnij", "Otw\363rz drzwi", "Hakuj", "Zniszcz gniazdo"};
+
+static void build_menu(void) {
+  Actor *a = actor_now();
+  int free_ = mode != M_PLAYER, n = free_ ? 99 : turn->actions, i, cnt = 0;
+  char buf[64], tip[160], nm[32];
+  MissionThing *th;
+  if (!a) {
+    menu.open = 0;
+    return;
+  }
+  short_name(a->ch, nm, sizeof nm);
+  if (sub_items) {
+    snprintf(buf, sizeof buf, "PRZEDMIOTY \200 %s", nm);
+    latin2_upper(buf);
+    ui_menu_clear(&menu, buf);
+    for (i = 0; i < a->ch->n_inv; i++) {
+      const ItemDef *d = &ITEM_DEFS[a->ch->inv[i].id];
+      int ok;
+      if (!consumable_ok(a, i, free_)) continue;
+      ok = !free_ || explore_item_ok(a->ch->inv[i].id);
+      if (a->ch->inv[i].qty > 1) snprintf(buf, sizeof buf, "%s x%d", d->name, a->ch->inv[i].qty);
+      else snprintf(buf, sizeof buf, "%s", d->name);
+      snprintf(tip, sizeof tip, "%s: %s%s", d->name, d->desc ? d->desc : "", ok ? "" : " \200 tylko w walce");
+      ui_menu_add(&menu, A_ITEM + i, buf, free_ ? -1 : d->consumable->actions, ok && (free_ || d->consumable->actions <= n), tmode == MD_ITEM && tmode_arg == i, tip);
+    }
+    ui_menu_add(&menu, A_BACK, "Wr\363\346", -1, 1, 0, "Powr\363t do akcji.");
+    if (!free_) ui_menu_add(&menu, A_END, "Koniec tury", -1, 1, 0, "Zako\361cz tur\352.");
+    return;
+  }
+  ui_menu_clear(&menu, free_ ? "EKSPLORACJA" : nm);
+  if (!free_) {
+    NormWeapon w[2];
+    int map = a->map_n > 2 ? 2 : a->map_n, agile = 0;
+    get_weapons(a->ch, w);
+    agile = (w[0].traits & WT_AGILE) != 0;
+    ui_menu_add(&menu, A_STRIDE, "Marsz", 1, n >= 1, tmode == MD_NONE, "Marsz \200 do swojej Pr\352dko\266ci za 1 akcj\352 (niebieskie pola 1 akcja, \277\363\263te 2, pomara\361czowe 3).");
+    ui_menu_add(&menu, A_STEP, "Krok", 1, n >= 1, tmode == MD_STEP, "Krok \200 przesu\361 si\352 o 1 pole.");
+    if (map) snprintf(buf, sizeof buf, "Atak: %s (-%d)", w[0].name, (agile ? 4 : 5) * map);
+    else snprintf(buf, sizeof buf, "Atak: %s", w[0].name);
+    snprintf(tip, sizeof tip, "Atak: %s, %s. Kolejne ataki: kara PWA.", w[0].name, w[0].range ? "dystansowa" : "wr\352cz");
+    ui_menu_add(&menu, A_STRIKE, buf, 1, n >= 1, tmode == MD_STRIKE, tip);
+  }
+  for (i = 0; i < a->ch->n_abilities; i++) {
+    int id = a->ch->abilities[i], left, ok, cost;
+    const AbilityDef *ab = &ABILITY_DEFS[id];
+    if (id == ABIL_STRIKE || (free_ && id == ABIL_STAND)) continue;
+    if (!free_ && id == ABIL_STAND && !has_cond(a->ch, COND_PRONE)) continue;
+    if (id == ABIL_RAISE_SHIELD && a->ch->equip[SLOT_SHIELD].id == ITEM_NONE) continue;
+    left = uses_left(a->ch, (uint8_t)id);
+    if (ab->uses) snprintf(buf, sizeof buf, "%s (%d)", ab->name, left);
+    else snprintf(buf, sizeof buf, "%s", ab->name);
+    snprintf(tip, sizeof tip, "%s: %s", ab->name, ab->desc ? ab->desc : "");
+    if (free_) {
+      ok = explore_ability_ok((uint8_t)id) && left > 0;
+      if (!explore_ability_ok((uint8_t)id)) strncat(tip, " \200 tylko w walce", sizeof tip - strlen(tip) - 1);
+      ui_menu_add(&menu, A_ABIL + id, buf, -1, ok, tmode == MD_ABILITY && tmode_arg == id, tip);
+    } else {
+      int reaction = ab->actions == ACTIONS_REACTION;
+      cost = reaction ? -2 : ab->actions;
+      ok = !reaction && left > 0 && !(ab->actions == 0 && ((a->used_free >> id) & 1)) && (reaction || ab->actions <= n);
+      ui_menu_add(&menu, A_ABIL + id, buf, cost, ok, tmode == MD_ABILITY && tmode_arg == id, tip);
+    }
+  }
+  for (i = 0; i < a->ch->n_inv; i++) if (consumable_ok(a, i, free_)) cnt += a->ch->inv[i].qty;
+  if (cnt) {
+    snprintf(buf, sizeof buf, "Przedmioty (%d)", cnt);
+    ui_menu_add(&menu, A_ITEMS, buf, -1, 1, 0, "U\277yj przedmiotu z plecaka.");
+  }
+  th = thing_near(a);
+  if (th) ui_menu_add(&menu, A_INTERACT, INTERACT_NAME[th->kind < 6 ? th->kind : 0], free_ ? -1 : 1, free_ || n >= 1, 0, "Interakcja z obiektem obok.");
+  if (!free_) {
+    ui_menu_add(&menu, A_DELAY, "Od\263\363\277 tur\352", -1, 1, 0, "Przesu\361 swoj\261 tur\352 na koniec rundy.");
+    ui_menu_add(&menu, A_END, "Koniec tury", -1, 1, 0, "Zako\361cz tur\352.");
+  } else {
+    int up = 0;
+    for (i = 0; i < mission.n_pcs; i++) up += mission.pcs[i]->state == AST_UP;
+    if (up > 1) ui_menu_add(&menu, A_LEADER, "Nast\352pny najemnik", -1, 1, 0, "Prowadzi kolejny najemnik (reszta idzie za nim).");
+  }
+  ui_menu_add(&menu, A_RETREAT, mission_objective_done(&mission) ? "Powr\363t do Przystani" : "Odwr\363t", -1, 1, 0, "Opu\266\346 teren zlecenia.");
+}
+
+static void set_mode(int m, int arg, const char *hint) {
+  tmode = m;
+  tmode_arg = arg;
+  snprintf(tmode_hint, sizeof tmode_hint, "%s", hint ? hint : "");
+  menu.open = 0;
+  reach_ok = 0;
+}
+
+static void ask_retreat(void) {
+  int done = mission_objective_done(&mission) && mission.obj_type != OBJ_RESCUE;
+  ui_choice_open(&choice, done ? "Powr\363t?" : "Odwr\363t?",
+                 done ? "Cel zlecenia jest wykonany \200 wracacie z nagrod\261. Czego nie zabrali\266cie, zostaje na miejscu."
+                      : "Wycofujecie si\352 ze zlecenia. Nagroda za cel przepada, ale zachowujecie \263upy i do\266wiadczenie za pokonanych wrog\363w.",
+                 300);
+  ui_choice_add(&choice, "Zosta\361", BTN_PLAIN);
+  ui_choice_add(&choice, done ? "Powr\363t" : "Odwr\363t", done ? BTN_PRIMARY : BTN_DANGER);
+  choice.focus = 0;
+  choice_kind = CH_RETREAT;
+}
+
+/* wybór umiejętności do skrzyni / drzwi / urządzenia (pickThingSkill) */
+static void ask_skill(Actor *a, MissionThing *th) {
+  char body[400], lab[64], nm[32];
+  int i, best = -1, best_pct = -1, n = 0;
+  static const uint8_t CRATE_S[3] = {SKILL_THIEVERY, SKILL_CRAFTING, SKILL_ATHLETICS};
+  static const uint8_t LOCK_S[2] = {SKILL_THIEVERY, SKILL_ATHLETICS};
+  static const uint8_t HACK_S[2] = {SKILL_CRAFTING, SKILL_THIEVERY};
+  const uint8_t *list = th->kind == TH_DOOR ? LOCK_S : th->kind == TH_DEVICE ? HACK_S : CRATE_S;
+  int nl = th->kind == TH_CRATE ? 3 : 2, tools = has_lockpick(a->ch), pct[3], mods[3];
+  short_name(a->ch, nm, sizeof nm);
+  if (th->kind == TH_DOOR && th->has_lock)
+    snprintf(body, sizeof body, "%s ogl\261da zamek: ST %d, post\352p %d/%d sukces\363w.\nWytrych: sukces = 1, kryt. sukces = 2; kryt. pora\277ka \263amie wytrych%s. 2 akcje w walce.\nWywa\277enie: ST %d, kara -2 bez \263omu; sukces otwiera, ale niszczy zamek.",
+             nm, th->lock.dc, th->lock.progress, th->lock.needed, tools ? "" : " (brak wytrych\363w: kara -2)", th->lock.dc + 5);
+  else if (th->kind == TH_DEVICE && th->has_lock)
+    snprintf(body, sizeof body, "%s pod\263\261cza si\352 do urz\261dzenia: ST %d, zabezpieczenia %d/%d.\nSukces \263amie 1 warstw\352, kryt. sukces 2. Kryt. pora\277ka blokuje urz\261dzenie i w\263\261cza alarm. 2 akcje w walce.",
+             nm, th->lock.dc, th->lock.progress, th->lock.needed);
+  else
+    snprintf(body, sizeof body, "%s przygl\261da si\352 zamkowi. Jak go otworzy\346? (KT %d)\nKrytyczna pora\277ka uruchamia pu\263apk\352; zwyk\263a pora\277ka - zamek si\352 zacina (2 pr\363by).", nm, dc_for_level(mission.contract.level) + 1);
+  ui_choice_open(&choice, th->kind == TH_CRATE ? "Zamkni\352ta skrzynia" : th->kind == TH_DOOR ? "Zamkni\352te drzwi" : "Urz\261dzenie", body, 380);
+  ui_choice_add(&choice, "Zostaw", BTN_PLAIN);
+  choice_skill[0] = SKILL_NONE;
+  for (i = 0; i < nl; i++) {
+    int sk = list[i], dc, mod, hit, crit;
+    if (th->kind == TH_DOOR) {
+      dc = sk == SKILL_ATHLETICS ? th->lock.dc + 5 : th->lock.dc;
+      mod = get_stat(a->ch, sk, 0) + (sk == SKILL_ATHLETICS ? IMPROVISED_PENALTY + th->lock.force_penalty : tools ? 0 : IMPROVISED_PENALTY);
+    } else if (th->kind == TH_DEVICE) {
+      dc = th->lock.dc;
+      mod = get_stat(a->ch, sk, 0);
+    } else {
+      dc = dc_for_level(mission.contract.level) + 1;
+      mod = get_stat(a->ch, sk, 0);
+    }
+    hit_chances(mod, dc, 0, &hit, &crit);
+    pct[i] = hit * 5;
+    mods[i] = mod;
+    if (pct[i] > best_pct) {
+      best_pct = pct[i];
+      best = i;
+    }
+  }
+  for (i = 0; i < nl; i++) {
+    const char *nmk = th->kind == TH_DOOR ? (list[i] == SKILL_ATHLETICS ? "Wywa\277enie (Atletyka)" : "Wytrych (Z\263odziejstwo)")
+                    : th->kind == TH_DEVICE ? (list[i] == SKILL_CRAFTING ? "Hakowanie (Technika)" : "Obej\266cie (Z\263odziejstwo)")
+                                            : SKILL_DEFS[list[i]].name;
+    snprintf(lab, sizeof lab, "%s %s%d (%d%%)", nmk, mods[i] >= 0 ? "+" : "", mods[i], pct[i]);
+    ui_choice_add(&choice, lab, i == best ? BTN_PRIMARY : BTN_PLAIN);
+    choice_skill[++n] = list[i];
+  }
+  choice_kind = CH_SKILL;
+  choice_th = th;
+}
+
+static void do_interact(Actor *a, MissionThing *th, uint8_t skill) {
+  UnitV *u = unit_of(a);
+  if (u) face(u, th->gx - a->gx, th->gy - a->gy);
+  if (mode == M_PLAYER && turn) {
+    int need = (th->kind == TH_DEVICE || (th->kind == TH_DOOR && skill != SKILL_ATHLETICS)) ? 2 : 1;
+    if (turn->actions < need) {
+      push_log(need == 2 ? "Potrzeba 2 akcji." : "Brak akcji.", PAL_DIM);
+      return;
+    }
+  }
+  if (!mission_interact(&mission, a, th, skill)) push_log("Nic si\352 nie sta\263o.", PAL_DIM);
+  if (mode == M_EXPLORE) after_explore = 1;
+  reach_ok = 0;
+}
+
+/* interakcja: w eksploracji najpierw podejście; skrzynia / drzwi / urządzenie - wybór umiejętności */
+static void interact_with(Actor *a, MissionThing *th) {
+  if (cheb(apos(a), mkpos(th->gx, th->gy)) > 1) {
+    Pos cell;
+    static ExploreResult r;
+    int i;
+    if (mode == M_PLAYER) {
+      push_log("Podejd\274 bli\277ej (obok obiektu).", PAL_DIM);
+      return;
+    }
+    if (!mission_interact_cell(&mission, a, mkpos(th->gx, th->gy), &cell)) {
+      push_log("Nie mo\277na doj\266\346.", PAL_DIM);
+      app_sfx("error", 128, 256);
+      return;
+    }
+    mission_explore_move(&mission, a, cell, 0, &r);
+    if (!r.ok) {
+      push_log("Nie mo\277na doj\266\346.", PAL_DIM);
+      return;
+    }
+    for (i = 0; i < r.n; i++) start_walk(unit_of(r.paths[i].actor), r.paths[i].path, r.paths[i].n);
+    update_fog();
+    pending_th = th;   /* po dojściu */
+    return;
+  }
+  if (th->kind == TH_CRATE || th->kind == TH_DOOR || th->kind == TH_DEVICE) ask_skill(a, th);
+  else do_interact(a, th, SKILL_NONE);
+}
+
+static void use_ability_at(Actor *a, int id, Pos cell, Actor *who) {
+  const AbilityDef *ab = &ABILITY_DEFS[id];
+  ActionOutcome o;
+  Actor *targets[MAX_ACTORS];
+  int n, i, ok = 0;
+  if (ab->target == TARGET_ENEMY || ab->target == TARGET_ALLY) {
+    n = combat_ability_targets(&mission.combat, a, (uint8_t)id, targets);
+    for (i = 0; i < n; i++) if (targets[i] == who) ok = 1;
+    if (!who || !ok) {
+      push_log(ab->target == TARGET_ALLY ? "Wska\277 sojusznika w zasi\352gu." : "Wska\277 wroga w zasi\352gu i na linii strza\263u.", PAL_DIM);
+      app_sfx("error", 128, 256);
+      return;
+    }
+    o = combat_use_ability(&mission.combat, a, (uint8_t)id, &who, 1, NULL);
+  } else if (ab->target == TARGET_AREA) {
+    if (!combat_area_cell_ok(&mission.combat, a, cell, ab->range)) {
+      push_log("Poza zasi\352giem / brak linii.", PAL_DIM);
+      return;
+    }
+    o = combat_use_ability(&mission.combat, a, (uint8_t)id, NULL, 0, &cell);
+  } else o = combat_use_ability(&mission.combat, a, (uint8_t)id, NULL, 0, NULL);
+  set_mode(MD_NONE, 0, NULL);
+  after_action(&o);
+  if (mode == M_EXPLORE) after_explore = 1;
+}
+
+static void use_item_at(Actor *a, int inv, Pos cell, Actor *who) {
+  const ConsumableStats *c = ITEM_DEFS[a->ch->inv[inv].id].consumable;
+  ActionOutcome o;
+  if (c->target == TARGET_AREA) {
+    if (!combat_area_cell_ok(&mission.combat, a, cell, c->range ? c->range : 6)) {
+      push_log("Poza zasi\352giem.", PAL_DIM);
+      return;
+    }
+    o = combat_use_item(&mission.combat, a, inv, NULL, &cell);
+  } else {
+    if (!who) {
+      push_log("Wska\277 cel.", PAL_DIM);
+      return;
+    }
+    o = combat_use_item(&mission.combat, a, inv, who == a ? NULL : who, NULL);
+  }
+  set_mode(MD_NONE, 0, NULL);
+  sub_items = 0;
+  after_action(&o);
+  if (mode == M_EXPLORE) after_explore = 1;
+}
+
+static void menu_pick(int id) {
+  Actor *a = actor_now();
+  char hint[120];
+  if (!a) return;
+  if (id == A_STRIDE) set_mode(MD_NONE, 0, NULL);
+  else if (id == A_STEP) set_mode(MD_STEP, 0, "Krok: wska\277 pole obok. [Esc = anuluj]");
+  else if (id == A_STRIKE) set_mode(MD_STRIKE, 0, "Atak: wska\277 wroga. [Esc = anuluj]");
+  else if (id == A_ITEMS) {
+    sub_items = 1;
+    menu.focus = 0;
+  } else if (id == A_BACK) {
+    sub_items = 0;
+    menu.focus = 0;
+  } else if (id == A_END) {
+    menu.open = 0;
+    if (mode == M_PLAYER) mode = M_COMBAT;
+  } else if (id == A_DELAY) {
+    menu.open = 0;
+    combat_delay(&mission.combat);
+    if (mode == M_PLAYER) mode = M_COMBAT;
+  } else if (id == A_RETREAT) {
+    menu.open = 0;
+    ask_retreat();
+  } else if (id == A_LEADER) {
+    int k;
+    for (k = 1; k <= mission.n_pcs; k++) {
+      int j = (leader + k) % mission.n_pcs;
+      if (mission.pcs[j]->state == AST_UP) {
+        leader = j;
+        break;
+      }
+    }
+    cursor = apos(mission.pcs[leader]);
+    menu.open = 0;
+  } else if (id == A_INTERACT) {
+    MissionThing *th = thing_near(a);
+    menu.open = 0;
+    if (th) interact_with(a, th);
+  } else if (id >= A_ITEM) {
+    int inv = id - A_ITEM;
+    const ConsumableStats *c = ITEM_DEFS[a->ch->inv[inv].id].consumable;
+    if (c->target == TARGET_SELF) {
+      ActionOutcome o = combat_use_item(&mission.combat, a, inv, NULL, NULL);
+      menu.open = 0;
+      sub_items = 0;
+      after_action(&o);
+      if (mode == M_EXPLORE) after_explore = 1;
+    } else {
+      snprintf(hint, sizeof hint, "%s: %s. [Esc = anuluj]", ITEM_DEFS[a->ch->inv[inv].id].name, c->target == TARGET_AREA ? "wska\277 pole" : "wska\277 cel");
+      set_mode(MD_ITEM, inv, hint);
+    }
+  } else if (id >= A_ABIL) {
+    int ab_id = id - A_ABIL;
+    const AbilityDef *ab = &ABILITY_DEFS[ab_id];
+    Actor *t[MAX_ACTORS];
+    if ((ab->target == TARGET_AREA && ab->range <= 0) || ab->target == TARGET_SELF || ab->target == TARGET_NONE) {
+      menu.open = 0;
+      use_ability_at(a, ab_id, apos(a), NULL);
+    } else if ((ab->target == TARGET_ENEMY || ab->target == TARGET_ALLY) && !combat_ability_targets(&mission.combat, a, (uint8_t)ab_id, t)) {
+      push_log("Brak cel\363w w zasi\352gu.", PAL_DIM);
+      app_sfx("error", 128, 256);
+    } else {
+      if (ab->target == TARGET_AREA) snprintf(hint, sizeof hint, "%s: wska\277 pole (promie\361 %d, zasi\352g %d). [Esc = anuluj]", ab->name, ab->radius ? ab->radius : 1, ab->range);
+      else snprintf(hint, sizeof hint, "%s: wska\277 %s. [Esc = anuluj]", ab->name, ab->target == TARGET_ALLY ? "sojusznika" : "wroga");
+      set_mode(MD_ABILITY, ab_id, hint);
+    }
+  }
+}
+
+/* po ruchu / akcji w eksploracji: pytanie o cel wykonany i ewakuację (afterExplore) */
+static void after_explore_checks(void) {
+  if (mode != M_EXPLORE || mission.mode != MODE_EXPLORE) return;
+  if (complete_ask) {
+    complete_ask = 0;
+    if (!mission_needs_extraction(&mission)) {
+      char body[400] = "Zlecenie zaliczone. Na terenie zosta\263o jeszcze:", line[64];
+      int i, crates = 0, finds = 0, hidden = 0, dev = 0, foes = 0, any = 0;
+      for (i = 0; i < mission.n_things; i++) {
+        const MissionThing *t = &mission.things[i];
+        if (t->kind == TH_CRATE && !t->done) crates++;
+        if (t->kind == TH_DEVICE && !t->done && !(t->has_lock && t->lock.jammed) && !t->objective) dev++;
+      }
+      for (i = 0; i < mission.n_finds; i++) {
+        if (mission.finds[i].found && !mission.finds[i].taken) finds++;
+        if (!mission.finds[i].found && !mission.finds[i].taken) hidden++;
+      }
+      for (i = 0; i < mission.n_enemies; i++) foes += mission.enemies[i]->state != AST_DEAD;
+#define LEFT(cond, ...) if (cond) { snprintf(line, sizeof line, __VA_ARGS__); strncat(body, line, sizeof body - strlen(body) - 1); any = 1; }
+      LEFT(crates, "\n- zamkni\352te skrzynie: %d", crates)
+      LEFT(finds, "\n- znaleziska do zabrania: %d", finds)
+      LEFT(hidden, "\n- ukryte znaleziska do odkrycia")
+      LEFT(dev, "\n- urz\261dzenia do zhakowania: %d", dev)
+      LEFT(foes, "\n- wrogowie: %d", foes)
+#undef LEFT
+      if (!any) {
+        mission_finish(&mission, MRES_SUCCESS);
+        return;
+      }
+      strncat(body, "\n\nMo\277ecie dalej przeszukiwa\346 okolic\352, a potem wr\363ci\346 do strefy ewakuacji - nagroda za zlecenie zostaje.", sizeof body - strlen(body) - 1);
+      ui_choice_open(&choice, "Cel wykonany", body, 360);
+      ui_choice_add(&choice, "Przeszukaj teren", BTN_PRIMARY);
+      ui_choice_add(&choice, "Ewakuacja teraz", BTN_PLAIN);
+      choice_kind = CH_AFTER;
+      return;
+    }
+  }
+  if (mission_can_extract(&mission)) {
+    if (!extract_asked) {
+      extract_asked = 1;
+      ui_choice_open(&choice, "Strefa ewakuacji", "Cel zlecenia wykonany, dru\277yna jest w strefie ewakuacji. Opu\266ci\346 teren?", 300);
+      ui_choice_add(&choice, "Jeszcze nie", BTN_PLAIN);
+      ui_choice_add(&choice, "Ewakuacja", BTN_PRIMARY);
+      choice_kind = CH_EXTRACT;
+    }
+  } else extract_asked = 0;
+}
+
+static void choice_result(int r) {
+  if (choice_kind == CH_SKILL && r > 0 && choice_th) {
+    Actor *a = actor_now();
+    if (a) do_interact(a, choice_th, choice_skill[r]);
+  } else if (choice_kind == CH_AFTER && r == 1) mission_finish(&mission, MRES_SUCCESS);
+  else if (choice_kind == CH_EXTRACT && r == 1) mission_finish(&mission, MRES_SUCCESS);
+  else if (choice_kind == CH_RETREAT && r == 1) mission_retreat(&mission);
+  choice_th = NULL;
 }
 
 /* ------------------------------------------------------------------ aktualizacja */
@@ -1070,31 +1605,48 @@ static void update(unsigned held, unsigned pressed, int ms) {
   }
   if (mode == M_PLAYER && !reach_ok) refresh_reach();
 
-  if (app_leaving()) return;
-  if (dlg.open) {
-    int r = ui_dialog_input(&dlg, pressed);
-    if (r < 0) return;
-    if (dlg_kind == D_TURN && r == 1 && mode == M_PLAYER) {
-      mode = M_COMBAT;
-      reach_ok = 0;
-    } else if ((dlg_kind == D_TURN && r == 2) || (dlg_kind == D_RETREAT && r == 1)) {
-      snprintf(g_notice, sizeof g_notice, "Dru\277yna wycofa\263a si\352 z misji.");
-      app_switch(SCR_HUB, 500, 500);
+  /* eksploracja po animacjach: dojście do obiektu, pytania o cel i ewakuację */
+  if (mode == M_EXPLORE && !choice.open) {
+    if (pending_th) {
+      MissionThing *th = pending_th;
+      Actor *a = mission.pcs[leader];
+      pending_th = NULL;
+      if (mission_in_combat(&mission)) return;
+      if (cheb(apos(a), mkpos(th->gx, th->gy)) <= 1) {
+        if (th->kind == TH_CRATE || th->kind == TH_DOOR || th->kind == TH_DEVICE) ask_skill(a, th);
+        else do_interact(a, th, SKILL_NONE);
+      } else push_log("Za daleko na jeden ruch \200 podejd\274 bli\277ej.", PAL_DIM);
+      return;
     }
+    if (after_explore) {
+      after_explore = 0;
+      after_explore_checks();
+      return;
+    }
+  }
+
+  if (app_leaving()) return;
+  if (choice.open) {
+    int r = ui_choice_input(&choice, pressed);
+    if (r >= 0) choice_result(r);
+    return;
+  }
+  if (menu.open) {
+    int r;
+    build_menu();
+    r = ui_menu_input(&menu, pressed);
+    if (r >= 0) menu_pick(r);
+    else if (r == -2) sub_items = 0;
     return;
   }
   if (pressed & IN_BACK) {
-    if (mode == M_PLAYER) {
-      static const char *const B[3] = {"ANULUJ", "ZAKO\321CZ TUR\312", "WYCOFAJ SI\312"};
-      static const int K[3] = {BTN_PLAIN, BTN_PRIMARY, BTN_DANGER};
-      ui_dialog_open(&dlg, "TURA", "Zako\361czy\346 tur\352 tej postaci? Niewykorzystane akcje przepadn\261.", 3, B, K, 1);
-      dlg_kind = D_TURN;
-    } else {
-      static const char *const B[2] = {"ZOSTA\321", "WYCOFAJ SI\312"};
-      static const int K[2] = {BTN_PLAIN, BTN_DANGER};
-      ui_dialog_open(&dlg, "WYCOFA\306 SI\312?", "Dru\277yna wr\363ci do Przystani bez wykonania zlecenia.", 2, B, K, 0);
-      dlg_kind = D_RETREAT;
-    }
+    if (tmode != MD_NONE) set_mode(MD_NONE, 0, NULL);
+    else if (actor_now()) {
+      menu.open = 1;
+      menu.focus = 0;
+      sub_items = 0;
+      build_menu();
+    } else if (mode == M_EXPLORE) ask_retreat();
     return;
   }
   /* kursor: kierunki ekranu -> siatka (prawo = +gx -gy, dół = +gx +gy), powtarzanie przy trzymaniu */
@@ -1122,6 +1674,19 @@ static void update(unsigned held, unsigned pressed, int ms) {
       }
     }
   }
+  if (g_debug_cmd == 2) {
+    /* testy: kursor na najbliższą nieotwartą skrzynię */
+    int best = 1 << 30;
+    g_debug_cmd = 0;
+    for (i = 0; i < mission.n_things; i++) {
+      MissionThing *t = &mission.things[i];
+      int d = cheb(apos(mission.pcs[leader]), mkpos(t->gx, t->gy));
+      if (t->kind == TH_CRATE && !t->done && d < best) {
+        best = d;
+        cursor = mkpos(t->gx, t->gy);
+      }
+    }
+  }
   if (g_debug_cmd == 1) {
     /* testy: kursor na najbliższego żywego wroga */
     int best = 1 << 30;
@@ -1137,8 +1702,20 @@ static void update(unsigned held, unsigned pressed, int ms) {
     }
   }
   if (pressed & IN_OK) {
-    if (mode == M_EXPLORE) explore_to(cursor);
-    else if (mode == M_PLAYER) player_ok();
+    if (mode == M_EXPLORE) {
+      Actor *a = mission.pcs[leader], *who = visible_actor_at(cursor);
+      MissionThing *th = mission_thing_at(&mission, cursor.gx, cursor.gy);
+      if (tmode == MD_ABILITY) use_ability_at(a, tmode_arg, cursor, who);
+      else if (tmode == MD_ITEM) use_item_at(a, tmode_arg, cursor, who);
+      else if (th && !th->done && !who && mission.explored[gidx(cursor.gx, cursor.gy)]) interact_with(a, th);
+      else if (who && who->side == SIDE_PC && who != a) {
+        int k;
+        for (k = 0; k < mission.n_pcs; k++) if (mission.pcs[k] == who && who->state == AST_UP) leader = k;
+      } else {
+        explore_to(cursor);
+        after_explore = 1;
+      }
+    } else if (mode == M_PLAYER) player_ok();
   }
 }
 
@@ -1229,7 +1806,7 @@ static void draw_hud(void) {
       else if (si.melee) snprintf(buf, sizeof buf, "%s: podejd\274 i zaatakuj", w[0].name);
       else snprintf(buf, sizeof buf, "%s: poza zasi\352giem / brak linii strza\263u", w[0].name);
       font_draw(10, 31, buf, si.ok ? PAL_GOOD : PAL_DIM, 255, FONT_OUTLINE, 0, 1);
-    } else font_draw(10, 31, "fire: ruch / atak \205 Esc: menu tury", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+    } else font_draw(10, 31, tmode != MD_NONE ? tmode_hint : "fire: ruch / atak \205 Esc: akcje", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
   }
   /* dziennik */
   for (i = 0; i < n_log; i++) {
@@ -1243,7 +1820,7 @@ static void draw_hud(void) {
     r2d_rect(V_W / 2.0f - w / 2.0f, 60, (float)w, 26, 0, a * 3 / 4);
     font_draw_at(V_W / 2.0f, 73, 0.5f, 0.5f, banner, banner_col, a, FONT_OUTLINE, 1, 2);
   }
-  if (mode == M_EXPLORE) font_draw_at(V_W - 6, V_H - 4, 1, 1, "Strza\263ki: kursor \205 fire: id\274 \205 Esc: wycofanie", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
+  if (mode == M_EXPLORE) font_draw_at(V_W - 6, V_H - 4, 1, 1, tmode != MD_NONE ? tmode_hint : "Strza\263ki: kursor \205 fire: id\274 / obiekt \205 Esc: akcje", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
 }
 
 static void draw(void) {
@@ -1281,6 +1858,7 @@ static void draw(void) {
       }
       if (!s) break;
       while (j < n && ud[order[j]] < s->depth) draw_unit(&units[order[j++]]);
+      if (s->hidden) continue;
       if (s->cell < 0) {
         atlas_draw(&atlas, &s->img, s->x, s->y, s->flip, 0xffffff, 255);
         continue;
@@ -1298,7 +1876,8 @@ static void draw(void) {
   }
   r2d_offset(0, 0);
   draw_hud();
-  ui_dialog_draw(&dlg);
+  ui_menu_draw(&menu, 6, V_H - 2 - 6 * 9);
+  ui_choice_draw(&choice);
   ui_toast_draw();
 }
 
