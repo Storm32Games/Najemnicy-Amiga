@@ -8,6 +8,7 @@
 #include "ui.h"
 #include "game.h"
 #include "scenefx.h"
+#include "savegame.h"
 #include "../gfx/r2d.h"
 #include "../gfx/img.h"
 #include "../core/frontend.h"
@@ -103,6 +104,7 @@ static void enter(void) {
   scrap_shown = 0;
   step = n_steps = 0;
   done_ms = 0;
+  if (!g_debrief.tpk) save_write(0);   /* po TPK zapis zostaje (ekran porażki proponuje wczytanie) */
   app_sfx(ok ? "victory" : "defeat", 256, 256);
 }
 

@@ -434,7 +434,7 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), 
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż, misja (etap 1: świat, mgła, ruch; etap 2: walka turowa; etap 3: menu akcji, zdolności, przedmioty, interakcje, ewakuacja); rozliczenie, koniec drogi, zwycięstwo; ⏳ HUD misji (karta postaci, kości), rozliczenie, zapis z menu, opcje, mapa
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż, misja (etap 1: świat, mgła, ruch; etap 2: walka turowa; etap 3: menu akcji, zdolności, przedmioty, interakcje, ewakuacja); rozliczenie, koniec drogi, zwycięstwo, zapis gry; ⏳ HUD misji (karta postaci, kości), rozliczenie, zapis z menu, opcje, mapa
    regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
@@ -547,3 +547,11 @@ polegli przewracają się klatkami `f_hurt -> f_die`), inaczej stan najemników 
 w dwóch kolumnach albo siatce ikon, polegli, wątek fabularny, karty z paskiem PD i awansem, nowe zdolności) ->
 Przystań / KONIEC DROGI / ZWYCIĘSTWO (epilog maszyną do pisania, napisy końcowe przez 34 s). Tła wypieczone: `debrief`,
 `debriefn`, `over`, `win` (+ tytuły). Testy: `gl_host ... "0:goto=victory"`, `"0:goto=gameover"`.
+
+Zapis gry (`savegame.c`, port obiektu `Save`): autozapis (Kontynuuj) i 3 sloty w plikach `PROGDIR:najemnicy_auto.sav`,
+`najemnicy_slot1..3.sav`; treść: „NSAV”, wersja, czas, kampania (`campaign_save`) i - przy zapisie w eksploracji misji -
+indeks zlecenia, `mission_save` i kampania z chwili wejścia na teren. Autozapis przy wejściu do Przystani i po rozliczeniu
+(nie po wybiciu drużyny); zapis do slotu nadpisuje też autozapis, wczytanie slotu kopiuje go do autozapisu. Okno slotów
+jak `openSaveSlots` (data, dzień, poziom / misja w toku, drużyna, potwierdzenie nadpisania). Wczytanie misji w toku:
+`mission_load` z mapą z generatora. Menu tytułowe: Kontynuuj / Wczytaj grę; Przystań: Zapisz / Wczytaj / Zapisz i wyjdź;
+misja (eksploracja): Zapisz grę; koniec drogi: Wczytaj ostatni zapis.

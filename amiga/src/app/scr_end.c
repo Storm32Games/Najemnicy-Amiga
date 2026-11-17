@@ -8,6 +8,7 @@
 #include "ui.h"
 #include "game.h"
 #include "scenefx.h"
+#include "savegame.h"
 #include "../gfx/r2d.h"
 #include "../gfx/img.h"
 #include "../core/frontend.h"
@@ -25,7 +26,7 @@ static BgState bg;
 static int32_t w_pan;
 static TypeProgress tp;
 static char text[600], wrapped[700];
-static int line, rolling, roll_ms, buttons, focus;
+static int line, rolling, roll_ms, buttons, focus, has_auto;
 
 /* polegli */
 typedef struct { int recruit, flip; float x, y; AtlasImg hurt, die[7]; } Fallen;
@@ -70,6 +71,7 @@ static void common_enter(void) {
   w_pan = ang_q8(0.045);
   t_ms = 0;
   line = rolling = buttons = focus = 0;
+  has_auto = save_exists(0);
   roll_ms = 0;
 }
 
@@ -170,12 +172,17 @@ static void update(unsigned held, unsigned pressed, int ms) {
   if (!victory && (type_done(&tp) || t_ms > 3000)) buttons = 1;
   if (app_leaving() || !pressed) return;
   if (buttons) {
-    int nb = victory ? 2 : 1;
+    int nb = victory || has_auto ? 2 : 1;
     if (pressed & (IN_LEFT | IN_UP) && focus > 0) focus--;
     if (pressed & (IN_RIGHT | IN_DOWN) && focus < nb - 1) focus++;
     if (pressed & IN_OK) {
-      if (victory && focus == 0) app_switch(SCR_HUB, 400, 500);
-      else app_switch(SCR_TITLE, 400, 500);
+      if (victory && focus == 0) {
+        save_write(0);
+        app_switch(SCR_HUB, 400, 500);
+      } else if (!victory && has_auto && focus == 0) {
+        if (save_load(0)) save_enter_loaded();
+        else ui_toast("Brak u\277ytecznego zapisu.", PAL_BAD);
+      } else app_switch(SCR_TITLE, 400, 500);
     }
     return;
   }
@@ -258,7 +265,11 @@ static void draw_over(void) {
   draw_typed(V_W / 2.0f, 211, 1, PAL_TEXT);
   snprintf(buf, sizeof buf, "Przetrwali\266cie do dnia %d. Uko\361czone zlecenia: %d.", g_camp.day, g_camp.n_completed);
   font_draw_at(V_W / 2.0f, 236, 0.5f, 0, buf, PAL_DIM, 255, FONT_OUTLINE, 0, 1);
-  if (buttons) ui_button(V_W / 2 - 50, 246, 100, 15, "MENU G\243\323WNE", BTN_DANGER, 1, 1);
+  if (buttons && has_auto) {
+    ui_button(V_W / 2 - 130, 246, 120, 15, "WCZYTAJ OSTATNI ZAPIS", BTN_PRIMARY, focus == 0, 1);
+    ui_button(V_W / 2 + 10, 246, 100, 15, "MENU G\243\323WNE", BTN_DANGER, focus == 1, 1);
+  } else if (buttons) ui_button(V_W / 2 - 50, 246, 100, 15, "MENU G\243\323WNE", BTN_DANGER, 1, 1);
+  ui_toast_draw();
 }
 
 static void draw_win(void) {

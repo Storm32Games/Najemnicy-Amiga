@@ -25,3 +25,6 @@ dist-ssr
 
 # wypiekane tekstury z przeglądarki (tools/amiga/bake_scenes.ts) - pośrednie, wynik w amiga/gfx/
 amiga/data/bake/*/
+
+# zapisy gry z testów portu na Amigę (gl_host)
+amiga/najemnicy_*.sav

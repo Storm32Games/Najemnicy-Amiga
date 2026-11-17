@@ -10,6 +10,7 @@
 #include "ui.h"
 #include "game.h"
 #include "scenefx.h"
+#include "savegame.h"
 #include "../gfx/r2d.h"
 #include "../gfx/img.h"
 #include "../core/frontend.h"
@@ -242,6 +243,7 @@ static void enter(void) {
   memset(poff, 0, sizeof poff);
   dlg.open = main_open = pick_open = 0;
   build_menu();
+  save_write(0);   /* autozapis przy wejściu do Przystani (Save.write w create) */
   if (g_notice[0]) {
     ui_toast(g_notice, PAL_AMBER);
     g_notice[0] = 0;
@@ -491,8 +493,12 @@ static void pick_ok(void) {
 
 static void main_ok(void) {
   switch (main_focus) {
-    case 0: case 1: ui_toast("Zapis gry na Amidze jeszcze nie dzia\263a.", PAL_AMBER); break;
-    case 2: ui_toast("Zapis gry na Amidze jeszcze nie dzia\263a.", PAL_AMBER); app_switch(SCR_TITLE, 400, 500); break;
+    case 0: saveui_open(0); break;
+    case 1: saveui_open(1); break;
+    case 2:
+      save_write(0);
+      app_switch(SCR_TITLE, 400, 500);
+      break;
     case 3: {
       static const char *const B[2] = {"ZOSTA\321", "WYJD\254 BEZ ZAPISU"};
       static const int K[2] = {BTN_PLAIN, BTN_DANGER};
@@ -587,6 +593,10 @@ static void update(unsigned held, unsigned pressed, int ms) {
   ui_toast_update(ms);
   tip_ms += ms;
   if (app_leaving() || !pressed) return;
+  if (saveui_is_open()) {
+    if (saveui_input(pressed) > 0 && saveui_loading()) save_enter_loaded();   /* misja w toku albo Przystań od nowa */
+    return;
+  }
   if (dlg.open) {
     int r = ui_dialog_input(&dlg, pressed);
     if (r >= 0) dialog_result(r);
@@ -627,7 +637,7 @@ static void update(unsigned held, unsigned pressed, int ms) {
         open_tab(id);
         zone = 0;
       } else if (id == M_OPTIONS) ui_toast("Opcje nie s\261 jeszcze przeniesione na Amig\352.", PAL_AMBER);
-      else if (id == M_SAVE || id == M_LOAD) ui_toast("Zapis gry na Amidze jeszcze nie dzia\263a.", PAL_AMBER);
+      else if (id == M_SAVE || id == M_LOAD) saveui_open(id == M_LOAD);
       else {
         main_open = 1;
         main_focus = 4;
@@ -1191,6 +1201,7 @@ static void draw(void) {
   if (ctx_tip[0] && tip_ms >= TIP_MS && !dlg.open && !main_open) ui_tip(ctx_tip_x, ctx_tip_y, ctx_tip);
   if (main_open) draw_main();
   ui_dialog_draw(&dlg);
+  saveui_draw();
   ui_toast_draw();
 }
 

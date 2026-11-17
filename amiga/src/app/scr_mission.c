@@ -11,6 +11,8 @@
 #include "ui.h"
 #include "game.h"
 #include "scenefx.h"
+#include "savegame.h"
+#include "../core/save.h"
 #include "../gfx/r2d.h"
 #include "../gfx/img.h"
 #include "../core/frontend.h"
@@ -420,7 +422,7 @@ static int choice_kind;
 static uint8_t choice_skill[UI_CHOICE_MAX];
 static MissionThing *pending_th, *choice_th;
 static int complete_ask, extract_asked, after_explore;
-enum { A_STRIDE = 1, A_STEP, A_STRIKE, A_ITEMS, A_BACK, A_INTERACT, A_DELAY, A_END, A_RETREAT, A_LEADER, A_ABIL = 100, A_ITEM = 200 };
+enum { A_STRIDE = 1, A_STEP, A_STRIKE, A_ITEMS, A_BACK, A_INTERACT, A_DELAY, A_END, A_RETREAT, A_LEADER, A_SAVE, A_ABIL = 100, A_ITEM = 200 };
 
 /* ---- napisy nad postaciami, baner, dziennik */
 typedef struct { float x, y; char text[24]; uint32_t col; int ms; } Float;
@@ -691,7 +693,16 @@ static void enter(void) {
   mc.item = c->obj_item;
   for (i = 0; i < g_camp.n_party; i++) party_ptr[i] = &g_camp.party[i];
   game_rng(&mrng);
-  mission_init(&mission, &mc, party_ptr, g_camp.n_party, &mrng);
+  if (g_resume_len) {
+    /* misja z zapisu: mapa z generatora (id zlecenia), stan z pliku */
+    if (!mission_load(&mission, &mc, party_ptr, g_camp.n_party, &mrng, g_resume, g_resume_len)) mission_init(&mission, &mc, party_ptr, g_camp.n_party, &mrng);
+    g_resume_len = 0;
+  } else {
+    /* kampania z chwili wejścia na teren (do zapisu razem z misją) */
+    g_entry_len = campaign_save(&g_camp, g_entry, sizeof g_entry);
+    mission_init(&mission, &mc, party_ptr, g_camp.n_party, &mrng);
+  }
+  g_save_mission = &mission;
   combat_on(&mission.combat, on_combat, NULL);
   mission_on(&mission, on_mission, NULL);
   if (!lib_load(&lib_common, "lib_common")) {
@@ -730,6 +741,7 @@ static void enter(void) {
 }
 
 static void leave(void) {
+  g_save_mission = NULL;
   atlas_free(&atlas);
   n_units = 0;
 }
@@ -1130,6 +1142,7 @@ static void build_menu(void) {
     int up = 0;
     for (i = 0; i < mission.n_pcs; i++) up += mission.pcs[i]->state == AST_UP;
     if (up > 1) ui_menu_add(&menu, A_LEADER, "Nast\352pny najemnik", -1, 1, 0, "Prowadzi kolejny najemnik (reszta idzie za nim).");
+    ui_menu_add(&menu, A_SAVE, "Zapisz gr\352", -1, 1, 0, "Zapis w jednym z 3 slot\363w (misja w toku zostaje zapisana).");
   }
   ui_menu_add(&menu, A_RETREAT, mission_objective_done(&mission) ? "Powr\363t do Przystani" : "Odwr\363t", -1, 1, 0, "Opu\266\346 teren zlecenia.");
 }
@@ -1319,6 +1332,9 @@ static void menu_pick(int id) {
     menu.open = 0;
     combat_delay(&mission.combat);
     if (mode == M_PLAYER) mode = M_COMBAT;
+  } else if (id == A_SAVE) {
+    menu.open = 0;
+    saveui_open(0);
   } else if (id == A_RETREAT) {
     menu.open = 0;
     ask_retreat();
@@ -1653,6 +1669,10 @@ static void update(unsigned held, unsigned pressed, int ms) {
   }
 
   if (app_leaving()) return;
+  if (saveui_is_open()) {
+    saveui_input(pressed);
+    return;
+  }
   if (choice.open) {
     int r = ui_choice_input(&choice, pressed);
     if (r >= 0) choice_result(r);
@@ -1905,6 +1925,7 @@ static void draw(void) {
   draw_hud();
   ui_menu_draw(&menu, 6, V_H - 2 - 6 * 9);
   ui_choice_draw(&choice);
+  saveui_draw();
   ui_toast_draw();
 }
 

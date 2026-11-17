@@ -11,6 +11,7 @@
 #include "../data/gamedata.h"
 #include "../data/scenes.h"
 #include "scenefx.h"
+#include "savegame.h"
 
 #ifndef NAJ_VERSION
 #define NAJ_VERSION "?"
@@ -55,7 +56,7 @@ static void enter(void) {
   motes_init(&dust, 150, 0, 90, V_W, 150, 18, 1, 8, 0.5);
   bg_init(&bg, &BG_TITLE);
   units_init(&units, &TITLE_UNITS);
-  title_menu(&menu, 0, 0);    /* zapisy na Amidze: jeszcze nie */
+  title_menu(&menu, save_exists(0), save_any_slot());
   y = 158;
   if (V_H - 8 - 15 - 24 - 19 * (menu.n - 2) < y) y = V_H - 8 - 15 - 24 - 19 * (menu.n - 2);
   for (i = 0; i < menu.n; i++) {
@@ -82,6 +83,13 @@ static void run(int id) {
     case MENU_NEW:
       app_sfx("door", 256, 256);
       app_switch(SCR_RECRUIT, 400, 500);
+      return;
+    case MENU_CONTINUE:
+      if (save_load(0)) save_enter_loaded();
+      else ui_toast("Nie uda\263o si\352 wczyta\346 zapisu.", PAL_BAD);
+      return;
+    case MENU_LOAD:
+      saveui_open(1);
       return;
     case MENU_OPTIONS:
       ui_toast("Opcje nie s\261 jeszcze przeniesione na Amig\352.", PAL_AMBER);
@@ -111,6 +119,10 @@ static void update(unsigned held, unsigned pressed, int ms) {
   units_update(&units, &TITLE_UNITS, ms);
   ui_toast_update(ms);
   if (app_leaving() || quitting) return;
+  if (saveui_is_open()) {
+    if (saveui_input(pressed) > 0) save_enter_loaded();
+    return;
+  }
   if (quit_dlg) {
     if (pressed & (IN_LEFT | IN_UP)) quit_focus = 0;
     if (pressed & (IN_RIGHT | IN_DOWN)) quit_focus = 1;
@@ -202,6 +214,7 @@ static void draw(void) {
   font_draw_at(6, V_H - 6, 0, 1, "Pathfinder 2e w \266wiecie po zag\263adzie", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
   if (credits) draw_credits();
   if (quit_dlg) draw_quit();
+  saveui_draw();
   ui_toast_draw();
 }
 
