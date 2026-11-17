@@ -413,7 +413,8 @@ static void push_log(const char *t, uint32_t col) {
 }
 
 static void show_banner(const char *t, const char *sub, uint32_t col) {
-  snprintf(banner, sizeof banner, "%s", t);
+  strncpy(banner, t, sizeof banner - 1);   /* przycięcie do bufora banera */
+  banner[sizeof banner - 1] = 0;
   snprintf(banner_sub, sizeof banner_sub, "%s", sub ? sub : "");
   banner_col = col;
   banner_ms = 1400;
