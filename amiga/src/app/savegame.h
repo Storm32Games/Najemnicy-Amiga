@@ -9,7 +9,7 @@
 
 #define SAVE_SLOTS 3
 
-typedef struct { int day, scrap, level; char party[96]; char mission[64]; char time[20]; } SlotInfo;
+typedef struct { int day, scrap, level; char party[96]; char mission[64]; char time[48]; } SlotInfo;
 
 /* Dostawca misji w toku: ekran misji ustawia przy wejściu, zeruje przy wyjściu. NULL = zapis bez misji. */
 extern Mission *g_save_mission;
