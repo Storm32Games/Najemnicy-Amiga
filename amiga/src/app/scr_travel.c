@@ -924,7 +924,7 @@ static void draw_labels(void) {
   static Rc placed[MAX_CONTRACTS + 1];
   int np = 0, i, pass, travel = state != S_IDLE;
   float list_bottom = LIST_Y + 18 + n_all * (row_h() + 2);
-  char t1[96], t2[96], tt[96];
+  char t1[112], t2[96], tt[96];
   /* sektory i Przystań */
   for (i = 0; i < SECTOR_COUNT; i++) {
     const SectorDef *s = &SECTOR_DEFS[i];
@@ -1164,8 +1164,8 @@ static void draw_windows(void) {
     }
     yy += ui_text(x + 10, yy, res.outcome ? res.outcome->text : "\226", PAL_TEXT, W - 20, 2, 0) + 8;
     for (i = 0; i < n; i++) {
-      snprintf(buf, sizeof buf, "\206 %s", e[i]);
-      font_draw((float)(x + 10), (float)yy, buf, col[i], 255, FONT_OUTLINE, 0, 1);
+      font_draw((float)(x + 10), (float)yy, "\206 ", col[i], 255, FONT_OUTLINE, 0, 1);   /* • */
+      font_draw((float)(x + 10 + font_measure("\206 ", 0)), (float)yy, e[i], col[i], 255, FONT_OUTLINE, 0, 1);
       yy += 9;
     }
     ui_button(x + W - 82, y + 150 - 22, 74, 15, "W DROG\312 \215", BTN_PRIMARY, 1, 1);
