@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 #include "app.h"
 #include "ui.h"
 #include "game.h"
@@ -68,8 +69,17 @@ static uint8_t biome;
 static const char *const BIOME_KEYS[4] = {"ruins", "wastes", "industrial", "bunker"};
 static const uint32_t BIOME_BG[4] = {0x141217, 0x141316, 0x121416, 0x0a0b0d};
 
-typedef struct { AtlasImg img; int16_t x, y; int32_t depth; int16_t cell; uint8_t flip, flat, tag, hidden; } Spr;
-enum { TAG_NONE, TAG_CRATE, TAG_OBJECTIVE, TAG_NEST };
+/* obraz świata; kind: zwykły, światło (ADD, jasność z light_*), płomienie / błysk (animowane, ADD) */
+typedef struct {
+  AtlasImg img; int16_t x, y; int32_t depth; int16_t cell; uint8_t flip, flat, tag, hidden;
+  uint8_t kind, lkind; uint32_t col; float base, phase, scale;   /* światła */
+  float reach, fade;   /* wysokie obiekty: zasięg zasłaniania (pola), bieżące krycie (odsłanianie przed postacią) */
+} Spr;
+enum { TAG_NONE, TAG_CRATE, TAG_OBJECTIVE, TAG_NEST, TAG_SPARKLE };
+enum { K_IMG, K_LIGHT, K_FLAMES, K_SPARKLE };
+enum { LK_STEADY, LK_FLICKER, LK_PULSE, LK_BLINK };
+#define D_GROUND_GLOW 4
+#define L_FX 3
 static Spr spr[MAX_SPR];
 static int n_spr;
 static uint8_t cell_state[GRID_N];   /* 0 nieodkryte, 1 zapamiętane, 2 widoczne */
@@ -137,6 +147,61 @@ static Spr *place(int gx, int gy, const char *key, int32_t depth, int dx, int dy
   s->flat = 0;
   s->tag = TAG_NONE;
   s->hidden = 0;
+  s->kind = K_IMG;
+  s->reach = 0;
+  s->fade = 1;
+  n_spr++;
+  return s;
+}
+
+/* addTall: wysoki obiekt może zasłonić postać na polach "przed" nim */
+static void tall(Spr *s, int ay) {
+  if (s) s->reach = ay / 8.0f > 1.5f ? ay / 8.0f : 1.5f;
+}
+
+/* addLight: poświata (fx_glow 96x48 albo fx_halo 20x20) w (u, v, z) pola, ADD, odcień col */
+static Spr *light(int gx, int gy, uint32_t col, float u, float v, float z, float alpha, int lk, float scale, int32_t depth, int halo) {
+  Spr *s;
+  int ax, ay;
+  if (n_spr >= MAX_SPR) return NULL;
+  s = &spr[n_spr];
+  if (!art(halo ? "fx_halo" : "fx_glow", &s->img, &ax, &ay)) return NULL;
+  s->x = (int16_t)(iso_x((float)gx, (float)gy) + (u - v) * 16);
+  s->y = (int16_t)(iso_y((float)gx, (float)gy) + (u + v) * 8 - z);
+  s->depth = depth;
+  s->cell = (int16_t)gidx(gx, gy);
+  s->flip = s->flat = s->hidden = 0;
+  s->tag = TAG_NONE;
+  s->kind = K_LIGHT;
+  s->lkind = (uint8_t)lk;
+  s->col = col;
+  s->base = alpha;
+  s->scale = scale;
+  s->phase = (float)hash2(gx, gy, 77) * 10;
+  s->reach = 0;
+  s->fade = 1;
+  n_spr++;
+  return s;
+}
+
+/* płomienie ogniska (fx_flames, 4 klatki 10x16, 9 / s) albo błysk łupu (fx_sparkle, 4 klatki 7x7 tam i z powrotem, potem 1.4 s przerwy) */
+static Spr *anim_spr(int gx, int gy, int kind, float dy) {
+  Spr *s;
+  int ax, ay;
+  if (n_spr >= MAX_SPR) return NULL;
+  s = &spr[n_spr];
+  if (!art(kind == K_FLAMES ? "fx_flames" : "fx_sparkle", &s->img, &ax, &ay)) return NULL;
+  s->x = (int16_t)iso_x((float)gx, (float)gy);
+  s->y = (int16_t)(iso_y((float)gx, (float)gy) + TILE_H / 2 + dy);
+  s->depth = obj_depth(gx, gy, L_FX);
+  s->cell = (int16_t)gidx(gx, gy);
+  s->flip = s->flat = s->hidden = 0;
+  s->tag = kind == K_SPARKLE ? TAG_SPARKLE : TAG_NONE;
+  s->kind = (uint8_t)kind;
+  s->col = kind == K_SPARKLE ? 0xfff0c0 : 0xffffff;
+  s->phase = (float)hash2(gx, gy, kind == K_FLAMES ? 1 : 9);
+  s->reach = 0;
+  s->fade = 1;
   n_spr++;
   return s;
 }
@@ -187,6 +252,7 @@ static void build_world(void) {
         snprintf(k, sizeof k, "edge_r_%s", BIOME_KEYS[biome]);
         place(gx, gy, k, D_EDGE, 0, 0);
       }
+      if (type == FL_TOXIC) light(gx, gy, 0x6ad030, 0.5f, 0.5f, 0, 0.55f, LK_PULSE, 0.6f, D_GROUND_GLOW, 0);
       if (!high(gx, gy)) {
         mask = (high(gx - 1, gy) ? 1 : 0) | (high(gx, gy - 1) ? 2 : 0) | (high(gx + 1, gy) ? 4 : 0) | (high(gx, gy + 1) ? 8 : 0);
         if (!(mask & 3) && high(gx - 1, gy - 1)) mask |= 16;
@@ -238,7 +304,11 @@ static void build_world(void) {
         open = (SAMEB(x, y + 1, i) ? 0 : 1) | (SAMEB(x + 1, y, i) ? 0 : 2) | (SAMEB(x - 1, y, i) ? 0 : 4) | (SAMEB(x, y - 1, i) ? 0 : 8);
         seed = b->seed * 131 + x * 31 + y * 17;
         snprintf(k, sizeof k, "bld_%d_%d_%d_%d", b->h, open, ci, seed % 3);
-        place(x, y, k, obj_depth(x, y, L_PROP), 0, 0);
+        {
+          Spr *t = place(x, y, k, obj_depth(x, y, L_PROP), 0, 0);
+          int ax, ay;
+          if (t && art(k, &t->img, &ax, &ay)) tall(t, ay);
+        }
       }
   }
   /* lite ściany bunkra */
@@ -248,7 +318,11 @@ static void build_world(void) {
   for (i = 0; i < m->n_solids; i++) {
     int x = m->solids[i].gx, y = m->solids[i].gy, open = (ISSOLID(x, y + 1) ? 0 : 1) | (ISSOLID(x + 1, y) ? 0 : 2);
     snprintf(k, sizeof k, "bunker_%d_%d", open, (int)floor(hash2(x, y, 3) * 4));
-    place(x, y, k, obj_depth(x, y, L_PROP), 0, 0);
+    {
+      Spr *t = place(x, y, k, obj_depth(x, y, L_PROP), 0, 0);
+      int ax, ay;
+      if (t && open && art(k, &t->img, &ax, &ay)) tall(t, ay);
+    }
   }
   /* rekwizyty, dekoracje, drzwi */
   memset(prop_at, 0xff, sizeof prop_at);
@@ -277,7 +351,11 @@ static void build_world(void) {
           int conn = (ISWALL(x - 1, y) ? 1 : 0) | (ISWALL(x + 1, y) ? 2 : 0) | (ISWALL(x, y - 1) ? 4 : 0) | (ISWALL(x, y + 1) ? 8 : 0);
           int shape = conn ? conn : (p.rot % 2 ? 12 : 3);
           snprintf(k, sizeof k, "wall_%d_%d_%d_%d", conn, shape, p.type == PR_WALL_BROKEN, p.seed % 3);
-          place(x, y, k, obj_depth(x, y, L_PROP), 0, 0);
+          {
+            Spr *t = place(x, y, k, obj_depth(x, y, L_PROP), 0, 0);
+            int ax, ay;
+            if (t && p.type == PR_WALL && art(k, &t->img, &ax, &ay)) tall(t, ay);
+          }
         } else {
           int v = p.seed % (p.type == PR_CAR || p.type == PR_SCRAP_PILE ? 7 : 3);
           int rot = p.type == PR_DOOR ? (ISWALL(x - 1, y) || ISWALL(x + 1, y) ? 0 : 1) : p.rot;
@@ -285,6 +363,25 @@ static void build_world(void) {
           snprintf(k, sizeof k, "prop_%s_%d_%d", PROP_KEYS[p.type], rot % 2, v);
           s = place(x, y, k, p.type == PR_SKELETON ? D_DECAL : obj_depth(x, y, L_PROP), 0, 0);
           if (s && p.type == PR_SKELETON) s->flat = 1;
+          {
+            int ax, ay;
+            if (s && art(k, &s->img, &ax, &ay) && ay > 34) tall(s, ay);
+          }
+          /* światła i efekty rekwizytów */
+          switch (p.type) {
+            case PR_LAMP:
+              light(x, y, 0xffb050, 0.95f, 0.5f, 0, 0.7f, LK_STEADY, 1.25f, D_GROUND_GLOW, 0);
+              light(x, y, 0xffd890, 0.86f, 0.5f, 37, 1, LK_FLICKER, 0.5f, obj_depth(x, y, L_FX), 1);
+              break;
+            case PR_CAMPFIRE:
+              light(x, y, 0xff7a30, 0.5f, 0.5f, 0, 0.85f, LK_FLICKER, 1.4f, D_GROUND_GLOW, 0);
+              anim_spr(x, y, K_FLAMES, 1);
+              break;
+            case PR_TERMINAL: light(x, y, 0x46f2c8, 0.5f, 0.75f, 0, 0.5f, LK_FLICKER, 0.55f, D_GROUND_GLOW, 0); break;
+            case PR_BARREL_TOXIC: light(x, y, 0x7aff50, 0.5f, 0.5f, 0, 0.5f, LK_PULSE, 0.5f, D_GROUND_GLOW, 0); break;
+            case PR_ANTENNA: light(x, y, 0xff3020, 0.5f, 0.5f, 62, 1, LK_BLINK, 0.35f, obj_depth(x, y, L_FX), 1); break;
+            default: break;
+          }
         }
       }
     }
@@ -293,10 +390,22 @@ static void build_world(void) {
   for (i = 0; i < m->n_crates; i++) {
     Spr *c = place(m->crates[i].gx, m->crates[i].gy, "loot_crate", obj_depth(m->crates[i].gx, m->crates[i].gy, L_PROP), 0, 0);
     if (c) c->tag = TAG_CRATE;
+    if (!mission.things[0].done || 1) {
+      int t, open = 0;
+      for (t = 0; t < mission.n_things; t++)
+        if (mission.things[t].kind == TH_CRATE && mission.things[t].gx == m->crates[i].gx && mission.things[t].gy == m->crates[i].gy) open = mission.things[t].done;
+      if (!open) anim_spr(m->crates[i].gx, m->crates[i].gy, K_SPARKLE, -12);
+    }
   }
   if (m->has_obj && mission.item_thing >= 0 && !mission.things[mission.item_thing].done) {
     Spr *o = place(m->obj.gx, m->obj.gy, "objective", obj_depth(m->obj.gx, m->obj.gy, L_PROP), 0, 0);
     if (o) o->tag = TAG_OBJECTIVE;
+    {
+      Spr *l = light(m->obj.gx, m->obj.gy, 0x60ff80, 0.66f, 0.4f, 20, 1, LK_BLINK, 0.3f, obj_depth(m->obj.gx, m->obj.gy, L_FX), 1);
+      Spr *sp = anim_spr(m->obj.gx, m->obj.gy, K_SPARKLE, -10);
+      if (l) l->tag = TAG_OBJECTIVE;
+      if (sp) sp->tag = TAG_OBJECTIVE;
+    }
   }
   for (i = 0; i < mission.n_things; i++) {
     const MissionThing *th = &mission.things[i];
@@ -306,6 +415,10 @@ static void build_world(void) {
     {
       Spr *n = place(th->gx, th->gy, k, obj_depth(th->gx, th->gy, L_PROP), 0, 0);
       if (n && th->kind == TH_NEST) n->tag = TAG_NEST;
+      if (!th->done) {
+        Spr *l = light(th->gx, th->gy, th->kind == TH_DEVICE ? 0x40e0d0 : 0xc060ff, 0.5f, 0.5f, 6, 0.8f, LK_BLINK, 0.5f, obj_depth(th->gx, th->gy, L_FX), 1);
+        if (l) l->tag = th->kind == TH_NEST ? TAG_NEST : TAG_OBJECTIVE + 10;   /* gaśnie po wykonaniu */
+      }
     }
   }
   /* strefa ewakuacji: słupki w rogach (lekko na zewnątrz) */
@@ -365,12 +478,17 @@ typedef struct {
   Pos from;
   int pose_k, pose_f, pose_ms, hurt_ms;
 } UnitV;
+static void update_cutaway(int ms, const UnitV *u);
 static UnitV units[MAX_UNITS];
 static int n_units;
 static AtlasImg img_shadow, img_cursor, img_crate_open;
 static int crate_open_ax, crate_open_ay;
 
 /* obraz obiektu na polu (tag) - podmiana / ukrycie po interakcji */
+static void hide_tag(Pos p, int tag) {
+  int i;
+  for (i = 0; i < n_spr; i++) if (spr[i].tag == tag && spr[i].cell == gidx(p.gx, p.gy)) spr[i].hidden = 1;
+}
 static Spr *spr_at(Pos p, int tag) {
   int i;
   for (i = 0; i < n_spr; i++) if (spr[i].tag == tag && spr[i].cell == gidx(p.gx, p.gy)) return &spr[i];
@@ -891,6 +1009,7 @@ static void play(const Sig *s) {
       break;
     case 100 + MSIG_DISCOVER:
       if (s->a) float_above(s->a, "!", 0xffd040);
+      if (s->ranged == 0 && s->path[0].gx >= 0) {}
       app_sfx("pickup", 128, 256);
       break;
     case 100 + MSIG_CRATE:
@@ -912,6 +1031,7 @@ static void play(const Sig *s) {
       if (s->ranged && (!s->has_d20 || s->d20.degree != 1)) {
         Spr *c = spr_at(s->path[0], TAG_CRATE);
         if (c) {
+          hide_tag(s->path[0], TAG_SPARKLE);
           c->img = img_crate_open;
           c->x = (int16_t)(iso_x(s->path[0].gx, s->path[0].gy) - crate_open_ax);
           c->y = (int16_t)(iso_y(s->path[0].gx, s->path[0].gy) - crate_open_ay);
@@ -933,8 +1053,9 @@ static void play(const Sig *s) {
       if (s->a) {
         static const char *const WHAT[6] = {"Skrzynia", "Cel zabrany!", "Uwolniony!", "Drzwi", "Urz\261dzenie", "Gniazdo zniszczone!"};
         float_above(s->a, WHAT[s->ambush < 6 ? s->ambush : 0], 0xffd040);
-        if (s->ambush == TH_ITEM && spr_at(s->path[0], TAG_OBJECTIVE)) spr_at(s->path[0], TAG_OBJECTIVE)->hidden = 1;
-        if (s->ambush == TH_NEST && s->ranged && spr_at(s->path[0], TAG_NEST)) spr_at(s->path[0], TAG_NEST)->hidden = 1;
+        if (s->ambush == TH_ITEM) hide_tag(s->path[0], TAG_OBJECTIVE);
+        if (s->ambush == TH_NEST && s->ranged) hide_tag(s->path[0], TAG_NEST);
+        if (s->ambush == TH_DEVICE && s->ranged) hide_tag(s->path[0], TAG_OBJECTIVE + 10);
         app_sfx("pickup", 256, 256);
       }
       wait_ms = 300;
@@ -961,6 +1082,7 @@ static void play(const Sig *s) {
 }
 
 
+static float t_sec;
 static void set_mode(int m, int arg, const char *hint);
 static void use_ability_at(Actor *a, int id, Pos cell, Actor *who);
 static void use_item_at(Actor *a, int inv, Pos cell, Actor *who);
@@ -1555,6 +1677,8 @@ static void update(unsigned held, unsigned pressed, int ms) {
   int i;
   ui_toast_update(ms);
   clock_advance(&clock, ms, 10);
+  t_sec += ms / 1000.0f;
+  update_cutaway(ms, unit_of(mode == M_AI && ai_actor ? ai_actor : mission.pcs[leader]));
   for (i = 0; i < GRID_N; i++)
     if (cell_state[i] && cell_reveal[i] < 255) cell_reveal[i] = (uint8_t)(cell_reveal[i] + ms * 255 / 250 > 255 ? 255 : cell_reveal[i] + ms * 255 / 250);
   update_units(ms);
@@ -1870,6 +1994,61 @@ static void draw_hud(void) {
   if (mode == M_EXPLORE) font_draw_at(V_W - 6, V_H - 4, 1, 1, tmode != MD_NONE ? tmode_hint : "Strza\263ki: kursor \205 fire: id\274 / obiekt \205 Esc: akcje", PAL_DIM, 255, FONT_OUTLINE, 0, 1);
 }
 
+/* światła (updateLights), płomienie i błyski: mieszanie addytywne */
+static void draw_fx(const Spr *s, int st) {
+  const RTex *tex = &atlas.tex[s->img.tex];
+  float vis = (st == 2 ? 1 : 0.12f) * cell_reveal[s->cell] / 255.0f;
+  r2d_blend_add(1);
+  if (s->kind == K_LIGHT) {
+    float k = 1, w = s->img.w * s->scale, h = s->img.h * s->scale;
+    switch (s->lkind) {
+      case LK_FLICKER:
+        k = 0.78f + isin_q14((int)((t_sec * 11 + s->phase) * 256 / 6.2832f)) / 16384.0f * 0.08f + isin_q14((int)((t_sec * 23.7f + s->phase * 2) * 256 / 6.2832f)) / 16384.0f * 0.06f +
+            ((float)hash2((int)(t_sec * 12), 0, (int)s->phase) - 0.5f) * 0.12f;
+        break;
+      case LK_PULSE: k = 0.65f + isin_q14((int)((t_sec * 2.2f + s->phase) * 256 / 6.2832f)) / 16384.0f * 0.35f; break;
+      case LK_BLINK: k = fmodf(t_sec + s->phase, 1.6f) < 0.5f ? 1 : 0.1f; break;
+      default: break;
+    }
+    if (st == 2 || st == 1) r2d_image(tex, s->x - w / 2, s->y - h / 2, w, h, s->img.sx, s->img.sy, s->img.w, s->img.h, s->col, (int)(255 * s->base * k * vis));
+  } else if (s->kind == K_FLAMES) {
+    int f = ((int)(s->phase * 4) + (int)(t_sec * 9)) % 4;
+    r2d_image(tex, s->x - 5.0f, s->y - 16.0f, 10, 16, (float)(s->img.sx + f * 10), s->img.sy, 10, 16, 0xffffff, (int)(255 * vis));
+  } else {
+    /* błysk: 8 klatek tam i z powrotem (10 / s), potem 1.4 s przerwy, start opóźniony o 0..1.5 s */
+    static const int8_t SEQ[8] = {0, 1, 2, 3, 3, 2, 1, 0};
+    float tt = t_sec - s->phase * 1.5f;
+    int f;
+    if (tt >= 0 && fmodf(tt, 2.2f) < 0.8f) {
+      f = SEQ[(int)(fmodf(tt, 2.2f) * 10) & 7];
+      r2d_image(tex, s->x - 3.5f, s->y - 3.5f, 7, 7, (float)(s->img.sx + f * 7), s->img.sy, 7, 7, s->col, (int)(255 * vis));
+    }
+  }
+  r2d_blend_add(0);
+}
+
+/* updateCutaway: wysokie obiekty przed postacią w centrum uwagi półprzezroczyste (0.38) */
+static void update_cutaway(int ms, const UnitV *u) {
+  float pu, pv, psum, pdiff, k = ms / 100.0f > 1 ? 1 : ms / 100.0f;
+  int i;
+  if (!u) return;
+  pu = (u->y / 8 + u->x / 16) / 2 - 0.5f;
+  pv = (u->y / 8 - u->x / 16) / 2 - 0.5f;
+  psum = pu + pv;
+  pdiff = pu - pv;
+  for (i = 0; i < n_spr; i++) {
+    Spr *s = &spr[i];
+    float d, target;
+    int gx, gy;
+    if (s->reach <= 0) continue;
+    gx = s->cell % MAP_W;
+    gy = s->cell / MAP_W;
+    d = gx + gy - psum;
+    target = d > 0.5f && d < s->reach && fabsf(gx - gy - pdiff) < 1.6f ? 0.38f : 1;
+    s->fade += (target - s->fade) * k;
+  }
+}
+
 static void draw(void) {
   int i, j, order[MAX_UNITS], n = 0;
   int32_t ud[MAX_UNITS];
@@ -1894,7 +2073,7 @@ static void draw(void) {
     for (i = 0; i <= n_spr; i++) {
       const Spr *s = i < n_spr ? &spr[i] : NULL;
       int st;
-      if (!overlay && (!s || s->depth > D_AO)) {
+      if (!overlay && (!s || s->depth > D_GROUND_GLOW)) {
         int k;
         overlay = 1;
         draw_overlay();
@@ -1912,7 +2091,8 @@ static void draw(void) {
       }
       st = cell_state[s->cell];
       if (!st) continue;
-      atlas_draw(&atlas, &s->img, s->x, s->y, s->flip, st == 2 ? 0xffffff : memory_tint, cell_reveal[s->cell]);
+      if (s->kind == K_IMG) atlas_draw(&atlas, &s->img, s->x, s->y, s->flip, st == 2 ? 0xffffff : memory_tint, (int)(cell_reveal[s->cell] * s->fade));
+      else draw_fx(s, st);
     }
   }
   while (j < n) draw_unit(&units[order[j++]]);
