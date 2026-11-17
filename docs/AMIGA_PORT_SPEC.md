@@ -418,7 +418,11 @@ amiga/src/data/   gamedata.h/.c (generowane: tabele, teksty ISO-8859-2, region, 
 amiga/src/core/   rng dice character stats rules abilities   (zasady, §4–13)
                   tactical.h grid mapgen combat.h combat ai mission   (taktyka, §10, §14–17)
                   campaign region names save   (kampania, §18–19)
-amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS)
+amiga/src/gfx/    r2d (renderer 2D na GL / MiniGL, czcionka), img (obrazy .ntx w kaflach <= 256, animacje .nta)
+amiga/src/app/    app (maszyna ekranów, przejścia), scr_logo scr_intro scr_title, scenefx (tła, ognisko, postacie), ui
+amiga/src/plat/   plat_amiga.c (ekran RTG 32 bit, MiniGL, klawiatura / joystick / mysz, timer)
+amiga/gfx/        grafiki ekranów (.ntx, .nta) - kopiowane obok pliku wykonywalnego (PROGDIR:gfx/)
+amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), gl_host.c (ekrany na Macu, zrzuty)
 ```
 
 1. ✅ Generator nagłówków (`tools/amiga/gen_headers.ts`).
@@ -430,7 +434,8 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS)
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. ⏳ Ekrany i grafika miniGL, sterowanie, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż, misja (etap 1: świat, mgła, ruch; etap 2: walka turowa; etap 3: menu akcji, zdolności, przedmioty, interakcje, ewakuacja); rozliczenie, koniec drogi, zwycięstwo, zapis gry; ⏳ HUD misji (karta postaci, kości), rozliczenie, zapis z menu, opcje, mapa
+   regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
 
@@ -452,3 +457,101 @@ Rozmiar (68020, `-O2 -msoft-float`): kod logiki ok. 250 KB, dane statyczne (BSS)
 
 Testy jednostkowe: `test_gamedata` (86), `test_dice` (536), `test_character` (4876), `test_save` (130: zapis → odczyt →
 zapis daje te same bajty, a odczytana kopia gra dalej identycznie). Czułość śladów sprawdzana celowo wprowadzanymi błędami.
+
+## 25. Ekrany (miniGL)
+
+Wirtualny ekran 480x270 (siatka projektowa gry), skalowany do trybu RTG z czarnymi pasami. Renderer `r2d` używa tylko
+podzbioru GL sprawdzonego na A1200 w Cube Rally: `glBegin(GL_QUADS)` w paczkach (`MGLBATCH`, domyślnie 8), tekstury RGBA8
+o bokach potęgi dwójki <= 256, `GL_NEAREST`, mieszanie src-alpha (promienie światła: addytywne), `glColor4ub`.
+
+**Grafiki z gry, nie przerysowane.** Tła są malowane kodem na płótnie w przeglądarce; zamiast przepisywać malarzy
+(`fx/Painter.ts`, `NukeArt.ts`) do C, wypiekamy je z prawdziwej gry:
+
+1. `node tools/amiga/bake_scenes.ts [title intro1 ... intro6]` - Vite + Chrome bez okna (DevTools Protocol), scena z
+   `?bake=1` (`Kit.ts`: tekstury w rozdzielczości projektowej, bez skalera pixel artu). Zapisuje tekstury płócien,
+   ramki arkuszy postaci, obiekty sceny (pozycje, głębie) i animacje do `amiga/data/bake/<cel>/` (poza repozytorium).
+   Dla wybuchu atomowego (NukeBlast liczy każdy piksel co klatkę) - klatki co 100 ms przez 7 s.
+2. `python3 tools/amiga/pack_scenes.py` - `.ntx` (paleta <= 256 + RLE) i `.nta` (animacja: wspólna paleta, LZ względem
+   poprzedniej klatki; wybuch 73 klatki = 1,5 MB) w `amiga/gfx/`, oraz `amiga/src/data/scenes.{h,c}`: migające okna,
+   ptaki i promienie (`Windows`, `Birds`, `LightRays` - te same ziarna lcg co w grze), rozstawienie postaci, oczy w ruinach.
+
+Ruch odtwarzany w C (`scenefx.c`, `scr_*.c`) z liczb całkowitych `core/frontend` (fazy `wave_q14`, `TickClock`, `MoteField`,
+`campfire`): paralaksa, dryf chmur / mgły / dymu, ognisko, pył i iskry, postacie z animacją idle (klatka = 100 ms +
+`duration`, start `|x| % 4` jak `addUnit`), flaga szabrowników, karawana nomadów, reflektory, rakiety, wstrząs kamery.
+Teksty: ISO-8859-2 + 32 znaki czcionki spoza Latin-2 na kodach 0x80..0x9F (`tools/amiga/charmap.ts`: —, ▶, ◆, „ ” ...).
+
+Menu tytułowe na Amidze: zapisy jeszcze nie działają (`title_menu(0, 0)`), „Opcje” pokazują komunikat,
+Esc = wyjście z potwierdzeniem. Mysz: jeszcze nie (klawiatura i joystick).
+
+Werbunek (`scr_recruit.c`): portrety 30 / 26 px wypieczone z gry (4 przebiegi `recruit1..4` z `?pick=`), całe postacie
+w 8 kierunkach prosto z `src/assets/units/<id>/*.png` (`spr_<id>.ntx`, ładowane przy zmianie pokazanego). Fokus
+joystickiem po siatce 4 x 4 i przyciskach (fokus = pokazany najemnik, obrót karty skalą `r2d_scale`), fire = wybierz.
+„Rozpocznij” woła `start_campaign` i przechodzi do Przystani. Bez „Zmień imię” (brak wpisywania
+tekstu) i bez podpowiedzi do zdolności; kursywa opisu jako zwykły tekst.
+
+Sprawdzanie bez Amigi: `make -C amiga build/gl_host` (OpenGL na Macu, ten sam kod ekranów), np.
+`cd amiga && ./build/gl_host 1280x720 400 build/shots/t "0:goto=title 100:DOWN 120:shot"` -> zrzuty PPM
+(`tools/amiga/ppm2png.py`). Plik wykonywalny: `make -C amiga amiga-app` -> `build/Najemnicy` (+ katalog `gfx/` obok).
+
+Przystań (`scr_hub.c`): tablica zleceń (szczegóły, zwiad, nagroda, przyjęcie z ostrzeżeniem o rannych), handlarz (kupno /
+sprzedaż ze skrytki i plecaków), lecznica (leczenie, odpoczynek = następny dzień), drużyna (cechy, obrona, umiejętności,
+gniazda ekwipunku z oknem wyboru, zdolności, plecak - użyj / do skrytki, skrytka), karczma (zatrudnianie), menu główne.
+Wszystko na `core/campaign` i `core/rules`. Sterowanie: strefa treści i menu po prawej, podpowiedzi przedmiotów i zdolności
+po 350 ms fokusu (zamiast najechania myszą). Grafiki: tło 'hub', mieszkańcy, wszyscy rekruci przy ognisku, portrety
+29 / 30 / 40 px i ikony przedmiotów (10 / 11 px) i zdolności (7 px) wypieczone z gry (cel `hub` z `prep` - kod w stronie
+woła moduły gry przez `import()`), w atlasach `portraits.ntx`, `icons.ntx`, `hub_party.ntx`.
+Napisy w nowych plikach ekranów piszemy w UTF-8; `python3 tools/amiga/latin2_literals.py <plik.c>` przekodowuje literały
+na kody portu (komentarze zostają w UTF-8). Gdy brak ekranu docelowego (podróż i misja, zapis, opcje) - komunikat.
+
+Mapa regionu i podróż (`scr_travel.c`): krajobraz 1000x700 (12 kafli), 966 elementów zasłaniających przepakowanych do
+4 atlasów 256x256 (`travel_occ*.ntx`), bloki budynków z głębią do rozstrzygania „przed / za” postaci (`depthAt`),
+ogniska, latarnia, 8 gatunków bestii (jedna odmiana kolorów na gatunek - w grze kolory losowe przy każdej wizycie).
+Kamera mapy przez `r2d_scale` + `r2d_offset` (przybliżenia 0.48 / 1 / 2 / 3 / 4), rysowanie z sortowaniem po głębi
+i odrzucaniem poza widokiem. Drużyna maszeruje gęsiego (`formation`), chód w 8 kierunkach (arkusze `walk_<id>.ntx`;
+w postoju klatka 0 zamiast animacji spoczynku). Zdarzenia: okno z wyborami i podpowiedzią testu, rzut k20, wynik ze
+skutkami (te same teksty co w grze), zasadzka bestii (szarża, walka / ucieczka). Po dotarciu - powrót do Przystani
+z komunikatem (misja jeszcze nie przeniesiona). Testy: `gl_host ... "0:event=N 1:goto=travel"` (99 = bestia).
+
+Misja (`scr_mission.c`), etap 1: grafiki świata nie są stałe (WorldScene maluje je kodem dla każdej mapy), ale
+przestrzeń parametrów malarzy jest skończona - cel `tiles` w `bake_scenes.ts` wywołuje malarzy z `iso/IsoArt.ts` dla
+wszystkich kombinacji (podłogi, przejścia, okluzja, kalkomanie, budynki - ziarno komórki zredukowane do 3 odmian,
+ściany, rekwizyty, flora, skrzynie, cele, słupki ewakuacji, efekty) i zapisuje biblioteki `.ntl`
+(`lib_common`, `lib_<biom>`; klucze jak w ArtBook, z punktem zaczepienia). Postacie: biblioteki klatek `unit_<id>.ntl`
+(najemnicy, 8 kierunków PixelLab) i `unit_en_<szablon>.ntl` (wrogowie). Przy wejściu ekran odtwarza `buildWorld`
+(te same klucze, `hash2` i `rng` z `iso/Pixel.ts`), czyta z bibliotek tylko potrzebne obrazy i składa je w atlasy
+256x256 (`Atlas` w `img.c`). Mgła wojny z `mission.vis / explored`, kursor pola joystickiem (kierunki ekranu, z
+powtarzaniem), ruch drużyny `mission_explore_move` z animacją kroku 130 ms. Walka, akcje, interakcje, światła,
+odsłanianie wysokich obiektów i HUD - kolejne etapy. Testy: `gl_host ... "0:job=N 30:shot"`.
+
+Misja, etap 2 (walka): sygnały logiki (`combat_on`, `mission_on`) są kopiowane do kolejki (bufory wyników logiki są ważne
+tylko do następnej akcji) i odgrywane po kolei jak `flush()` / `play()` w WorldScene: baner walki / zasadzki, tury
+(„TURA: …”, „TURA WROGA”), ruch, atak (poza strzału / ciosu, wynik nad celem po animacji), trafienia, pudła, stany
+(powalony, zabity - klatki `die`), podniesienie Złomu. Przebieg jak `runCombat`: `combat_next_turn`, tura gracza
+(zasięg ruchu z `combat_reach_for` w kolorach 1 / 2 / 3 akcji, szansa trafienia z `combat_strike_info` pod kursorem,
+fire: ruch `combat_stride` albo atak `combat_attack_target`, Esc: menu tury - zakończ turę / wycofanie), tura wroga
+`ai_step` co 160 ms. Koniec misji (`MSIG_FINISH`) - `apply_mission_result` i powrót do Przystani z komunikatem
+(ekran rozliczenia - kolejny etap). Dziennik: rzuty ataku (k20, modyfikator, KP, stopień). Test:
+`gl_host ... "40:enemy 42:OK ..."` (`enemy` = kursor na najbliższego wroga).
+
+Misja, etap 3: menu akcji pod Esc (port `refreshActions`): w walce Marsz / Krok / Atak (z karą PWA), zdolności z kosztem
+w akcjach i liczbą użyć, Przedmioty (podmenu), interakcja z obiektem obok, Odłóż turę, Koniec tury, Odwrót; w eksploracji
+zdolności dozwolone poza walką, przedmioty, interakcja, Następny najemnik, Odwrót. Tryby celowania (Krok, Atak,
+zdolność na wroga / sojusznika / obszar, przedmiot) z podpowiedzią; fire na obiekcie = podejście i interakcja, dla skrzyń,
+drzwi i urządzeń okno wyboru umiejętności z szansą (`hit_chances`) jak `pickThingSkill`. Sygnały misji: skrzynia (rzut,
+pułapka, otwarte wieko), zamek / hakowanie, interakcja (cel zabrany, gniazdo zniszczone), cel wykonany, ewakuacja
+(`mission_can_extract`), odwrót (`mission_retreat`), pozostałości na terenie jak `leftovers()`.
+
+Rozliczenie i ekrany końcowe: koniec misji (`MSIG_FINISH`) - porażka (wybicie drużyny) od razu na KONIEC DROGI (`scr_end.c`,
+polegli przewracają się klatkami `f_hurt -> f_die`), inaczej stan najemników sprzed naliczenia (`g_before`) i
+`apply_mission_result` -> rozliczenie (`scr_debrief.c`: oś czasu jak `script()` - licznik Złomu, PD, reputacja, łup
+w dwóch kolumnach albo siatce ikon, polegli, wątek fabularny, karty z paskiem PD i awansem, nowe zdolności) ->
+Przystań / KONIEC DROGI / ZWYCIĘSTWO (epilog maszyną do pisania, napisy końcowe przez 34 s). Tła wypieczone: `debrief`,
+`debriefn`, `over`, `win` (+ tytuły). Testy: `gl_host ... "0:goto=victory"`, `"0:goto=gameover"`.
+
+Zapis gry (`savegame.c`, port obiektu `Save`): autozapis (Kontynuuj) i 3 sloty w plikach `PROGDIR:najemnicy_auto.sav`,
+`najemnicy_slot1..3.sav`; treść: „NSAV”, wersja, czas, kampania (`campaign_save`) i - przy zapisie w eksploracji misji -
+indeks zlecenia, `mission_save` i kampania z chwili wejścia na teren. Autozapis przy wejściu do Przystani i po rozliczeniu
+(nie po wybiciu drużyny); zapis do slotu nadpisuje też autozapis, wczytanie slotu kopiuje go do autozapisu. Okno slotów
+jak `openSaveSlots` (data, dzień, poziom / misja w toku, drużyna, potwierdzenie nadpisania). Wczytanie misji w toku:
+`mission_load` z mapą z generatora. Menu tytułowe: Kontynuuj / Wczytaj grę; Przystań: Zapisz / Wczytaj / Zapisz i wyjdź;
+misja (eksploracja): Zapisz grę; koniec drogi: Wczytaj ostatni zapis.

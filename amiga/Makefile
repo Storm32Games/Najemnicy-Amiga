@@ -48,3 +48,20 @@ build/trace_%.68k: tests/trace_%.c tests/trace_fmt.c $(CORE) $(DATA) $(HDRS)
 
 clean:
 	rm -rf build
+
+# ---- ekrany (renderer GL): test na Macu bez okna, zrzuty PPM -> PNG (tools/amiga/ppm2png.py)
+APP = $(wildcard src/app/*.c) $(wildcard src/gfx/*.c) src/data/assets.c src/data/scenes.c
+# wersja jak __GAME_VERSION__ w vite.config.ts (liczba scaleń w main: 17 scaleń = 1.7)
+NAJ_VERSION := $(shell n=$$(git rev-list --count --merges --first-parent HEAD 2>/dev/null); [ -n "$$n" ] && [ "$$n" -gt 0 ] && echo $$((n / 10)).$$((n % 10)) || echo 0.0)
+build/gl_host: tests/gl_host.c $(APP) $(CORE) $(DATA) $(HDRS) $(wildcard src/app/*.h src/gfx/*.h) src/data/assets.h src/data/scenes.h
+	@mkdir -p build
+	$(CC) -std=c99 -O2 -Wall -Wextra -Wno-deprecated-declarations -DNAJ_VERSION='"$(NAJ_VERSION)"' -o $@ tests/gl_host.c $(APP) $(CORE) $(DATA) -framework OpenGL $(LIBS)
+
+# ---- gra na Amigę (MiniGL V29, ABI 5; SDK w sdk/minigl29 - jak Cube Rally). Logika i ekrany: soft-float (zgodność z TS).
+MGLSDK = sdk/minigl29
+MGL_CLIENT = $(MGLSDK)/client/minigl_open.c $(MGLSDK)/client/minigl_base.c $(MGLSDK)/client/minigl_dispatch_stub_gcc.s
+AMIGA_APP_FLAGS = -noixemul -m68020 -msoft-float -std=gnu99 -O2 -fomit-frame-pointer -Wall -DNAJ_AMIGA -I$(MGLSDK)/include
+amiga-app: build/Najemnicy
+build/Najemnicy: src/plat/plat_amiga.c $(APP) $(CORE) $(DATA) $(HDRS) $(wildcard src/app/*.h src/gfx/*.h)
+	@mkdir -p build
+	$(M68K_CC) $(AMIGA_APP_FLAGS) -DNAJ_VERSION='"$(NAJ_VERSION)"' -o $@ src/plat/plat_amiga.c $(APP) $(CORE) $(DATA) $(MGL_CLIENT) $(LIBS)

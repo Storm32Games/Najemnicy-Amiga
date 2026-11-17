@@ -52,27 +52,27 @@ const AncestryDef ANCESTRY_DEFS[ANC_COUNT] = {
    8, 5, {0, 0, 0, 0, 0, 0}, 2, {0, 0, 0, 0, 0, 0}, AT_HUMAN,
    {0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}, 1, {SKILL_SOCIETY, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
    4, 4, {0xE0B48AUL, 0xC68E66UL, 0x8D5A3BUL, 0xF0C9A0UL}, {0x2B1D12UL, 0x5A3A1EUL, 0x8A6A3AUL, 0x111111UL}, 0, 0},
-  {"humanoid", "Humanoid", "elf", "Potomkowie ludzi z przedwojennych program\363w genetycznych: smukli, d\263ugowieczni, o bladosinej sk\363rze i wyostrzonych zmys\263ach. Szybcy i bystrzy, ale delikatni.", "Pr\352dko\266\346 6, +Zr\352czno\266\346 i +Inteligencja, -Kondycja; wyszkolony w Skradaniu.",
+  {"humanoid", "Humanoid", "elf", "Potomkowie ludzi z przedwojennych program\363w genetycznych: smukli, d\263ugowieczni, o bladosinej sk\363rze i wyostrzonych zmys\263ach. Szybcy i bystrzy, ale delikatni.", "Pr\352dko\266\346 6, +Zr\352czno\266\346 i +Inteligencja, \202Kondycja; wyszkolony w Skradaniu.",
    6, 6, {0, 1, 0, 1, 0, 0}, 0, {0, 0, -1, 0, 0, 0}, AT_HUMANOID,
    {0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1, {SKILL_STEALTH, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
    3, 3, {0xC8D4E0UL, 0xB4C4D8UL, 0xD8DCE8UL, 0}, {0xE8E8F0UL, 0xB8C8E0UL, 0x6A7AA0UL, 0}, 0, 0},
-  {"mutant", "Mutant", "krasnolud", "Ska\277eni promieniowaniem: kr\352pi, twardzi jak ska\263a i uparci. Odporni na toksyny, ale powolni i odpychaj\261cy.", "PW rasy 10, odporno\266\346 na trucizn\352 2, +Kondycja i +M\261dro\266\346, -Charyzma; Pr\352dko\266\346 4.",
+  {"mutant", "Mutant", "krasnolud", "Ska\277eni promieniowaniem: kr\352pi, twardzi jak ska\263a i uparci. Odporni na toksyny, ale powolni i odpychaj\261cy.", "PW rasy 10, odporno\266\346 na trucizn\352 2, +Kondycja i +M\261dro\266\346, \202Charyzma; Pr\352dko\266\346 4.",
    10, 4, {0, 0, 1, 0, 1, 0}, 0, {0, 0, 0, 0, 0, -1}, AT_MUTANT,
    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1, {SKILL_ATHLETICS, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 2, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
    4, 2, {0x7EA060UL, 0x98A86AUL, 0xA88A9AUL, 0x6F8F7AUL}, {0x222222UL, 0x3A4A2AUL, 0, 0}, 1, 0},
-  {"cyborg", "Cyborg", "android", "Cia\263o po\263atane implantami z ruin. Precyzyjny i ch\263odny, ale wra\277liwy na impuls elektromagnetyczny.", "+1 KP (p\263yty), s\263abo\266\346 na pr\261d 3, +Zr\352czno\266\346 i +Inteligencja, -Charyzma.",
+  {"cyborg", "Cyborg", "android", "Cia\263o po\263atane implantami z ruin. Precyzyjny i ch\263odny, ale wra\277liwy na impuls elektromagnetyczny.", "+1 KP (p\263yty), s\263abo\266\346 na pr\261d 3, +Zr\352czno\266\346 i +Inteligencja, \202Charyzma.",
    8, 5, {0, 1, 0, 1, 0, 0}, 0, {0, 0, 0, 0, 0, -1}, AT_CYBORG | AT_MACHINE,
    {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0}, 1, {SKILL_CRAFTING, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 3, 0, 0, 0},
    2, 2, {0xB8A89AUL, 0x9A9A9AUL, 0, 0}, {0x111111UL, 0x555555UL, 0, 0}, 0, 1},
-  {"nomad", "Dziecko Pustkowi", "nizio\263ek", "Urodzony w karawanie: drobny, zwinny i czujny. Zna pustkowia jak w\263asn\261 kiesze\361.", "+Zr\352czno\266\346 i +M\261dro\266\346, -Si\263a; wyszkolony w Przetrwaniu.",
+  {"nomad", "Dziecko Pustkowi", "nizio\263ek", "Urodzony w karawanie: drobny, zwinny i czujny. Zna pustkowia jak w\263asn\261 kiesze\361.", "+Zr\352czno\266\346 i +M\261dro\266\346, \202Si\263a; wyszkolony w Przetrwaniu.",
    6, 5, {0, 1, 0, 0, 1, 0}, 0, {-1, 0, 0, 0, 0, 0}, AT_HUMAN | AT_NOMAD,
    {0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0}, 1, {SKILL_SURVIVAL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
    3, 3, {0xC9966AUL, 0xA87648UL, 0x8D5A3BUL, 0}, {0x2B1D12UL, 0x7A5A2AUL, 0xDDDDDDUL, 0}, 0, 0},
-  {"vault", "Dziecko Schronu", "gnom", "Wychowany pod ziemi\261: niski, blady, ciekawski i wygadany. Zaskakuj\261co \277ywotny, ale s\263aby fizycznie.", "+Kondycja i +Charyzma, -Si\263a; wyszkolony w Technice i Wiedzy.",
+  {"vault", "Dziecko Schronu", "gnom", "Wychowany pod ziemi\261: niski, blady, ciekawski i wygadany. Zaskakuj\261co \277ywotny, ale s\263aby fizycznie.", "+Kondycja i +Charyzma, \202Si\263a; wyszkolony w Technice i Wiedzy.",
    8, 5, {0, 0, 1, 0, 0, 1}, 0, {-1, 0, 0, 0, 0, 0}, AT_HUMAN,
    {0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0}, 2, {SKILL_SOCIETY, SKILL_CRAFTING, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
    2, 3, {0xF0DCCBUL, 0xE8D0B8UL, 0, 0}, {0x2B1D12UL, 0xA8782AUL, 0xD8C8A0UL, 0}, 0, 0},
-  {"ratling", "Szczurak", "goblin", "Mali, \277yla\266ci mieszka\361cy kana\263\363w i wysypisk. Sprytni, bezczelni i wsz\352dobylscy; rozs\261dek nie jest ich mocn\261 stron\261.", "+Zr\352czno\266\346 i +Charyzma, -M\261dro\266\346; wyszkolony w Z\263odziejstwie.",
+  {"ratling", "Szczurak", "goblin", "Mali, \277yla\266ci mieszka\361cy kana\263\363w i wysypisk. Sprytni, bezczelni i wsz\352dobylscy; rozs\261dek nie jest ich mocn\261 stron\261.", "+Zr\352czno\266\346 i +Charyzma, \202M\261dro\266\346; wyszkolony w Z\263odziejstwie.",
    6, 5, {0, 1, 0, 0, 0, 1}, 0, {0, 0, 0, 0, -1, 0}, AT_RATLING,
    {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 1, {SKILL_THIEVERY, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
    3, 3, {0x9A8A7AUL, 0x8A8F84UL, 0xA89A8AUL, 0}, {0x3A3430UL, 0x5A4A3AUL, 0x222222UL, 0}, 0, 0},
@@ -575,13 +575,13 @@ const RecruitDef RECRUIT_DEFS[RECRUIT_COUNT] = {
    {BODY_LIGHT, 0xE0B896UL, 0x7A2F22UL, 0xD9D2C0UL, 0xC43D2FUL, 4, -1, -1, -1}},
   {"lut", "Lut", "P\363\263 cz\263owiek, p\363\263 z\263om. Zdejmuje w\263asne implanty, \277eby naprawi\346 cudze, i gada do dron\363w jak do starych przyjaci\363\263.", 'm', ANC_CYBORG, CLASS_TECHIE,
    {BODY_MEDIUM, 0x9AA4A8UL, 0x222222UL, 0x3F5666UL, 0x8FD14FUL, 0, -1, -1, 1}},
-  {"szczurek", "Szczurek", "Wychowany w kana\263ach Martwego Miasta. Otworzy ka\277dy zamek, wyniesie wszystko, co nie jest przybite - i par\352 rzeczy, kt\363re s\261.", 'm', ANC_HUMAN, CLASS_SCAVENGER,
+  {"szczurek", "Szczurek", "Wychowany w kana\263ach Martwego Miasta. Otworzy ka\277dy zamek, wyniesie wszystko, co nie jest przybite \200 i par\352 rzeczy, kt\363re s\261.", 'm', ANC_HUMAN, CLASS_SCAVENGER,
    {BODY_LIGHT, 0xD0A583UL, 0x1C1C1CUL, 0x4A3F36UL, 0xF2A93BUL, 2, -1, -1, -1}},
   {"bizon", "Bizon", "Promieniowanie da\263o mu sk\363r\352 jak kora i si\263\352 dw\363ch ch\263op\363w. Gdy kto\266 go rozz\263o\266ci, ostatnie, co widzi, to pi\352\266\346.", 'm', ANC_MUTANT, CLASS_BRUTE,
    {BODY_HEAVY, 0x7F9A62UL, 0x2B2B2BUL, 0x6B3A2AUL, 0xC43D2FUL, 5, -1, 1, -1}},
   {"kruk", "Kruk Dymarski", "Wynajmowany przez karawany jako ochroniarz. Strzela rzadko, ale zawsze tam, gdzie zamierzy\263. M\363wi ma\263o, s\263ucha wszystkiego.", 'm', ANC_NOMAD, CLASS_GUNSLINGER,
    {BODY_MEDIUM, 0x8A5E44UL, 0x1A1410UL, 0x7A6A48UL, 0x7F9AA8UL, 1, 1, -1, -1}},
-  {"plesn", "Doktor Ple\266\361", "Wyleczy\263 si\352 z choroby popromiennej, kt\363rej nikt inny nie prze\277y\263. Twierdzi, \277e to \"kwestia nastawienia\". Jego mikstury lepiej nie pyta\346, z czego.", 'm', ANC_MUTANT, CLASS_MEDIC,
+  {"plesn", "Doktor Ple\266\361", "Wyleczy\263 si\352 z choroby popromiennej, kt\363rej nikt inny nie prze\277y\263. Twierdzi, \277e to \227kwestia nastawienia\". Jego mikstury lepiej nie pyta\346, z czego.", 'm', ANC_MUTANT, CLASS_MEDIC,
    {BODY_MEDIUM, 0x6F9A74UL, 0x556B3AUL, 0xBDB7A0UL, 0x8FD14FUL, 3, -1, 1, -1}},
   {"iskra", "Iskra", "Wynalazczyni z warsztatu w zajezdni. Po\263owa lamp w Przystani to jej dzie\263o; druga po\263owa to jej wybuchy.", 'f', ANC_HUMAN, CLASS_TECHIE,
    {BODY_LIGHT, 0xE3B48CUL, 0xF2A93BUL, 0x7F4F2AUL, 0xF2A93BUL, 4, -1, -1, -1}},
@@ -597,7 +597,7 @@ const RecruitDef RECRUIT_DEFS[RECRUIT_COUNT] = {
    {BODY_LIGHT, 0xF0DCCBUL, 0xA8782AUL, 0x6A7A3AUL, 0x8FD14FUL, 4, -1, -1, -1}},
   {"aksamit", "Aksamit", "Humanoid o g\263osie, kt\363rego s\263ucha nawet wiatr. Zagrzewa\263 do boju trzy armie; dwie z nich walczy\263y ze sob\261.", 'm', ANC_HUMANOID, CLASS_HERALD,
    {BODY_LIGHT, 0xCCD6E4UL, 0xB8C8E0UL, 0x7A2A4AUL, 0xE0B040UL, 1, -1, -1, -1}},
-  {"zero", "Zero", "Po\263ow\352 pami\352ci trzyma na kartach w kieszeni. Wchodzi do cudzych system\363w tak, jak inni wchodz\261 do baru - bez pukania.", 'f', ANC_CYBORG, CLASS_HACKER,
+  {"zero", "Zero", "Po\263ow\352 pami\352ci trzyma na kartach w kieszeni. Wchodzi do cudzych system\363w tak, jak inni wchodz\261 do baru \200 bez pukania.", 'f', ANC_CYBORG, CLASS_HACKER,
    {BODY_LIGHT, 0xA8B0B4UL, 0x2A2A30UL, 0x2A4A52UL, 0x40E0D0UL, 2, -1, -1, 1}},
 };
 
@@ -618,7 +618,7 @@ const DeviceDef DEVICE_DEFS[DEVICE_COUNT] = {
 };
 
 static const EventOutcome EVENT_OUTCOMES[89] = {
-  {"Handlarz obra\277a si\352 i zdziera z Was haracz za \"zepsute targowanie\".", -15, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
+  {"Handlarz obra\277a si\352 i zdziera z Was haracz za \227zepsute targowanie\".", -15, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Cena jest absurdalna. Odchodzicie z niczym.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Dobijacie targu: kupujecie sprz\352t za p\363\263 ceny.", 0, 1, {ITEMSPEC_TYPE(ITYPE_CONSUMABLE), 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Handlarz jest pod wra\277eniem. Dorzuca prezent i dobre s\263owo o Was w\266r\363d Nomad\363w.", 0, 2, {ITEMSPEC_TYPE(ITYPE_CONSUMABLE), ITEMSPEC_ANY, 0}, {0, 0, 0}, {0, 1}, 0, 0},
@@ -627,12 +627,12 @@ static const EventOutcome EVENT_OUTCOMES[89] = {
   {"Nomadzi sprzedaj\261 informacj\352 o ukrytym sk\263adzie.", 25, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Mapa skrytki! Wasze kieszenie robi\261 si\352 ci\352\277sze.", 60, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Schronienie okazuje si\352 dziurawe. Burza trawi Was przez godziny.", 0, 0, {0, 0, 0}, {2, 6, 0}, {0, 0}, 0, 0},
-  {"Przeczekujecie burz\352, ale bez rewelacji - ka\277dy na\263yka\263 si\352 py\263u.", 0, 0, {0, 0, 0}, {1, 6, 0}, {0, 0}, 0, 0},
+  {"Przeczekujecie burz\352, ale bez rewelacji \200 ka\277dy na\263yka\263 si\352 py\263u.", 0, 0, {0, 0, 0}, {1, 6, 0}, {0, 0}, 0, 0},
   {"Znajdujecie betonow\261 rur\352. Burza przechodzi bokiem.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Pod os\263on\261 wraku znajdujecie czyj\261\266 skrytk\352 z zapasami.", 0, 1, {ITEMSPEC_TYPE(ITYPE_CONSUMABLE), 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Py\263 zasypuje oczy. Potykacie si\352, kaszlecie krwi\261.", 0, 0, {0, 0, 0}, {2, 6, 0}, {0, 0}, 0, 0},
   {"Docieracie na miejsce poobijani i ska\277eni.", 0, 0, {0, 0, 0}, {1, 6, 0}, {0, 0}, 0, 0},
-  {"Silne plecy i mokre szmaty na twarzach - przeszli\266cie.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
+  {"Silne plecy i mokre szmaty na twarzach \200 przeszli\266cie.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Burza zostaje w tyle. Nawet zyskujecie dzie\361 czasu.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, -1},
   {"Za p\363\274no! Seria z karabinu rani Was, zanim si\352gniecie po bro\361.", -20, 0, {0, 0, 0}, {2, 6, 0}, {0, 0}, 0, 0},
   {"Widzicie ich, ale oni Was te\277. Ostrza\263 zadaje rany.", 0, 0, {0, 0, 0}, {1, 6, 0}, {0, 0}, 0, 0},
@@ -654,14 +654,14 @@ static const EventOutcome EVENT_OUTCOMES[89] = {
   {"Opatrunek wystarczy\263 na kilka godzin. M\352\277czyzna odchodzi o w\263asnych si\263ach, nic nie m\363wi\261c.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"M\352\277czyzna dochodzi do siebie. W podzi\352ce oddaje Wam troch\352 Z\263omu.", 30, 0, {0, 0, 0}, {0, 0, 0}, {1, 0}, 0, 0},
   {"Okazuje si\352 kurierem Przystani. Odwdzi\352cza si\352 hojnie i opowiada o Was wsz\352dzie.", 50, 1, {ITEMSPEC_TYPE(ITYPE_CONSUMABLE), 0, 0}, {0, 0, 0}, {2, 0}, 0, 0},
-  {"To by\263a pu\263apka! \"Ranny\" wyci\261ga n\363\277.", 0, 0, {0, 0, 0}, {1, 8, 0}, {0, 0}, 0, 0},
+  {"To by\263a pu\263apka! \227Ranny\" wyci\261ga n\363\277.", 0, 0, {0, 0, 0}, {1, 8, 0}, {0, 0}, 0, 0},
   {"Nic przy nim nie ma. Odchodzicie ze z\263ym smakiem w ustach.", 0, 0, {0, 0, 0}, {0, 0, 0}, {-1, 0}, 0, 0},
   {"Znajdujecie co\266 cennego. Sumienie milczy.", 25, 0, {0, 0, 0}, {0, 0, 0}, {-1, 0}, 0, 0},
   {"Pod kurtk\261 ukry\263 cenn\261 rzecz. Nikt si\352 nie dowie.", 45, 0, {0, 0, 0}, {0, 0, 0}, {-1, 0}, 0, 0},
   {"Belka p\352ka. Spadacie bole\266nie z kilku metr\363w.", 0, 0, {0, 0, 0}, {2, 6, 0}, {0, 0}, 0, 0},
   {"Przechodzicie, ale trzy razy prawie gin\261c. Kto\266 zdar\263 sobie sk\363r\352.", 0, 0, {0, 0, 0}, {1, 6, 0}, {0, 0}, 0, 0},
   {"Linia po linii, przechodzicie na drug\261 stron\352.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
-  {"Idzie jak po sznurku - wasza zwinno\266\346 zostanie zapami\352tana.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 20, 0},
+  {"Idzie jak po sznurku \200 wasza zwinno\266\346 zostanie zapami\352tana.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 20, 0},
   {"Konstrukcja zawala si\352 w trakcie. Rany i stracony sprz\352t.", -15, 0, {0, 0, 0}, {1, 6, 0}, {0, 0}, 0, 0},
   {"Budowa trwa ca\263y dzie\361.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 1},
   {"Kilka desek, lina i sprytny w\352ze\263. Przeprawa gotowa.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
@@ -687,7 +687,7 @@ static const EventOutcome EVENT_OUTCOMES[89] = {
   {"Namierzacie star\261 stacj\352 przeka\274nikow\261 z zapasami.", 35, 1, {ITEMSPEC_TYPE(ITYPE_TECH), 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"To automatyczny sk\263ad wojskowy! Pe\263en u\277ytecznych rzeczy.", 70, 2, {ITEMSPEC_TYPE(ITYPE_TECH), ITEMSPEC_TYPE(ITYPE_CONSUMABLE), 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Wy\263\261czacie radio. Co w nim by\263o, nigdy si\352 nie dowiecie.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
-  {"\254le zrozumia\263 pro\266b\352 - wyprowadza Was na manowce.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 1},
+  {"\254le zrozumia\263 pro\266b\352 \200 wyprowadza Was na manowce.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 1},
   {"Kr\352ci g\263ow\261. Skr\363t\363w nie sprzedaje.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 0}, 0, 0},
   {"Pokazuje \266cie\277k\352 znan\261 tylko Nomadom. Zyskujecie czas.", 0, 0, {0, 0, 0}, {0, 0, 0}, {0, 1}, 0, -1},
   {"Z honorami prowadzi Was dalej i opowiada o Was przy ogniskach.", 0, 1, {ITEMSPEC_TYPE(ITYPE_CONSUMABLE), 0, 0}, {0, 0, 0}, {0, 2}, 0, -1},
@@ -697,7 +697,7 @@ static const EventOutcome EVENT_OUTCOMES[89] = {
   {"Ma dla Was map\352 kilku skrytek.", 60, 0, {0, 0, 0}, {0, 0, 0}, {0, 1}, 0, 0},
   {"{N} rozrywa szyk i znika z kawa\263kiem czyjego\266 ekwipunku w pysku. Kto\266 mocno krwawi.", -10, 0, {0, 0, 0}, {2, 6, 0}, {0, 0}, 0, 0},
   {"Odpieracie atak, ale bestia zd\261\277y\263a kogo\266 poharata\346, zanim uciek\263a.", 0, 0, {0, 0, 0}, {1, 6, 0}, {0, 0}, 15, 0},
-  {"{N} pada. Wycinacie gruczo\263 - alchemicy w Przystani dobrze za niego zap\263ac\261.", 0, 1, {ITEM_MUTANT_GLAND, 0, 0}, {0, 0, 0}, {0, 0}, 40, 0},
+  {"{N} pada. Wycinacie gruczo\263 \200 alchemicy w Przystani dobrze za niego zap\263ac\261.", 0, 1, {ITEM_MUTANT_GLAND, 0, 0}, {0, 0, 0}, {0, 0}, 40, 0},
   {"Czysta robota: jedno uderzenie, jedno truch\263o. Przy legowisku znajdujecie resztki po mniej szcz\352\266liwych podr\363\277nych.", 15, 2, {ITEM_MUTANT_GLAND, ITEMSPEC_TYPE(ITYPE_CONSUMABLE), 0}, {0, 0, 0}, {0, 0}, 60, 0},
   {"Krzyk tylko j\261 rozjusza. Zanim odpu\266ci, kto\266 obrywa.", 0, 0, {0, 0, 0}, {1, 8, 0}, {0, 0}, 0, 0},
   {"Bestia kr\261\277y, k\261sa i dopiero po chwili daje za wygran\261.", 0, 0, {0, 0, 0}, {1, 4, 0}, {0, 0}, 0, 0},
@@ -710,19 +710,19 @@ static const EventOutcome EVENT_OUTCOMES[89] = {
 };
 
 const TravelEvent TRAVEL_EVENTS[10] = {
-  {"trader", "Karawana Nomad\363w", "Na wydmie b\263yska lusterko. Ma\263a karawana Nomad\363w zwija ob\363z - handlarz macha do Was, jakby czeka\263 od rana.", 3, 2, {{"Potargowa\346 si\352", SKILL_DIPLOMACY, 0, {&EVENT_OUTCOMES[0], &EVENT_OUTCOMES[1], &EVENT_OUTCOMES[2], &EVENT_OUTCOMES[3]}}, {"Wymieni\346 plotki", SKILL_SOCIETY, 0, {&EVENT_OUTCOMES[4], &EVENT_OUTCOMES[5], &EVENT_OUTCOMES[6], &EVENT_OUTCOMES[7]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
-  {"radstorm", "Burza radioaktywna", "Horyzont ciemnieje, a geiger zaczyna rz\352zi\346 jak szalony. Idzie burza py\263owa nios\261ca ska\277enie. Trzeba co\266 zrobi\346 - szybko.", 3, 2, {{"Znale\274\346 schronienie", SKILL_SURVIVAL, 0, {&EVENT_OUTCOMES[8], &EVENT_OUTCOMES[9], &EVENT_OUTCOMES[10], &EVENT_OUTCOMES[11]}}, {"Przebi\346 si\352 mimo wszystko", SKILL_ATHLETICS, 0, {&EVENT_OUTCOMES[12], &EVENT_OUTCOMES[13], &EVENT_OUTCOMES[14], &EVENT_OUTCOMES[15]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
+  {"trader", "Karawana Nomad\363w", "Na wydmie b\263yska lusterko. Ma\263a karawana Nomad\363w zwija ob\363z \200 handlarz macha do Was, jakby czeka\263 od rana.", 3, 2, {{"Potargowa\346 si\352", SKILL_DIPLOMACY, 0, {&EVENT_OUTCOMES[0], &EVENT_OUTCOMES[1], &EVENT_OUTCOMES[2], &EVENT_OUTCOMES[3]}}, {"Wymieni\346 plotki", SKILL_SOCIETY, 0, {&EVENT_OUTCOMES[4], &EVENT_OUTCOMES[5], &EVENT_OUTCOMES[6], &EVENT_OUTCOMES[7]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
+  {"radstorm", "Burza radioaktywna", "Horyzont ciemnieje, a geiger zaczyna rz\352zi\346 jak szalony. Idzie burza py\263owa nios\261ca ska\277enie. Trzeba co\266 zrobi\346 \200 szybko.", 3, 2, {{"Znale\274\346 schronienie", SKILL_SURVIVAL, 0, {&EVENT_OUTCOMES[8], &EVENT_OUTCOMES[9], &EVENT_OUTCOMES[10], &EVENT_OUTCOMES[11]}}, {"Przebi\346 si\352 mimo wszystko", SKILL_ATHLETICS, 0, {&EVENT_OUTCOMES[12], &EVENT_OUTCOMES[13], &EVENT_OUTCOMES[14], &EVENT_OUTCOMES[15]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
   {"ambush", "Zasadzka Szabrownik\363w", "Co\266 nie gra. Cisza, zbyt r\363wno u\263o\277one kamienie przy drodze, odblask lunety mi\352dzy ska\263ami. Szabrownicy czekaj\261 za zakr\352tem.", 3, 2, {{"Wypatrzy\346 ich pierwsi", SKILL_PERCEPTION, 0, {&EVENT_OUTCOMES[16], &EVENT_OUTCOMES[17], &EVENT_OUTCOMES[18], &EVENT_OUTCOMES[19]}}, {"Przekra\266\346 si\352 ukradkiem", SKILL_STEALTH, 0, {&EVENT_OUTCOMES[20], &EVENT_OUTCOMES[21], &EVENT_OUTCOMES[22], &EVENT_OUTCOMES[23]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
-  {"cache", "Opuszczona skrzynia", "W cieniu wraku autobusu stoi wojskowa skrzynia z solidnym zamkiem. Nikogo wok\363\263 - albo tak si\352 wydaje.", 3, 2, {{"Otworzy\346 wytrychem", SKILL_THIEVERY, 0, {&EVENT_OUTCOMES[24], &EVENT_OUTCOMES[25], &EVENT_OUTCOMES[26], &EVENT_OUTCOMES[27]}}, {"Rozebra\346 zawiasy", SKILL_CRAFTING, 0, {&EVENT_OUTCOMES[28], &EVENT_OUTCOMES[29], &EVENT_OUTCOMES[30], &EVENT_OUTCOMES[31]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
+  {"cache", "Opuszczona skrzynia", "W cieniu wraku autobusu stoi wojskowa skrzynia z solidnym zamkiem. Nikogo wok\363\263 \200 albo tak si\352 wydaje.", 3, 2, {{"Otworzy\346 wytrychem", SKILL_THIEVERY, 0, {&EVENT_OUTCOMES[24], &EVENT_OUTCOMES[25], &EVENT_OUTCOMES[26], &EVENT_OUTCOMES[27]}}, {"Rozebra\346 zawiasy", SKILL_CRAFTING, 0, {&EVENT_OUTCOMES[28], &EVENT_OUTCOMES[29], &EVENT_OUTCOMES[30], &EVENT_OUTCOMES[31]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
   {"stranger", "Ranny nieznajomy", "Przy drodze le\277y cz\263owiek, trzyma si\352 za brzuch. M\363wi, \277e zaatakowa\263y go mutanty. Krew na piasku jest jeszcze \266wie\277a.", 3, 2, {{"Opatrzy\346 rany", SKILL_MEDICINE, 0, {&EVENT_OUTCOMES[32], &EVENT_OUTCOMES[33], &EVENT_OUTCOMES[34], &EVENT_OUTCOMES[35]}}, {"Przeszuka\346 i i\266\346 dalej", SKILL_THIEVERY, 0, {&EVENT_OUTCOMES[36], &EVENT_OUTCOMES[37], &EVENT_OUTCOMES[38], &EVENT_OUTCOMES[39]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
   {"bridge", "Zawalony wiadukt", "Wiadukt, kt\363rym biegnie szlak, run\261\263. Z drugiej strony przepa\266ci wida\346 dymi\261c\261 drog\352. Objazd zaj\261\263by dzie\361.", 2, 2, {{"Przej\266\346 po belkach", SKILL_ACROBATICS, 0, {&EVENT_OUTCOMES[40], &EVENT_OUTCOMES[41], &EVENT_OUTCOMES[42], &EVENT_OUTCOMES[43]}}, {"Zbudowa\346 przepraw\352", SKILL_CRAFTING, 0, {&EVENT_OUTCOMES[44], &EVENT_OUTCOMES[45], &EVENT_OUTCOMES[46], &EVENT_OUTCOMES[47]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
-  {"wreck", "Wrak konwoju", "Szkielety ci\352\277ar\363wek tkwi\261 w piasku. Kto\266 ju\277 tu by\263 - ale kto\266 zawsze co\266 przegapi.", 2, 2, {{"Przeszuka\346 wraki", SKILL_PERCEPTION, 0, {&EVENT_OUTCOMES[48], &EVENT_OUTCOMES[49], &EVENT_OUTCOMES[50], &EVENT_OUTCOMES[51]}}, {"Rozmontowa\346 na z\263om", SKILL_CRAFTING, 0, {&EVENT_OUTCOMES[52], &EVENT_OUTCOMES[53], &EVENT_OUTCOMES[54], &EVENT_OUTCOMES[55]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
+  {"wreck", "Wrak konwoju", "Szkielety ci\352\277ar\363wek tkwi\261 w piasku. Kto\266 ju\277 tu by\263 \200 ale kto\266 zawsze co\266 przegapi.", 2, 2, {{"Przeszuka\346 wraki", SKILL_PERCEPTION, 0, {&EVENT_OUTCOMES[48], &EVENT_OUTCOMES[49], &EVENT_OUTCOMES[50], &EVENT_OUTCOMES[51]}}, {"Rozmontowa\346 na z\263om", SKILL_CRAFTING, 0, {&EVENT_OUTCOMES[52], &EVENT_OUTCOMES[53], &EVENT_OUTCOMES[54], &EVENT_OUTCOMES[55]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
   {"beasts", "Stado mutant\363w", "Z wydm wynurza si\352 stado kud\263atych, sze\266cionogich stworze\361. W\352sz\261 w Wasz\261 stron\352 i zbli\277aj\261 si\352 powoli.", 2, 2, {{"Uspokoi\346 je", SKILL_NATURE, 0, {&EVENT_OUTCOMES[56], &EVENT_OUTCOMES[57], &EVENT_OUTCOMES[58], &EVENT_OUTCOMES[59]}}, {"Odstraszy\346 wrzaskiem", SKILL_INTIMIDATION, 0, {&EVENT_OUTCOMES[60], &EVENT_OUTCOMES[61], &EVENT_OUTCOMES[62], &EVENT_OUTCOMES[63]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
   {"signal", "Dziwny sygna\263 radiowy", "Stary nadajnik w Waszym plecaku nagle zaczyna sycze\346. Przez trzaski przebija si\352 czyj\266 g\263os, powtarzaj\261cy liczby.", 2, 2, {{"Namierzy\346 \274r\363d\263o", SKILL_CRAFTING, 0, {&EVENT_OUTCOMES[64], &EVENT_OUTCOMES[65], &EVENT_OUTCOMES[66], &EVENT_OUTCOMES[67]}}, {"Zignorowa\346", SKILL_NONE, 0, {NULL, NULL, &EVENT_OUTCOMES[68], NULL}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
   {"guide", "W\352drowiec z pustkowi", "Samotny Nomad siedzi przy dogasaj\261cym ognisku. Zna okolic\352 lepiej ni\277 Wy w\263asne kieszenie i wygl\261da, jakby mia\263 ochot\352 na rozmow\352.", 2, 2, {{"Poprosi\346 o skr\363t", SKILL_DIPLOMACY, 0, {&EVENT_OUTCOMES[69], &EVENT_OUTCOMES[70], &EVENT_OUTCOMES[71], &EVENT_OUTCOMES[72]}}, {"Wypyta\346 o szlaki", SKILL_SURVIVAL, 0, {&EVENT_OUTCOMES[73], &EVENT_OUTCOMES[74], &EVENT_OUTCOMES[75], &EVENT_OUTCOMES[76]}}, {NULL, 0, 0, {NULL, NULL, NULL, NULL}}}},
 };
 
-const TravelEvent FAUNA_ATTACK_EVENT = {"fauna_attack", "Atak: zmutowany {n}", "{N} wypada zza wydmy prosto na Was - za du\277y, za szybki, a jego naro\266la \266wiec\261 w p\363\263mroku. Nie ma czasu na ustawienie szyku.", 0, 3, {{"Walczcie!", SKILL_ATHLETICS, 0, {&EVENT_OUTCOMES[77], &EVENT_OUTCOMES[78], &EVENT_OUTCOMES[79], &EVENT_OUTCOMES[80]}}, {"Odstraszcie j\261 ogniem i krzykiem", SKILL_INTIMIDATION, 0, {&EVENT_OUTCOMES[81], &EVENT_OUTCOMES[82], &EVENT_OUTCOMES[83], &EVENT_OUTCOMES[84]}}, {"Uciekajcie mi\352dzy ska\263y", SKILL_ACROBATICS, 0, {&EVENT_OUTCOMES[85], &EVENT_OUTCOMES[86], &EVENT_OUTCOMES[87], &EVENT_OUTCOMES[88]}}}};
+const TravelEvent FAUNA_ATTACK_EVENT = {"fauna_attack", "Atak: zmutowany {n}", "{N} wypada zza wydmy prosto na Was \200 za du\277y, za szybki, a jego naro\266la \266wiec\261 w p\363\263mroku. Nie ma czasu na ustawienie szyku.", 0, 3, {{"Walczcie!", SKILL_ATHLETICS, 0, {&EVENT_OUTCOMES[77], &EVENT_OUTCOMES[78], &EVENT_OUTCOMES[79], &EVENT_OUTCOMES[80]}}, {"Odstraszcie j\261 ogniem i krzykiem", SKILL_INTIMIDATION, 0, {&EVENT_OUTCOMES[81], &EVENT_OUTCOMES[82], &EVENT_OUTCOMES[83], &EVENT_OUTCOMES[84]}}, {"Uciekajcie mi\352dzy ska\263y", SKILL_ACROBATICS, 0, {&EVENT_OUTCOMES[85], &EVENT_OUTCOMES[86], &EVENT_OUTCOMES[87], &EVENT_OUTCOMES[88]}}}};
 
 const char *const FAUNA_NAMES[8] = {"pies", "szczur", "skorpion", "kretowij", "wilk", "dzik", "paj\261k", "chrz\261szcz"};
 
@@ -737,7 +737,7 @@ const ContractTemplate CONTRACT_TEMPLATES[OBJ_COUNT] = {
    3, {"W ruinach le\277y cenny \263adunek. Znajd\274 go i wynie\266, zanim zrobi\261 to inni.", "Prze\277yjemy zim\352 tylko wtedy, gdy to odzyskacie. Uwa\277ajcie na to, co si\352 tam l\352gnie.", "Cenny sprz\352t zosta\263 w ska\277onej strefie. Wej\266\346, wzi\261\346, wyj\266\346."}, FACTION_NONE}, /* retrieve */
   {(1u << EFACTION_RAIDER) | (1u << EFACTION_MUTANT), 3, {BIOME_RUINS, BIOME_INDUSTRIAL, BIOME_BUNKER}, 3, {MOOD_NIGHT, MOOD_DUSK, MOOD_STORM, 0},
    5, {"Ocali\346 zwiadowc\352", "Je\361cy w piwnicach", "Uwi\352ziony in\277ynier", "Wo\263anie o pomoc", "Karawana w potrzasku", NULL},
-   3, {"Kto\266 z naszych wpad\263 w r\352ce Szabrownik\363w. Zosta\263o ma\263o czasu.", "Radio zacharcza\263o: \"pomocy\". Potem tylko trzaski. Id\274cie tam.", "Uwi\352ziony technik wie, jak naprawi\346 pomp\352 wody w Przystani. Przyprowad\274cie go \277ywego."}, FACTION_NONE}, /* rescue */
+   3, {"Kto\266 z naszych wpad\263 w r\352ce Szabrownik\363w. Zosta\263o ma\263o czasu.", "Radio zacharcza\263o: \227pomocy\". Potem tylko trzaski. Id\274cie tam.", "Uwi\352ziony technik wie, jak naprawi\346 pomp\352 wody w Przystani. Przyprowad\274cie go \277ywego."}, FACTION_NONE}, /* rescue */
   {(1u << EFACTION_BEAST) | (1u << EFACTION_MUTANT), 3, {BIOME_WASTES, BIOME_RUINS, BIOME_INDUSTRIAL}, 4, {MOOD_DAY, MOOD_DUSK, MOOD_TOXIC, MOOD_STORM},
    5, {"Polowanie na alf\352", "Koniec z szczurolud\274mi", "Bestia z kana\263\363w", "Wataha przy studni", "Plaga mutant\363w", NULL},
    3, {"Mutanty z\277eraj\261 nam zapasy i pas\261 si\352 na kupcach. Znajd\274 legowisko i zabij przyw\363dc\352.", "Nomadzi prosz\261 o pomoc: co\266 wielkiego kr\261\277y przy ich studni od trzech nocy.", "Za g\263ow\352 potwora wyznaczono nagrod\352. Przynie\266 dow\363d."}, FACTION_NONE}, /* hunt */
@@ -764,11 +764,11 @@ const char *const GIVERS[FACTION_COUNT][5] = {
 };
 
 const StoryContract STORY_CONTRACTS[3] = {
-  {"story1", "Cie\361 \257elaznych Szcz\352k", "Kapitan Dobosz", "Szabrownicy z \257elaznych Szcz\352k przej\352li stary posterunek na trasie do Przystani. Ich flaga - czaszka w stalowych szcz\352kach - wisi tam od tygodnia. Kapitan chce wiedzie\346, kim jest ich w\363dz.",
+  {"story1", "Cie\361 \257elaznych Szcz\352k", "Kapitan Dobosz", "Szabrownicy z \257elaznych Szcz\352k przej\352li stary posterunek na trasie do Przystani. Ich flaga \200 czaszka w stalowych szcz\352kach \200 wisi tam od tygodnia. Kapitan chce wiedzie\346, kim jest ich w\363dz.",
    FACTION_SURVIVORS, OBJ_ELIMINATE, 2, BIOME_INDUSTRIAL, MOOD_DUSK, 1, 220, 500, {2, 0}, 4, {ENEMY_RAIDER_THUG, ENEMY_RAIDER_THUG, ENEMY_RAIDER_GUNNER, ENEMY_RAIDER_PSYCHO, 0, 0, 0, 0}},
-  {"story2", "Karawana w ogniu", "Handlarka Zeyna", "Szcz\352ki wyr\277n\352\263y karawan\352 Nomad\363w i pojma\263y jej przewodnika. Zeyna zap\263aci wszystko, co ma, by\266cie go odbili - a on zna kryj\363wk\352 Kostuchy.",
+  {"story2", "Karawana w ogniu", "Handlarka Zeyna", "Szcz\352ki wyr\277n\352\263y karawan\352 Nomad\363w i pojma\263y jej przewodnika. Zeyna zap\263aci wszystko, co ma, by\266cie go odbili \200 a on zna kryj\363wk\352 Kostuchy.",
    FACTION_NOMADS, OBJ_RESCUE, 3, BIOME_RUINS, MOOD_NIGHT, 2, 340, 700, {0, 3}, 6, {ENEMY_RAIDER_THUG, ENEMY_RAIDER_GUNNER, ENEMY_RAIDER_GUNNER, ENEMY_RAIDER_PSYCHO, ENEMY_RAIDER_BURNER, ENEMY_RAIDER_CHIEF, 0, 0}},
-  {"story3", "Kostucha", "Burmistrz Kalinowski", "Znamy ju\277 jej kryj\363wk\352: pogrzebany pod Rdzawiskiem bunkier. Kostucha rz\261dzi Szcz\352kami \277elazn\261 r\352k\261 - i tylko jej \266mier\346 powstrzyma atak na Przysta\361. To zlecenie, z kt\363rego si\352 nie wraca z pustymi r\352kami.",
+  {"story3", "Kostucha", "Burmistrz Kalinowski", "Znamy ju\277 jej kryj\363wk\352: pogrzebany pod Rdzawiskiem bunkier. Kostucha rz\261dzi Szcz\352kami \277elazn\261 r\352k\261 \200 i tylko jej \266mier\346 powstrzyma atak na Przysta\361. To zlecenie, z kt\363rego si\352 nie wraca z pustymi r\352kami.",
    FACTION_SURVIVORS, OBJ_BOSS, 5, BIOME_BUNKER, MOOD_TOXIC, 2, 800, 1000, {5, 5}, 7, {ENEMY_KOSTUCHA, ENEMY_RAIDER_THUG, ENEMY_RAIDER_THUG, ENEMY_RAIDER_GUNNER, ENEMY_RAIDER_SNIPER, ENEMY_RAIDER_PSYCHO, ENEMY_RAIDER_BURNER, 0}},
 };
 
@@ -860,18 +860,18 @@ const char *const GAME_TITLE = "PY\243 I RDZA";
 const char *const GAME_SUBTITLE = "NAJEMNICY";
 
 const char *const INTRO_SLIDES[6] = {
-  "Rok 2041. Nikt ju\277 nie pami\352ta, kto wystrzeli\263 pierwszy. Pami\352ta si\352 tylko \266wiat\263o - ja\266niejsze ni\277 s\263o\361ce - i cisz\352, kt\363ra nadesz\263a po nim.",
+  "Rok 2041. Nikt ju\277 nie pami\352ta, kto wystrzeli\263 pierwszy. Pami\352ta si\352 tylko \266wiat\263o \200 ja\266niejsze ni\277 s\263o\361ce \200 i cisz\352, kt\363ra nadesz\263a po nim.",
   "Miasta zamieni\263y si\352 w Rdzawisko: labirynt zw\352glonych wie\277owc\363w, ska\277onych piwnic i stalowych szkielet\363w. W cieniu czaj\261 si\352 mutanty, a w ruinach rz\261dzi g\263\363d.",
   "Najgorsi s\261 Szabrownicy. Zdegenerowane bandy, kt\363re morduj\261 dla puszki konserw i b\263yskotki z dawnego \266wiata. Najkrwawsz\261 z nich dowodzi Kostucha, w\363dz \257elaznych Szcz\352k.",
   "Na pustkowiach, z dala od ruin, w\352druj\261 Nomadzi. Twardzi, milcz\261cy handlarze, kt\363rzy prze\277yli, bo znaj\261 ka\277d\261 wydm\352, ka\277d\261 studni\352 i ka\277d\261 burz\352 py\263ow\261.",
-  "Ci, kt\363rzy nie chc\261 ucieka\346, odbudowuj\261 \277ycie w Przystani - dawnej zajezdni kolejowej na skraju Martwego Miasta. Maj\261 mury, \266wiat\263o i nadziej\352. Brakuje im tylko ludzi, kt\363rzy potrafi\261 strzela\346.",
+  "Ci, kt\363rzy nie chc\261 ucieka\346, odbudowuj\261 \277ycie w Przystani \200 dawnej zajezdni kolejowej na skraju Martwego Miasta. Maj\261 mury, \266wiat\263o i nadziej\352. Brakuje im tylko ludzi, kt\363rzy potrafi\261 strzela\346.",
   "To zadanie dla Najemnik\363w. Cztery osoby, jedna umowa, tyle Z\263omu, ile zdo\263asz zarobi\346. Zbierz dru\277yn\352. Przyjmij zlecenie. Prze\277yj.",
 };
 
 const char *const EPILOGUE[4] = {
   "Kostucha pad\263a, a \257elazne Szcz\352ki rozsypa\263y si\352 jak zardzewia\263y \263a\361cuch.",
   "Karawany Nomad\363w wr\363ci\263y na stare szlaki. W Przystani zapalono wszystkie lampy naraz.",
-  "Rdzawisko wci\261\277 jest pe\263ne mutant\363w i z\263omu - ale kto\266 w nim wreszcie \266pi spokojnie.",
+  "Rdzawisko wci\261\277 jest pe\263ne mutant\363w i z\263omu \200 ale kto\266 w nim wreszcie \266pi spokojnie.",
   "Nazywaj\261 Was teraz Najemnikami z Przystani. Jest jeszcze mn\363stwo zlece\361.",
 };
 
@@ -881,7 +881,7 @@ const char *const GAMEOVER_LINES[2] = {
 };
 
 const char *const TIPS[3] = {
-  "Wskaz\363wka: Medyk potrafi uratowa\346 umieraj\261cego sojusznika - nie zostawiaj nikogo bez opieki.",
+  "Wskaz\363wka: Medyk potrafi uratowa\346 umieraj\261cego sojusznika \200 nie zostawiaj nikogo bez opieki.",
   "Wskaz\363wka: Os\263ony daj\261 +2 do KP. P\263ot, beczka i wrak to Twoi przyjaciele.",
   "Wskaz\363wka: Handlarze Nomad\363w oferuj\261 lepsze ceny, gdy ich lubisz.",
 };
@@ -891,7 +891,7 @@ const char *const CREDITS[7][2] = {
   {"Studio", "STORM 32"},
   {"Regu\263y", "Pathfinder 2e (adaptacja postapokaliptyczna)"},
   {"Grafika", "rysowana w ca\263o\266ci w kodzie"},
-  {"D\274wi\352k i muzyka", "syntezowane w locie - zero plik\363w audio"},
+  {"D\274wi\352k i muzyka", "syntezowane w locie \200 zero plik\363w audio"},
   {"Silnik", "Phaser + TypeScript"},
   {"Dzi\352kujemy", "Ka\277demu, kto prze\277y\263 Rdzawisko"},
 };
@@ -1638,7 +1638,7 @@ const SectorDef SECTOR_DEFS[4] = {
   {BIOME_RUINS, "RUINY MIASTA", "sektor miejski", 0xF2A93BUL, 640, 512, 3610, 2739, {640, 3533}, 8, {{-692, -154}, {2638, 1178}, {-1358, 1844}, {1306, -1486}, {640, 2510}, {3304, -154}, {-26, 1178}, {1972, -820}}},
   {BIOME_WASTES, "PUSTKOWIA", "wydmy i ob\363z Nomad\363w", 0xD8C090UL, 6144, 2816, 1843, 1946, {6144, 4864}, 5, {{5504, 2944}, {7040, 1920}, {5248, 4096}, {6912, 3840}, {6016, 1434}, {0, 0}, {0, 0}, {0, 0}}},
   {BIOME_INDUSTRIAL, "STREFA PRZEMYS\243OWA", "fabryki i krater", 0xE0703AUL, 3840, -3072, 2202, 1126, {6144, -4506}, 4, {{2688, -3635}, {4736, -2714}, {3712, -2458}, {5248, -3482}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
-  {BIOME_BUNKER, "G\323RY - BUNKIER", "schrony w ska\263ach", 0x6AB0FFUL, -3840, -2816, 2304, 1331, {-3840, -1178}, 4, {{-3328, -1946}, {-4992, -2099}, {-2304, -2611}, {-4224, -3200}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
+  {BIOME_BUNKER, "G\323RY \205 BUNKIER", "schrony w ska\263ach", 0x6AB0FFUL, -3840, -2816, 2304, 1331, {-3840, -1178}, 4, {{-3328, -1946}, {-4992, -2099}, {-2304, -2611}, {-4224, -3200}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}},
 };
 
 const WPos RING_S[5] = {{-2432, 2867}, {-768, 3533}, {640, 3738}, {2304, 3482}, {3840, 2714}};
