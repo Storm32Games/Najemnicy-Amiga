@@ -3,7 +3,7 @@
 #include "../gfx/r2d.h"
 #include "game.h"
 
-static const Screen *const SCREENS[7] = {&SCREEN_LOGO, &SCREEN_INTRO, &SCREEN_TITLE, &SCREEN_RECRUIT, &SCREEN_HUB, &SCREEN_TRAVEL, &SCREEN_MISSION};
+static const Screen *const SCREENS[10] = {&SCREEN_LOGO, &SCREEN_INTRO, &SCREEN_TITLE, &SCREEN_RECRUIT, &SCREEN_HUB, &SCREEN_TRAVEL, &SCREEN_MISSION, &SCREEN_DEBRIEF, &SCREEN_GAMEOVER, &SCREEN_VICTORY};
 static ScreenId cur = SCR_LOGO, next_scr;
 static int fade_ms, fade_total, fading_out, out_ms, in_ms, started;
 

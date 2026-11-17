@@ -405,3 +405,9 @@ void atlas_draw(const Atlas *a, const AtlasImg *im, float x, float y, int flip, 
   if (flip) r2d_image(t, x, y, im->w, im->h, (float)(im->sx + im->w), im->sy, -(float)im->w, im->h, tint, alpha);
   else r2d_image(t, x, y, im->w, im->h, im->sx, im->sy, im->w, im->h, tint, alpha);
 }
+
+void atlas_draw_k(const Atlas *a, const AtlasImg *im, float x, float y, float k, int flip, uint32_t tint, int alpha) {
+  const RTex *t = &a->tex[im->tex];
+  if (flip) r2d_image(t, x, y, im->w * k, im->h * k, (float)(im->sx + im->w), im->sy, -(float)im->w, im->h, tint, alpha);
+  else r2d_image(t, x, y, im->w * k, im->h * k, im->sx, im->sy, im->w, im->h, tint, alpha);
+}

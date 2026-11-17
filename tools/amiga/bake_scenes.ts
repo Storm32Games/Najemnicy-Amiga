@@ -111,6 +111,18 @@ const HUB_PREP = `
 `;
 const TARGETS: Target[] = [
   { name: 'title', scene: 'TitleScene', prefix: ['title', 'rec_', 'unit_rec'] },
+  // rozliczenie: tło po sukcesie (scena w trybie deweloperskim pokazuje przykładowy wynik) i nocne po odwrocie
+  { name: 'debrief', scene: 'DebriefScene', prefix: ['debrief'], prep: `
+    const B = await import('/src/scenes/fx/Backdrops.ts');
+    B.backdrop(sc, 'debriefn', { mood: B.MOODS.night, seed: 8, orb: [400, 30, 10], farBase: 240, midBase: 246, midH: [40, 150], groundY: 248, clouds: 6 });
+  ` },
+  { name: 'over', scene: 'GameOverScene', prefix: ['over'] },
+  { name: 'win', scene: 'VictoryScene', prefix: ['win'], prep: `
+    const P = await import('/src/scenes/ui/PixelFont.ts');
+    const W = await import('/src/scenes/ui/WastelandFont.ts');
+    W.wastelandTexture(sc, 'win_game', 'PYŁ I RDZA', 3, { top: '#ffe08a', bottom: '#c0501e', spacing: 2 });
+    P.titleTexture(sc, 'win_studio', 'STORM 32', 4, { top: '#ffe08a', bottom: '#d0521e', spacing: 2 });
+  ` },
   { name: 'tiles', scene: 'TitleScene', prefix: ['unit_en_'], prep: LIB_PREP },
   { name: 'travel', scene: 'TravelScene', prefix: ['travel', 'bk_'], prep: TRAVEL_PREP },
   { name: 'hub', scene: 'HubScene', prefix: ['hub', 'unit_pc_', 'unit_npc_', 'pc_', 'npc_', 'bk_'], prep: HUB_PREP },

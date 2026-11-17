@@ -935,8 +935,15 @@ static void play(const Sig *s) {
       break;
     case 100 + MSIG_FINISH:
       mode = M_OVER;
-      over_ms = 2500;
-      show_banner(mission.result.result == 0 ? "MISJA ZAKO\321CZONA" : "MISJA ZAKO\321CZONA", NULL, PAL_GOOD);
+      menu.open = choice.open = 0;
+      if (mission.result.result == MRES_FAIL) {
+        over_ms = 3600;
+        show_banner("SYGNA\243 UTRACONY", NULL, PAL_BAD);
+        push_log("Dru\277yna pada. Sygna\263 utracony.", PAL_BAD);
+      } else {
+        over_ms = mission.result.result == MRES_RETREAT ? 2200 : 4500;
+        show_banner(mission.result.result == MRES_RETREAT ? "ODWR\323T" : "ZLECENIE WYKONANE", NULL, mission.result.result == MRES_RETREAT ? PAL_AMBER : PAL_GOOD);
+      }
       break;
   }
 }
@@ -1572,12 +1579,32 @@ static void update(unsigned held, unsigned pressed, int ms) {
 
   if (mode == M_OVER) {
     if ((over_ms -= ms) <= 0 && !app_leaving()) {
-      DebriefSummary sum;
       Rng r;
+      int k;
+      g_n_fallen = 0;
+      if (mission.result.result == MRES_FAIL) {
+        /* wybicie drużyny: od razu KONIEC DROGI (bez rozliczenia) */
+        for (k = 0; k < mission.n_pcs && g_n_fallen < MAX_PARTY; k++) snprintf(g_fallen[g_n_fallen++], sizeof g_fallen[0], "%s", mission.pcs[k]->ch->name);
+        app_switch(SCR_GAMEOVER, 1700, 1200);
+        return;
+      }
+      /* stan sprzed naliczenia (paski PD i awanse w rozliczeniu) */
+      memset(g_before, 0, sizeof g_before);
+      for (k = 0; k < g_camp.n_party; k++) {
+        const Character *c = &g_camp.party[k];
+        if (c->recruit >= RECRUIT_COUNT) continue;
+        g_before[c->recruit].valid = 1;
+        g_before[c->recruit].level = c->level;
+        g_before[c->recruit].xp = (int16_t)c->xp;
+        g_before[c->recruit].max_hp = c->max_hp;
+        g_before[c->recruit].n_abil = c->n_abilities;
+        memcpy(g_before[c->recruit].abil, c->abilities, c->n_abilities);
+      }
+      for (k = 0; k < mission.result.n_casualties && g_n_fallen < MAX_PARTY; k++) snprintf(g_fallen[g_n_fallen++], sizeof g_fallen[0], "%s", mission.result.casualties[k]->name);
+      snprintf(g_debrief_title, sizeof g_debrief_title, "%s", g_camp.contracts[g_job].title);
       game_rng(&r);
-      apply_mission_result(&g_camp, &mission.result, g_job, &r, &sum);
-      snprintf(g_notice, sizeof g_notice, "Misja zako\361czona: +%d Z\263omu, +%d PD.", sum.scrap, sum.xp);
-      app_switch(SCR_HUB, 600, 500);
+      apply_mission_result(&g_camp, &mission.result, g_job, &r, &g_debrief);
+      app_switch(SCR_DEBRIEF, 900, 500);
     }
     return;
   }

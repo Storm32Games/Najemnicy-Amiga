@@ -281,12 +281,12 @@ def rays(n, a0, a1, ln, seed):
     return out
 
 
-def bg_spots(target, layer):
+def bg_spots(target, layer, lit=0xffbe5a):
     """Migające okna (Windows) z obiektów sceny: prostokąty 1x2 koloru lit, x względem spoczynku warstwy `layer`."""
     objs = json.load(open(os.path.join(BAKE, target, 'scene.json')))['objects']
     dx = next(o['x'] for o in objs if o.get('tex') == layer) + 24
     return [(round(o['x'] - dx), round(o['y'])) for o in objs
-            if o['type'] == 'Rectangle' and o.get('fill') == 0xffbe5a and o['w'] == 1 and o['h'] == 2]
+            if o['type'] == 'Rectangle' and o.get('fill') == lit and o['w'] == 1 and o['h'] == 2]
 
 
 def scene_objs(target):
@@ -371,6 +371,21 @@ def build():
         for d, name in enumerate(dirs):
             sheet.paste(Image.open(os.path.join(ROOT, 'src', 'assets', 'units', key, name + '.png')).convert('RGBA'), ((d % 4) * 64, (d // 4) * 64))
         write_ntx('spr_' + key, sheet)
+
+    print('debrief:')
+    for k in ['debrief_sky', 'debrief_clouds', 'debrief_far', 'debrief_mid', 'debrief_ground', 'debriefn_sky', 'debriefn_clouds', 'debriefn_far', 'debriefn_mid', 'debriefn_ground']:
+        write_ntx(k, load('debrief', k))
+    T['bg']['DEBRIEF'] = dict(win=[], bird=birds(5, (0, 40, 480, 60), 8 + 4), ray=rays(9, -math.pi * 0.95, -math.pi * 0.05, 360, 8), ox=240, oy=222,
+                              rc=0xffc070, ra=35, bc=0x1a0c12, bd=1, bx=0, bw=480)
+
+    print('koniec:')
+    for k in ['over_sky', 'over_clouds', 'over_far', 'over_mid', 'over_ground', 'over_vig', 'over_title']:
+        write_ntx(k, load('over', k))
+    for k in ['win_sky', 'win_clouds', 'win_far', 'win_mid', 'win_ground', 'win_title', 'win_game', 'win_studio']:
+        write_ntx(k, load('win', k))
+    T['bg']['OVER'] = dict(win=[], bird=birds(5, (0, 40, 480, 60), 13 + 4), ray=[], ox=240, oy=120, rc=0, ra=0, bc=0x050102, bd=1, bx=0, bw=480)
+    T['bg']['WIN'] = dict(win=windows(bg_spots('win', 'win_mid', 0xffe08a), 40 + 9), bird=birds(5, (0, 40, 480, 60), 40 + 4),
+                          ray=rays(9, -math.pi * 0.95, -math.pi * 0.05, 360, 40), ox=240, oy=150, rc=0xffe0a0, ra=35, bc=0x2a1818, bd=1, bx=0, bw=480)
 
     print('hub:')
     for k in ['hub_sky', 'hub_clouds', 'hub_far', 'hub_mid', 'hub_ground']:

@@ -9,6 +9,11 @@ int g_job = -1;
 char g_notice[128];
 int g_force_event = -1;
 int g_debug_cmd;
+DebriefSummary g_debrief;
+BeforeMember g_before[RECRUIT_COUNT];
+char g_debrief_title[96];
+char g_fallen[MAX_PARTY][NAME_MAX + 1];
+int g_n_fallen;
 
 void game_rng(Rng *r) {
   g_entropy = g_entropy * 1664525u + 1013904223u;

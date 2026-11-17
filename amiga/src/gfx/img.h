@@ -59,5 +59,6 @@ int atlas_add(Atlas *a, const uint8_t *rgba, int w, int h, AtlasImg *out);
 int atlas_finish(Atlas *a);   /* wysyła bufory do tekstur */
 void atlas_free(Atlas *a);
 void atlas_draw(const Atlas *a, const AtlasImg *im, float x, float y, int flip, uint32_t tint, int alpha);
+void atlas_draw_k(const Atlas *a, const AtlasImg *im, float x, float y, float k, int flip, uint32_t tint, int alpha);   /* skala k */
 
 #endif
