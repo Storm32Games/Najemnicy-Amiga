@@ -434,7 +434,7 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), 
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe; ⏳ werbunek, Przystań, mapa
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek; ⏳ Przystań, mapa
    regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
@@ -480,8 +480,14 @@ Ruch odtwarzany w C (`scenefx.c`, `scr_*.c`) z liczb całkowitych `core/frontend
 `duration`, start `|x| % 4` jak `addUnit`), flaga szabrowników, karawana nomadów, reflektory, rakiety, wstrząs kamery.
 Teksty: ISO-8859-2 + 32 znaki czcionki spoza Latin-2 na kodach 0x80..0x9F (`tools/amiga/charmap.ts`: —, ▶, ◆, „ ” ...).
 
-Menu tytułowe na Amidze: zapisy jeszcze nie działają (`title_menu(0, 0)`), „Nowa gra” i „Opcje” pokazują komunikat,
+Menu tytułowe na Amidze: zapisy jeszcze nie działają (`title_menu(0, 0)`), „Opcje” pokazują komunikat,
 Esc = wyjście z potwierdzeniem. Mysz: jeszcze nie (klawiatura i joystick).
+
+Werbunek (`scr_recruit.c`): portrety 30 / 26 px wypieczone z gry (4 przebiegi `recruit1..4` z `?pick=`), całe postacie
+w 8 kierunkach prosto z `src/assets/units/<id>/*.png` (`spr_<id>.ntx`, ładowane przy zmianie pokazanego). Fokus
+joystickiem po siatce 4 x 4 i przyciskach (fokus = pokazany najemnik, obrót karty skalą `r2d_scale`), fire = wybierz.
+„Rozpocznij” woła `start_campaign` (Przystań jeszcze nie przeniesiona - komunikat). Bez „Zmień imię” (brak wpisywania
+tekstu) i bez podpowiedzi do zdolności; kursywa opisu jako zwykły tekst.
 
 Sprawdzanie bez Amigi: `make -C amiga build/gl_host` (OpenGL na Macu, ten sam kod ekranów), np.
 `cd amiga && ./build/gl_host 1280x720 400 build/shots/t "0:goto=title 100:DOWN 120:shot"` -> zrzuty PPM

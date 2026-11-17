@@ -17,6 +17,10 @@ void r2d_frame_begin(uint32_t rgb);
 void r2d_frame_end(void);
 /* Przesunięcie wszystkiego, co rysowane dalej (wstrząs kamery); 0, 0 = wyłączone. */
 void r2d_offset(float dx, float dy);
+/* Skala (sx, sy) wokół punktu (cx, cy) dla wszystkiego, co rysowane dalej (1, 1 = wyłączona). */
+void r2d_scale(float sx, float sy, float cx, float cy);
+/* Mnożnik krycia 0..255 (255 = bez zmian). */
+void r2d_alpha(int a);
 
 void r2d_rect(float x, float y, float w, float h, uint32_t rgb, int a);
 /* Trójkąt jednolitym kolorem (jako zdegenerowany quad w tej samej paczce). */

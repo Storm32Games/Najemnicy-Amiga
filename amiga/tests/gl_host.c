@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
       tok[n] = 0;
       if (f == i) {
         if (!strcmp(tok, "shot")) do_shot = 1;
-        else if (!strncmp(tok, "goto=", 5)) app_goto(!strcmp(tok + 5, "intro") ? SCR_INTRO : !strcmp(tok + 5, "title") ? SCR_TITLE : SCR_LOGO);
+        else if (!strncmp(tok, "goto=", 5)) app_goto(!strcmp(tok + 5, "intro") ? SCR_INTRO : !strcmp(tok + 5, "title") ? SCR_TITLE : !strcmp(tok + 5, "recruit") ? SCR_RECRUIT : SCR_LOGO);
         else pressed |= key_of(tok);
       }
       p = e ? e + 1 : p + strlen(p);

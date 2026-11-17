@@ -80,7 +80,8 @@ static const char *const QUIT_BODY = "Na pewno chcesz opu\266ci\346 pustkowie? N
 static void run(int id) {
   switch (id) {
     case MENU_NEW:
-      ui_toast("Werbunek dru\277yny nie jest jeszcze przeniesiony na Amig\352.", PAL_AMBER);
+      app_sfx("door", 256, 256);
+      app_switch(SCR_RECRUIT, 400, 500);
       return;
     case MENU_OPTIONS:
       ui_toast("Opcje nie s\261 jeszcze przeniesione na Amig\352.", PAL_AMBER);

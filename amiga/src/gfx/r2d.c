@@ -20,7 +20,12 @@ static struct {
   int open, nq;
   unsigned cur_tex;            /* 0 = bez tekstury */
   float ox, oy;                /* przesunięcie (wstrząs kamery) */
+  float sx, sy, cx, cy;        /* skala wokół (cx, cy) - obrót karty */
+  int amul;                    /* mnożnik krycia 0..255 */
 } G;
+#define TX(x) (G.cx + ((x) - G.cx) * G.sx + G.ox)
+#define TY(y) (G.cy + ((y) - G.cy) * G.sy + G.oy)
+#define AM(a) (G.amul == 255 ? (a) : (a) * G.amul / 255)
 
 /* ------------------------------------------------------------------ paczki quadów */
 static void flush(void) {
@@ -60,6 +65,8 @@ void r2d_init(int view_w, int view_h, int batch) {
   G.vh = (int)(V_H * z + 0.5f);
   G.vx = (view_w - G.vw) / 2;
   G.vy = (view_h - G.vh) / 2;
+  G.sx = G.sy = 1;
+  G.amul = 255;
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   glDisable(GL_TEXTURE_2D);
@@ -91,28 +98,42 @@ void r2d_offset(float dx, float dy) {
   G.oy = dy;
 }
 
+void r2d_scale(float sx, float sy, float cx, float cy) {
+  G.sx = sx;
+  G.sy = sy;
+  G.cx = cx;
+  G.cy = cy;
+}
+
+void r2d_alpha(int a) { G.amul = a < 0 ? 0 : a > 255 ? 255 : a; }
+
 void r2d_rect(float x, float y, float w, float h, uint32_t rgb, int a) {
+  float x0, y0, x1, y1;
+  a = AM(a);
   if (a <= 0 || w <= 0 || h <= 0) return;
   use_tex(0);
   begin_quad();
   glColor4ub((GLubyte)(rgb >> 16), (GLubyte)(rgb >> 8), (GLubyte)rgb, (GLubyte)(a > 255 ? 255 : a));
-  x += G.ox;
-  y += G.oy;
-  glVertex2f(x, y);
-  glVertex2f(x + w, y);
-  glVertex2f(x + w, y + h);
-  glVertex2f(x, y + h);
+  x0 = TX(x);
+  y0 = TY(y);
+  x1 = TX(x + w);
+  y1 = TY(y + h);
+  glVertex2f(x0, y0);
+  glVertex2f(x1, y0);
+  glVertex2f(x1, y1);
+  glVertex2f(x0, y1);
 }
 
 void r2d_tri(float x0, float y0, float x1, float y1, float x2, float y2, uint32_t rgb, int a) {
+  a = AM(a);
   if (a <= 0) return;
   use_tex(0);
   begin_quad();
   glColor4ub((GLubyte)(rgb >> 16), (GLubyte)(rgb >> 8), (GLubyte)rgb, (GLubyte)(a > 255 ? 255 : a));
-  glVertex2f(x0 + G.ox, y0 + G.oy);
-  glVertex2f(x1 + G.ox, y1 + G.oy);
-  glVertex2f(x2 + G.ox, y2 + G.oy);
-  glVertex2f(x2 + G.ox, y2 + G.oy);
+  glVertex2f(TX(x0), TY(y0));
+  glVertex2f(TX(x1), TY(y1));
+  glVertex2f(TX(x2), TY(y2));
+  glVertex2f(TX(x2), TY(y2));
 }
 
 void r2d_frame(float x, float y, float w, float h, uint32_t rgb, int a) {
@@ -196,10 +217,13 @@ void r2d_tex_free(RTex *t) {
 }
 
 void r2d_image(const RTex *t, float x, float y, float w, float h, float sx, float sy, float sw, float sh, uint32_t tint, int a) {
-  float u0, v0, u1, v1;
+  float u0, v0, u1, v1, x0, y0, x1, y1;
+  a = AM(a);
   if (a <= 0 || !t->id) return;
-  x += G.ox;
-  y += G.oy;
+  x0 = TX(x);
+  y0 = TY(y);
+  x1 = TX(x + w);
+  y1 = TY(y + h);
   u0 = sx / t->tw;
   v0 = sy / t->th;
   u1 = (sx + sw) / t->tw;
@@ -207,10 +231,10 @@ void r2d_image(const RTex *t, float x, float y, float w, float h, float sx, floa
   use_tex(t->id);
   begin_quad();
   glColor4ub((GLubyte)(tint >> 16), (GLubyte)(tint >> 8), (GLubyte)tint, (GLubyte)(a > 255 ? 255 : a));
-  glTexCoord2f(u0, v0); glVertex2f(x, y);
-  glTexCoord2f(u1, v0); glVertex2f(x + w, y);
-  glTexCoord2f(u1, v1); glVertex2f(x + w, y + h);
-  glTexCoord2f(u0, v1); glVertex2f(x, y + h);
+  glTexCoord2f(u0, v0); glVertex2f(x0, y0);
+  glTexCoord2f(u1, v0); glVertex2f(x1, y0);
+  glTexCoord2f(u1, v1); glVertex2f(x1, y1);
+  glTexCoord2f(u0, v1); glVertex2f(x0, y1);
 }
 
 /* ------------------------------------------------------------------ czcionka */

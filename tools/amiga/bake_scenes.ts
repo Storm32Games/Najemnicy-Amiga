@@ -17,6 +17,8 @@ interface Frames { tex: string; from: number; to: number; step: number }
 interface Target { name: string; scene: string; extra?: string; prefix: string[]; waitMs?: number; frames?: Frames }
 const TARGETS: Target[] = [
   { name: 'title', scene: 'TitleScene', prefix: ['title', 'rec_', 'unit_rec'] },
+  // werbunek: tło + portrety 30 px (karty); portrety 26 px (plac) są tylko u wybranych - 4 przebiegi po 4 rekrutów
+  ...[0, 1, 2, 3].map((k): Target => ({ name: `recruit${k + 1}`, scene: 'RecruitScene', extra: `&pick=${[0, 1, 2, 3].map((i) => k * 4 + i).join(',')}`, prefix: k ? ['porpl_'] : ['recruit', 'porpl_'] })),
   ...[1, 2, 3, 4, 5, 6].map((n): Target => ({
     name: `intro${n}`, scene: 'IntroScene', extra: `&slide=${n}`, prefix: ['intro', 'unit_intro', 'rec_', 'unit_rec'],
     // wybuch: 2.6 s rakiet, potem NukeBlast.render(k) - klatki co 0.1 s przez 7 s (plansza trwa najwyżej ~8.6 s)

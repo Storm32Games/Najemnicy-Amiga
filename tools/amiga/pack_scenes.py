@@ -108,6 +108,8 @@ def lcg(seed):
 
 
 TICK_HZ = 50
+RECRUIT_KEYS = ['hak', 'sowa', 'igla', 'lut', 'szczurek', 'bizon', 'kruk', 'plesn', 'iskra', 'grzmot', 'szept', 'zgrzyt', 'mur',
+                'retorta', 'aksamit', 'zero']   # kolejność RECRUIT_DEFS (gamedata.c)
 
 
 def ang_q8(rad_per_sec):
@@ -304,6 +306,33 @@ def build():
         'RUINS': dict(win=[], bird=birds(4, (0, 30, 480, 40), 7, -1), ray=[], ox=0, oy=0, rc=0, ra=0,
                       bc=0x0a100c, bd=-1, bx=0, bw=480),
     }
+
+    print('recruit:')
+    for k in ['recruit_sky', 'recruit_clouds', 'recruit_far', 'recruit_mid', 'recruit_ground']:
+        write_ntx(k, load('recruit1', k))
+    T['bg']['RECRUIT'] = dict(win=windows(bg_spots('recruit1', 'recruit_mid'), 9 + 9), bird=birds(5, (0, 40, 480, 60), 9 + 4),
+                              ray=rays(9, -math.pi * 0.95, -math.pi * 0.05, 360, 9), ox=452, oy=196, rc=0xffc070, ra=35,
+                              bc=0x1a0c12, bd=1, bx=0, bw=480)
+    # portrety (kolejność RECRUIT_DEFS): 30 px w wierszach y 0 i 30, 26 px w wierszach y 60 i 86, po 8 w wierszu
+    atlas = Image.new('RGBA', (256, 112))
+    for i, key in enumerate(RECRUIT_KEYS):
+        for size, y0 in ((30, 0), (26, 60)):
+            src = None
+            for t in ('recruit1', 'recruit2', 'recruit3', 'recruit4'):
+                f = os.path.join(BAKE, t, f'porpl_{key}_{size}@1.png')
+                if os.path.exists(f):
+                    src = Image.open(f).convert('RGBA')
+                    break
+            assert src is not None, (key, size)
+            atlas.paste(src, ((i % 8) * size, y0 + (i // 8) * size))
+    write_ntx('recruit_portraits', atlas)
+    # całe postacie: 8 kierunków (SPRITE_DIRS) 64x64 w arkuszu 4 x 2 na rekruta
+    dirs = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west']
+    for key in RECRUIT_KEYS:
+        sheet = Image.new('RGBA', (256, 128))
+        for d, name in enumerate(dirs):
+            sheet.paste(Image.open(os.path.join(ROOT, 'src', 'assets', 'units', key, name + '.png')).convert('RGBA'), ((d % 4) * 64, (d // 4) * 64))
+        write_ntx('spr_' + key, sheet)
 
     print('intro:')
     layers = {

@@ -29,6 +29,7 @@ extern const BgFx BG_TITLE;
 extern const BgFx BG_CREW;
 extern const BgFx BG_NOMADS;
 extern const BgFx BG_RUINS;
+extern const BgFx BG_RECRUIT;
 extern const UnitSet INTRO_RAIDERS_UNITS;
 extern const UnitSet INTRO_HAVEN_UNITS;
 extern const UnitSet INTRO_CREW_UNITS;
