@@ -434,7 +434,7 @@ amiga/tests/      test_*.c (jednostkowe), trace_*.c (ślady porównywane z TS), 
 7. ✅ Kampania: zlecenia, fabuła, handlarz, lecznica, karczma, podróż, rozliczenie (`campaign.c`), region (`region.c`),
    generator imion (`names.c`).
 8. ✅ Zapis gry: kampania + misja w eksploracji, binarnie big-endian (`save.c`). Zapisy z przeglądarki (JSON) nie są czytane.
-9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań; ⏳ podróż, misja, rozliczenie, zapis z menu, opcje, mapa
+9. 🔶 Ekrany i grafika miniGL (§25): ✅ logo STORM 32, intro (6 plansz), menu tytułowe, werbunek, Przystań, mapa regionu i podróż; ⏳ misja, rozliczenie, zapis z menu, opcje, mapa
    regionu, misja, okna, dziennik walki (teksty z sygnałów `CombatSignal`/`MissionSignal`).
 10. ⏳ Dźwięk (Paula).
 11. ⏳ Uruchomienie testów na Amidze / w emulatorze (programy 68020 się budują, nie były uruchamiane).
@@ -502,3 +502,12 @@ po 350 ms fokusu (zamiast najechania myszą). Grafiki: tło 'hub', mieszkańcy, 
 woła moduły gry przez `import()`), w atlasach `portraits.ntx`, `icons.ntx`, `hub_party.ntx`.
 Napisy w nowych plikach ekranów piszemy w UTF-8; `python3 tools/amiga/latin2_literals.py <plik.c>` przekodowuje literały
 na kody portu (komentarze zostają w UTF-8). Gdy brak ekranu docelowego (podróż i misja, zapis, opcje) - komunikat.
+
+Mapa regionu i podróż (`scr_travel.c`): krajobraz 1000x700 (12 kafli), 966 elementów zasłaniających przepakowanych do
+4 atlasów 256x256 (`travel_occ*.ntx`), bloki budynków z głębią do rozstrzygania „przed / za” postaci (`depthAt`),
+ogniska, latarnia, 8 gatunków bestii (jedna odmiana kolorów na gatunek - w grze kolory losowe przy każdej wizycie).
+Kamera mapy przez `r2d_scale` + `r2d_offset` (przybliżenia 0.48 / 1 / 2 / 3 / 4), rysowanie z sortowaniem po głębi
+i odrzucaniem poza widokiem. Drużyna maszeruje gęsiego (`formation`), chód w 8 kierunkach (arkusze `walk_<id>.ntx`;
+w postoju klatka 0 zamiast animacji spoczynku). Zdarzenia: okno z wyborami i podpowiedzią testu, rzut k20, wynik ze
+skutkami (te same teksty co w grze), zasadzka bestii (szarża, walka / ucieczka). Po dotarciu - powrót do Przystani
+z komunikatem (misja jeszcze nie przeniesiona). Testy: `gl_host ... "0:event=N 1:goto=travel"` (99 = bestia).

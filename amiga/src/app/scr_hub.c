@@ -242,6 +242,10 @@ static void enter(void) {
   memset(poff, 0, sizeof poff);
   dlg.open = main_open = pick_open = 0;
   build_menu();
+  if (g_notice[0]) {
+    ui_toast(g_notice, PAL_AMBER);
+    g_notice[0] = 0;
+  }
 }
 
 static void leave(void) {
@@ -319,7 +323,8 @@ static void accept_contract(void) {
     return;
   }
   app_sfx("door", 256, 256);
-  ui_toast("Podr\363\277 i misje nie s\261 jeszcze przeniesione na Amig\352.", PAL_AMBER);
+  g_job = board_sel;
+  app_switch(SCR_TRAVEL, 400, 500);
 }
 
 static void content_ok(void) {
@@ -412,7 +417,8 @@ static void dialog_result(int r) {
   Character *ch = &g_camp.party[ch_idx];
   if (dlg_kind == D_HURT && r == 1) {
     app_sfx("door", 256, 256);
-    ui_toast("Podr\363\277 i misje nie s\261 jeszcze przeniesione na Amig\352.", PAL_AMBER);
+    g_job = board_sel;
+    app_switch(SCR_TRAVEL, 400, 500);
   } else if (dlg_kind == D_PACK && r >= 1 && dlg_item < ch->n_inv) {
     if (r == 2) {
       Character *t[1];

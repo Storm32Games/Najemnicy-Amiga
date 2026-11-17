@@ -42,7 +42,7 @@ int img_load(Img *im, const char *name) {
     snprintf(err, sizeof err, "brak pliku %s", path);
     return 0;
   }
-  if (len < 10 || memcmp(f, "NTX1", 4)) {
+  if (len < 10 || (memcmp(f, "NTX1", 4) && memcmp(f, "NTX2", 4))) {
     snprintf(err, sizeof err, "zly format %s", path);
     free(f);
     return 0;
@@ -58,8 +58,32 @@ int img_load(Img *im, const char *name) {
     goto out;
   }
   p = 10 + (long)n * 4;
+  if (f[3] == '2') {
+    /* LZ: kopie z odległości wstecz w obrębie obrazu (indeksy w rgba jako bajty, potem rozwinięcie przez paletę) */
+    uint8_t *idx = rgba + total * 3;   /* ostatnia ćwiartka bufora RGBA */
+    while (px < total && p < len) {
+      int c = f[p++];
+      if (c < 128) {
+        int k = c + 1;
+        while (k-- && px < total && p < len) idx[px++] = f[p++];
+      } else {
+        int k = c - 125;
+        long d = (long)f[p] << 16 | (long)f[p + 1] << 8 | f[p + 2];
+        p += 3;
+        while (k-- && px < total) {
+          idx[px] = idx[px - d];
+          px++;
+        }
+      }
+    }
+    if (px < total) {
+      snprintf(err, sizeof err, "uciety plik %s", path);
+      goto out;
+    }
+    for (px = 0; px < total; px++) memcpy(rgba + px * 4, f + 10 + idx[px] * 4, 4);   /* idx za rgba[px*4]: bezpieczne */
+  }
   /* RLE indeksów palety -> RGBA */
-  while (px < total && p < len) {
+  while (f[3] == '1' && px < total && p < len) {
     int c = f[p++];
     if (c < 128) {
       int k = c + 1;

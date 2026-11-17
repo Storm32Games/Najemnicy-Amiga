@@ -17,6 +17,24 @@ interface Frames { tex: string; from: number; to: number; step: number }
 /** prep: kod JS (async, w stronie; dostępne g = gra, sc = scena) dorabiający tekstury przed zbieraniem - moduły gry przez import(). */
 interface Target { name: string; scene: string; extra?: string; prefix: string[]; waitMs?: number; frames?: Frames; prep?: string }
 
+// Mapa regionu: budynki zasłaniające (bloki z głębią), ogniska, latarnia, bestie (po jednej odmianie kolorów na gatunek)
+const TRAVEL_PREP = `
+  const RA = await import('/src/scenes/iso/RegionArt.ts');
+  const CA = await import('/src/scenes/iso/CreatureArt.ts');
+  const IA = await import('/src/scenes/iso/IsoArt.ts');
+  const EN = await import('/src/core/data/enemies.ts');
+  const EV = await import('/src/core/campaign/events.ts');
+  const K = await import('/src/scenes/ui/Kit.ts');
+  const SKINS = ['#8a6a4a', '#5a5a62', '#7a8a4a', '#9a4a5a', '#4a7a8a', '#b89a5a', '#6a4a8a', '#3a3a3e'], EYES = ['#ff3a2a', '#ffe040', '#40ffc0', '#ff60ff', '#8fff40'];
+  const fauna = EV.FAUNA_KINDS.map((k, i) => {
+    const def = EN.ENEMIES[k.templateId];
+    const sh = CA.paintCreatureSheet(def ? def.look.shape : 'quad', K.parseColor(SKINS[i], 0), K.parseColor(EYES[i % 5], 0), k.templateId);
+    new IA.ArtBook(sc).sheet('bk_fauna_' + i, sh.pc, sh.frames);
+    return { name: k.name, scale: def && def.look.scale ? def.look.scale : 1 };
+  });
+  window.__bakeExtra = { blocks: (sc.blocks || []).map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, box: b.box, depth: b.depth })), fires: RA.regionFires(), beacon: RA.beaconPos(), fauna };
+`;
+
 // Przystań: drużyna może być dowolną czwórką, więc postacie, portrety i ikony wszystkich rekrutów / przedmiotów / zdolności
 const HUB_PREP = `
   const W = await import('/src/scenes/ui/Widgets.ts');
@@ -38,6 +56,7 @@ const HUB_PREP = `
 `;
 const TARGETS: Target[] = [
   { name: 'title', scene: 'TitleScene', prefix: ['title', 'rec_', 'unit_rec'] },
+  { name: 'travel', scene: 'TravelScene', prefix: ['travel', 'bk_'], prep: TRAVEL_PREP },
   { name: 'hub', scene: 'HubScene', prefix: ['hub', 'unit_pc_', 'unit_npc_', 'pc_', 'npc_', 'bk_'], prep: HUB_PREP },
   // werbunek: tło + portrety 30 px (karty); portrety 26 px (plac) są tylko u wybranych - 4 przebiegi po 4 rekrutów
   ...[0, 1, 2, 3].map((k): Target => ({ name: `recruit${k + 1}`, scene: 'RecruitScene', extra: `&pick=${[0, 1, 2, 3].map((i) => k * 4 + i).join(',')}`, prefix: k ? ['porpl_'] : ['recruit', 'porpl_'] })),
@@ -115,6 +134,7 @@ const COLLECT = (scene: string, prefixes: string[], waitMs: number, frames?: Fra
     return r;
   };
   out.objects = sc.children.list.map((o) => dump(o, 0));
+  out.extra = window.__bakeExtra || null;
   const fr = ${JSON.stringify(frames ?? null)};
   out.frames = [];
   if (fr) {
@@ -181,7 +201,7 @@ async function main(): Promise<void> {
         all.frames.forEach((f, i) => writeFileSync(join(dir, 'frames', `${String(i).padStart(3, '0')}.png`), Buffer.from(f.png.split(',')[1], 'base64')));
         writeFileSync(join(dir, 'frames', 'index.json'), JSON.stringify(all.frames.map((f) => f.t)) + '\n');
       }
-      writeFileSync(join(dir, 'scene.json'), JSON.stringify({ objects: all.objects, anims: all.anims }, null, 1) + '\n');
+      writeFileSync(join(dir, 'scene.json'), JSON.stringify({ objects: all.objects, anims: all.anims, extra: (all as unknown as { extra?: unknown }).extra ?? null }, null, 1) + '\n');
       console.log(`${t.name}: ${Object.keys(tex).length} tekstur -> amiga/data/bake/${t.name}/ (${Object.entries(manifest).map(([k, v]) => `${k} ${v.w}x${v.h}`).join(', ')})`);
     }
     ws.close();

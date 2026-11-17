@@ -34,6 +34,21 @@ extern const BgFx BG_HUB;
 extern const UnitSet INTRO_RAIDERS_UNITS;
 extern const UnitSet INTRO_HAVEN_UNITS;
 extern const UnitSet INTRO_CREW_UNITS;
+
+/* mapa regionu: elementy zasłaniające (atlas, wycinek, pozycja na mapie, głębia (d - 5) * 65536), budynki do "przed / za"
+ * (prostokąt na mapie, podstawa w świecie Q8, głębia), ogniska (x, y, rozmiar Q8, głębia), latarnia */
+typedef struct { uint8_t atlas, sx, sy, w, h; int16_t x, y; int32_t depth; } TravelOcc;
+typedef struct { int16_t x0, y0, x1, y1; int32_t bx0, bx1, bz0, bz1, depth; } TravelBlock;
+typedef struct { int16_t x, y; int16_t size_q8; int32_t depth; } TravelFire;
+#define TRAVEL_ATLASES 4
+#define TRAVEL_OCC_N 966
+#define TRAVEL_BLOCK_N 161
+#define TRAVEL_FIRE_N 9
+extern const TravelOcc TRAVEL_OCC[TRAVEL_OCC_N];
+extern const TravelBlock TRAVEL_BLOCK[TRAVEL_BLOCK_N];
+extern const TravelFire TRAVEL_FIRE[TRAVEL_FIRE_N];
+extern const TravelFire TRAVEL_BEACON;
+extern const int16_t FAUNA_SCALE_Q8[8];
 #define RUIN_EYES 7
 extern const EyePair RUIN_EYE[RUIN_EYES];
 

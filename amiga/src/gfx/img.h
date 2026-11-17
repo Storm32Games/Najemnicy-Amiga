@@ -6,7 +6,7 @@
 #include "r2d.h"
 #include "../core/frontend.h"
 
-#define IMG_MAX_TILES 8
+#define IMG_MAX_TILES 16
 typedef struct {
   int w, h, n;
   TexTile tile[IMG_MAX_TILES];

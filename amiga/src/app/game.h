@@ -6,6 +6,9 @@
 
 extern CampaignState g_camp;
 extern uint32_t g_entropy;
+extern int g_job;              /* zlecenie wybrane w Przystani (indeks w g_camp.contracts) albo -1 */
+extern char g_notice[128];
+extern int g_force_event;      /* testy (jak ?event= w grze): indeks TRAVEL_EVENTS, 99 = atak bestii, -1 = losowo */     /* komunikat do pokazania po wejściu do Przystani */
 /* świeże ziarno dla losowania w odpowiedzi na akcję gracza */
 void game_rng(Rng *r);
 

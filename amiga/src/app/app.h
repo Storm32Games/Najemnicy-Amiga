@@ -7,7 +7,7 @@
 /* bity wejścia (stan wciśnięcia i "naciśnięte w tej klatce") */
 enum { IN_UP = 1, IN_DOWN = 2, IN_LEFT = 4, IN_RIGHT = 8, IN_OK = 16, IN_BACK = 32, IN_ANY = 64 };
 
-typedef enum { SCR_LOGO, SCR_INTRO, SCR_TITLE, SCR_RECRUIT, SCR_HUB, SCR_QUIT } ScreenId;
+typedef enum { SCR_LOGO, SCR_INTRO, SCR_TITLE, SCR_RECRUIT, SCR_HUB, SCR_TRAVEL, SCR_QUIT } ScreenId;
 
 void app_init(void);
 /* Jedna klatka: `ms` = czas od poprzedniej klatki. Zwraca 0, gdy aplikacja ma się zakończyć. */
@@ -22,7 +22,7 @@ typedef struct {
   void (*draw)(void);
   void (*leave)(void);
 } Screen;
-extern const Screen SCREEN_LOGO, SCREEN_INTRO, SCREEN_TITLE, SCREEN_RECRUIT, SCREEN_HUB;
+extern const Screen SCREEN_LOGO, SCREEN_INTRO, SCREEN_TITLE, SCREEN_RECRUIT, SCREEN_HUB, SCREEN_TRAVEL;
 /* Przejście: wygaszenie w `ms_out`, potem nowy ekran wchodzi z czerni w `ms_in`. Drugie wywołanie w trakcie wyjścia jest ignorowane. */
 void app_switch(ScreenId to, int ms_out, int ms_in);
 int app_leaving(void);

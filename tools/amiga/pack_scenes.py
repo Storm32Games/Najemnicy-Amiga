@@ -4,6 +4,7 @@ i generuje tablice animacji tła (okna, ptaki, promienie) w amiga/src/data/scene
 
 Format .ntx (big-endian, jak na 68k): "NTX1", u16 w, u16 h, u16 n (kolory palety, <= 256), n * RGBA,
 potem indeksy pikseli w RLE: bajt c < 128 -> c + 1 bajtów dosłownie; c >= 128 -> powtórz następny bajt (c - 125) razy.
+"NTX2": to samo, ale indeksy w LZ jak klatka .nta (niżej) - dla obrazów z drobnym ditheringiem (mapa regionu).
 Format .nta (animacja, np. wybuch z fx/NukeArt.ts): "NTA1", u16 w, h, n (klatki), ms (na klatkę), t0 (ms planszy
 pierwszej klatki), u16 kolory, paleta RGBA (wspólna), potem n * (u32 długość, strumień LZ indeksów). LZ: bajt c < 128 ->
 c + 1 bajtów dosłownie; c >= 128 -> kopia (c - 125) bajtów z odległości u24 (big-endian) wstecz - odległość może sięgać
@@ -95,8 +96,10 @@ def to_indexed(im):
 
 def write_ntx(name, im):
     pal, idx = to_indexed(im)
-    data = b'NTX1' + struct.pack('>HHH', im.width, im.height, len(pal))
-    data += b''.join(bytes(c) for c in pal) + rle(idx)
+    head = struct.pack('>HHH', im.width, im.height, len(pal)) + b''.join(bytes(c) for c in pal)
+    a, b = rle(idx), lz_frame(b'', idx)
+    # NTX1 = RLE, NTX2 = LZ (jak klatki .nta, bez poprzedniej klatki) - mniejszy wygrywa
+    data = (b'NTX1' + head + a) if len(a) <= len(b) else (b'NTX2' + head + b)
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, name + '.ntx'), 'wb') as f:
         f.write(data)
@@ -390,6 +393,67 @@ def build():
         icons.paste(load('hub', f'bk_a7_{k}'), ((i % 36) * 7, 63 + (i // 36) * 7))
     write_ntx('icons', icons)
 
+    print('travel:')
+    write_ntx('travel_map', load('travel', 'travel_map'))
+    tsc = scene_objs('travel')
+    tman = json.load(open(os.path.join(BAKE, 'travel', 'manifest.json')))
+    sheets = {k: load('travel', k) for k in ('travel_occ0', 'travel_occ1')}
+    occ = [o for o in tsc['objects'] if o.get('tex', '').startswith('travel_occ')]
+    # przepakowanie klatek do atlasów 256x256 (półki od najwyższych), kolejność rysowania jak w scenie
+    frames = {}
+    for o in occ:
+        frames.setdefault((o['tex'], o['frame']), tman[o['tex']]['frames'][o['frame']])
+    order = sorted(frames, key=lambda k: -frames[k][3])
+    atlases, place_ = [], {}
+    cur = None
+    x = y = shelf = 0
+    for k in order:
+        fx, fy, fw, fh = frames[k]
+        if cur is None or x + fw > 256:
+            x, y, shelf = 0, y + shelf, 0
+        if cur is None or y + fh > 256:
+            cur = Image.new('RGBA', (256, 256))
+            atlases.append(cur)
+            x = y = shelf = 0
+        cur.paste(sheets[k[0]].crop((fx, fy, fx + fw, fy + fh)), (x, y))
+        place_[k] = (len(atlases) - 1, x, y, fw, fh)
+        x += fw
+        shelf = max(shelf, fh)
+    for i, a in enumerate(atlases):
+        write_ntx(f'travel_occ{i}', a)
+    def dq(d):
+        return int(round((d - 5) * 65536))
+    T['travel_occ'] = [(place_[(o['tex'], o['frame'])], round(o['x']), round(o['y']), dq(o['d'])) for o in occ]
+    T['travel_atlases'] = len(atlases)
+    ex = tsc['extra']
+    T['travel_blocks'] = [(b['x0'], b['y0'], b['x1'], b['y1'], js_round(b['box']['x0'] * 256), js_round(b['box']['x1'] * 256),
+                           js_round(b['box']['z0'] * 256), js_round(b['box']['z1'] * 256), dq(b['depth'])) for b in ex['blocks']]
+    def kd(key):
+        return dq(5 + min(0.999, max(0, (key + 60) / 120)))
+    T['travel_fires'] = [(round(f['x']), round(f['y']), js_round(f['size'] * 256), kd(f['key']) + 33) for f in ex['fires']]
+    T['travel_beacon'] = (round(ex['beacon']['x']), round(ex['beacon']['y']), kd(ex['beacon']['key']) + 33)
+    T['fauna_scale'] = [js_round(f['scale'] * 256) for f in ex['fauna']]
+    fa = Image.new('RGBA', (144, 256))
+    for i in range(8):
+        src = load('travel', f'bk_fauna_{i}')
+        fr = tman[f'bk_fauna_{i}']['frames']
+        for j, name in enumerate(['f_idle0', 'f_idle1', 'f_walk0', 'f_walk1', 'f_walk2', 'f_walk3']):
+            fx, fy, fw, fh = fr[name]
+            fa.paste(src.crop((fx, fy, fx + fw, fy + fh)), (j * 24, i * 32))
+    write_ntx('travel_fauna', fa)
+    # chód drużyny: 8 klatek d_<kierunek>_walk w wierszu, kierunki jak dirOfVector (E, SE, S, SW, W, NW, N, NE),
+    # 7 kierunków w bloku 256 px: y = (d / 7) * 256 + (d % 7) * 36
+    hman = json.load(open(os.path.join(BAKE, 'hub', 'manifest.json')))
+    for k in RECRUIT_KEYS:
+        src = load('hub', 'unit_pc_' + k)
+        fr = hman['unit_pc_' + k]['frames']
+        sh = Image.new('RGBA', (256, 256 + 36))
+        for d, dn in enumerate(['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east']):
+            for f in range(8):
+                fx, fy, fw, fh = fr[f'd_{dn}_walk{f}']
+                sh.paste(src.crop((fx, fy, fx + fw, fy + fh)), (f * 32, (d // 7) * 256 + (d % 7) * 36))
+        write_ntx('walk_' + k, sh)
+
     print('intro:')
     layers = {
         'intro1': ['intro_bomb_pall'],
@@ -471,6 +535,28 @@ extern const AnimStep UNIT_IDLE[UNIT_IDLE_STEPS];
         h.append('extern const UnitSet %s;\n' % name)
         c.append('static const UnitPlace %s_U[] = {%s};\n' % (name, ', '.join('{%d, %d, %d, %d, %d}' % (r, x, y, fl, round(d * 10)) for r, x, y, fl, d in sp)))
         c.append('const UnitSet %s = {%d, %d, %d, %s_U};\n' % (name, fw, fh, len(sp), name))
+    if 'travel_occ' in T:
+        h.append('''
+/* mapa regionu: elementy zasłaniające (atlas, wycinek, pozycja na mapie, głębia (d - 5) * 65536), budynki do "przed / za"
+ * (prostokąt na mapie, podstawa w świecie Q8, głębia), ogniska (x, y, rozmiar Q8, głębia), latarnia */
+typedef struct { uint8_t atlas, sx, sy, w, h; int16_t x, y; int32_t depth; } TravelOcc;
+typedef struct { int16_t x0, y0, x1, y1; int32_t bx0, bx1, bz0, bz1, depth; } TravelBlock;
+typedef struct { int16_t x, y; int16_t size_q8; int32_t depth; } TravelFire;
+#define TRAVEL_ATLASES %d
+#define TRAVEL_OCC_N %d
+#define TRAVEL_BLOCK_N %d
+#define TRAVEL_FIRE_N %d
+extern const TravelOcc TRAVEL_OCC[TRAVEL_OCC_N];
+extern const TravelBlock TRAVEL_BLOCK[TRAVEL_BLOCK_N];
+extern const TravelFire TRAVEL_FIRE[TRAVEL_FIRE_N];
+extern const TravelFire TRAVEL_BEACON;
+extern const int16_t FAUNA_SCALE_Q8[8];
+''' % (T['travel_atlases'], len(T['travel_occ']), len(T['travel_blocks']), len(T['travel_fires'])))
+        c.append('const TravelOcc TRAVEL_OCC[TRAVEL_OCC_N] = {\n' + ''.join('  {%d, %d, %d, %d, %d, %d, %d, %d},\n' % (p[0], p[1], p[2], p[3], p[4], x, y, d) for p, x, y, d in T['travel_occ']) + '};\n')
+        c.append('const TravelBlock TRAVEL_BLOCK[TRAVEL_BLOCK_N] = {\n' + ''.join('  {%d, %d, %d, %d, %d, %d, %d, %d, %d},\n' % b for b in T['travel_blocks']) + '};\n')
+        c.append('const TravelFire TRAVEL_FIRE[TRAVEL_FIRE_N] = {' + ', '.join('{%d, %d, %d, %d}' % f for f in T['travel_fires']) + '};\n')
+        c.append('const TravelFire TRAVEL_BEACON = {%d, %d, 0, %d};\n' % T['travel_beacon'])
+        c.append('const int16_t FAUNA_SCALE_Q8[8] = {%s};\n' % ', '.join(map(str, T['fauna_scale'])))
     h.append('#define RUIN_EYES %d\nextern const EyePair RUIN_EYE[RUIN_EYES];\n\n#endif\n' % len(T['eyes']))
     c.append('const EyePair RUIN_EYE[RUIN_EYES] = {%s};\n' % ', '.join('{%d, %d, %d, 0x%06x}' % e for e in T['eyes']))
     open(os.path.join(SRC, 'scenes.h'), 'w').write(''.join(h))
